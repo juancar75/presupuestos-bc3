@@ -9,6 +9,7 @@ use crate::{Cabecera, Discrepancia, ErrorBc3, Gravedad, Importacion, Incidencia,
 use ppto_core::concepto::{Concepto, LineaDescomposicion, Naturaleza};
 use ppto_core::formato::num;
 use ppto_core::medicion::{LineaMedicion, Medicion, TipoLinea};
+use ppto_core::presupuesto::OpcionesCi;
 use ppto_core::{Decimal, Decimales, ErrorMotor, Presupuesto, redondear};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
@@ -744,6 +745,8 @@ impl Lector {
             raiz: raiz.clone(),
             conceptos,
             mediciones: mediciones.into_iter().map(|(k, (m, _, _))| (k, m)).collect(),
+            costes_indirectos: self.porcentajes.costes_indirectos.unwrap_or_default(),
+            opciones_ci: OpcionesCi::default(),
         };
 
         // 7. Ciclos: se rompe la última relación de cada ciclo encontrado.
@@ -804,6 +807,15 @@ impl Lector {
         let mut pem_declarado = None;
         match p.valorar() {
             Ok(v) => {
+                // Precio con costes indirectos de cada concepto colgado de un capítulo
+                let venta: HashMap<&str, Decimal> = p
+                    .conceptos
+                    .values()
+                    .filter(|c| c.naturaleza == Naturaleza::Capitulo)
+                    .filter_map(|c| v.lineas.get(&c.codigo))
+                    .flatten()
+                    .map(|l| (l.hijo.as_str(), l.precio))
+                    .collect();
                 for (codigo, c) in &p.conceptos {
                     if c.descomposicion.is_empty() || c.naturaleza == Naturaleza::Porcentaje {
                         continue;
@@ -820,7 +832,10 @@ impl Lector {
                     if codigo == &raiz {
                         pem_declarado = Some(declarado);
                     }
-                    let calculado = v.precios.get(codigo).copied().unwrap_or_default();
+                    let calculado = match venta.get(codigo.as_str()) {
+                        Some(pv) if c.naturaleza != Naturaleza::Capitulo => *pv,
+                        _ => v.precios.get(codigo).copied().unwrap_or_default(),
+                    };
                     if calculado != declarado {
                         discrepancias.push(Discrepancia {
                             codigo: codigo.clone(),

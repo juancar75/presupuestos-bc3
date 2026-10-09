@@ -105,6 +105,13 @@ fn importar(ruta: &str, db: Option<&str>, todo: bool) -> Result<(), Box<dyn std:
     }
 
     let pem = p.pem()?;
+    if !p.costes_indirectos.is_zero() {
+        println!(
+            "\nCoste directo {} €  +  {} % costes indirectos por partida",
+            eur(p.coste_directo()?),
+            num(p.costes_indirectos, 2)
+        );
+    }
     match imp.pem_declarado {
         Some(d) if d == pem => println!("\nPEM {} € (coincide con el BC3)", eur(pem)),
         Some(d) => println!(
@@ -183,7 +190,7 @@ fn demo(db: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
             paq.descripcion,
             eur(r.coste_contratado),
             eur(eq),
-            eur(r.pem_escenario),
+            eur(r.coste_escenario),
             eur(r.ahorro),
             num(h, 1)
         );

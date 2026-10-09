@@ -29,6 +29,33 @@ pub struct Presupuesto {
     pub conceptos: BTreeMap<String, Concepto>,
     /// Mediciones por par (padre, hijo).
     pub mediciones: BTreeMap<(String, String), Medicion>,
+    /// Costes indirectos de la obra, en puntos (45 = 45 %). Se aplican a cada
+    /// unidad de obra colgada de un capítulo, como hace Presto.
+    #[serde(default)]
+    pub costes_indirectos: Decimal,
+    #[serde(default)]
+    pub opciones_ci: OpcionesCi,
+}
+
+/// Opciones de aplicación de los costes indirectos (equivalentes a las de
+/// «Propiedades de la obra → Cálculo» de Presto, con sus valores por defecto).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpcionesCi {
+    /// Redondear el coste directo de la partida antes de aplicar los indirectos.
+    /// (Presto: casilla «No redondear coste antes de calcular indirectos» desmarcada.)
+    pub redondear_coste_antes: bool,
+    /// Aplicar indirectos también a partidas sin descomposición.
+    /// (Presto: casilla «No aplicar costes indirectos a partidas sin descomponer» desmarcada.)
+    pub aplicar_a_sin_descomponer: bool,
+}
+
+impl Default for OpcionesCi {
+    fn default() -> Self {
+        Self {
+            redondear_coste_antes: true,
+            aplicar_a_sin_descomponer: true,
+        }
+    }
 }
 
 /// Máscara de un concepto porcentual (FIEBDC-3): el prefijo del código antes
@@ -45,7 +72,10 @@ pub struct Valoracion {
     pub precios: HashMap<String, Decimal>,
     /// Líneas valoradas de cada concepto con descomposición.
     pub lineas: HashMap<String, Vec<LineaValorada>>,
+    /// PEM con costes indirectos.
     pub pem: Decimal,
+    /// PEM sin costes indirectos.
+    pub coste_directo: Decimal,
 }
 
 /// Una línea de descomposición ya valorada.
@@ -70,6 +100,8 @@ impl Presupuesto {
             raiz,
             conceptos,
             mediciones: BTreeMap::new(),
+            costes_indirectos: Decimal::ZERO,
+            opciones_ci: OpcionesCi::default(),
         }
     }
 
@@ -203,7 +235,7 @@ impl Presupuesto {
         Ok(())
     }
 
-    /// Precio unitario de un concepto (total si es capítulo).
+    /// Coste directo unitario de un concepto (total con indirectos si es capítulo).
     pub fn precio(&self, codigo: &str) -> Result<Decimal, ErrorMotor> {
         self.validar()?;
         let mut cache = HashMap::new();
@@ -224,16 +256,71 @@ impl Presupuesto {
             }
         }
         let pem = cache.get(&self.raiz).copied().unwrap_or_default();
+        let coste_directo = if self.costes_indirectos.is_zero() {
+            pem
+        } else {
+            self.coste_directo()?
+        };
         Ok(Valoracion {
             precios: cache,
             lineas,
             pem,
+            coste_directo,
         })
     }
 
-    /// Presupuesto de ejecución material (total del concepto raíz).
+    /// Presupuesto de ejecución material (total del concepto raíz), con los
+    /// costes indirectos incluidos en el precio de cada unidad de obra.
     pub fn pem(&self) -> Result<Decimal, ErrorMotor> {
         self.precio(&self.raiz)
+    }
+
+    /// Coste directo de la obra: el PEM calculado sin costes indirectos.
+    pub fn coste_directo(&self) -> Result<Decimal, ErrorMotor> {
+        if self.costes_indirectos.is_zero() {
+            return self.pem();
+        }
+        let mut sin_ci = self.clone();
+        sin_ci.costes_indirectos = Decimal::ZERO;
+        sin_ci.pem()
+    }
+
+    /// Precio de una unidad de obra con costes indirectos, a partir de su
+    /// coste directo unitario (ver `OpcionesCi`).
+    fn con_indirectos(
+        &self,
+        codigo: &str,
+        coste: Decimal,
+        cache: &mut HashMap<String, Decimal>,
+    ) -> Result<Decimal, ErrorMotor> {
+        let c = self.concepto(codigo)?;
+        if self.costes_indirectos.is_zero()
+            || c.naturaleza == Naturaleza::Capitulo
+            || c.naturaleza == Naturaleza::Porcentaje
+            || (c.descomposicion.is_empty() && !self.opciones_ci.aplicar_a_sin_descomponer)
+        {
+            return Ok(coste);
+        }
+        let base = if self.opciones_ci.redondear_coste_antes {
+            coste
+        } else if c.descomposicion.is_empty() {
+            c.precio
+        } else {
+            self.lineas_rec(codigo, cache)?.iter().map(|l| l.importe).sum()
+        };
+        Ok(redondear(
+            base * (Decimal::ONE + self.costes_indirectos / Decimal::ONE_HUNDRED),
+            self.decimales.precio,
+        ))
+    }
+
+    /// Precio de venta unitario de un concepto colgado de un capítulo
+    /// (coste directo más costes indirectos).
+    pub fn precio_con_indirectos(&self, codigo: &str) -> Result<Decimal, ErrorMotor> {
+        self.validar()?;
+        let mut cache = HashMap::new();
+        let coste = self.precio_rec(codigo, &mut cache)?;
+        self.con_indirectos(codigo, coste, &mut cache)
     }
 
     /// Líneas valoradas de un concepto.
@@ -278,7 +365,8 @@ impl Presupuesto {
             let hijo = self.concepto(&l.hijo)?;
             let linea = if es_capitulo {
                 let cantidad = redondear(l.cantidad(), d.medicion);
-                let precio = self.precio_rec(&l.hijo, cache)?;
+                let coste = self.precio_rec(&l.hijo, cache)?;
+                let precio = self.con_indirectos(&l.hijo, coste, cache)?;
                 LineaValorada {
                     hijo: l.hijo.clone(),
                     naturaleza: hijo.naturaleza,

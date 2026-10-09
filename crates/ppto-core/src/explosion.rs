@@ -34,8 +34,9 @@ pub struct RecursoExplotado {
 pub struct Explosion {
     pub recursos: Vec<RecursoExplotado>,
     pub total: Decimal,
-    pub pem: Decimal,
-    /// PEM − total de la explosión.
+    /// Coste directo de la obra (PEM sin costes indirectos).
+    pub coste_directo: Decimal,
+    /// Coste directo − total de la explosión.
     pub descuadre_redondeo: Decimal,
 }
 
@@ -85,12 +86,12 @@ impl Presupuesto {
             });
         }
         let total: Decimal = recursos.iter().map(|r| r.importe).sum();
-        let pem = self.pem()?;
+        let coste_directo = self.coste_directo()?;
         Ok(Explosion {
             recursos,
             total,
-            pem,
-            descuadre_redondeo: pem - total,
+            coste_directo,
+            descuadre_redondeo: coste_directo - total,
         })
     }
 

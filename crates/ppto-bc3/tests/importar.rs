@@ -230,3 +230,24 @@ fn bc3_grande_de_cuatro_mil_partidas() {
     assert_eq!(imp.discrepancias.len(), 4000 + 40 + 1);
     eprintln!("BC3 de {} KB importado y recalculado en {ms} ms", s.len() / 1024);
 }
+
+#[test]
+fn costes_indirectos_del_k_se_aplican_por_partida() {
+    // Mismo suelo radiante con CI 45 % en ~K y precios de venta declarados como en Presto:
+    // SR.M2 43,34 · SR.COL8 351,99 · C01 = PEM 10.157,37 (coste directo 7.005,15)
+    let original = std::fs::read(datos("suelo-radiante.bc3")).unwrap();
+    let texto = encoding_rs::WINDOWS_1252.decode(&original).0.into_owned();
+    let texto = texto
+        .replace(r"|0\13\6\0\21|", r"|45\13\6\0\21|")
+        .replace("|7005.15|", "|10157.37|")
+        .replace("16×2|29.89|", "16×2|43.34|")
+        .replace("conexionado|242.75|", "conexionado|351.99|");
+    let bytes = encoding_rs::WINDOWS_1252.encode(&texto).0.into_owned();
+    let imp = importar(&bytes).unwrap();
+    let p = &imp.presupuesto;
+    assert_eq!(p.costes_indirectos, dec!(45));
+    assert_eq!(p.pem().unwrap(), dec!(10157.37));
+    assert_eq!(p.coste_directo().unwrap(), dec!(7005.15));
+    assert_eq!(imp.pem_declarado, Some(dec!(10157.37)));
+    assert!(imp.discrepancias.is_empty(), "{:?}", imp.discrepancias);
+}

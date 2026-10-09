@@ -68,13 +68,33 @@ total_capítulo   = redondear(Σ importes_partida, importe)
 PEM              = total del capítulo raíz
 ```
 
+## 4 bis. Costes indirectos (como Presto)
+
+- Porcentaje de la obra `costes_indirectos` (leído del `~K` del BC3).
+- Se aplica **partida a partida** a cada unidad de obra colgada de un capítulo:
+  `precio = redondear(coste × (1 + CI/100), precio)`. Los precios auxiliares
+  usados dentro de otros descompuestos van a coste, sin indirectos.
+- Opciones (valores por defecto de Presto): redondear el coste antes de
+  aplicar los indirectos (sí) y aplicarlos también a partidas sin
+  descomponer (sí).
+- `PEM` incluye los indirectos; `coste directo` es el PEM sin ellos. La
+  explosión de recursos y los escenarios de subcontratación trabajan sobre
+  coste directo.
+- Por el redondeo por partida, el PEM no coincide al céntimo con
+  `coste directo × (1 + CI)`. Ejemplo: suelo radiante con CI 45 %: PEM
+  10.157,37 frente a 7.005,15 × 1,45 = 10.157,47. En una obra real con Presto:
+  coste 108.489,57 → PEM 157.310,88, frente a 157.309,88 aplicado al total.
+
+Pruebas: `costes_indirectos_por_partida_como_presto`,
+`opcion_no_redondear_coste_antes_de_indirectos`.
+
 ## 5. Explosión de recursos
 
 - Cantidad de cada recurso = Σ (cantidad de la partida en obra × cantidad de
   la línea), atravesando precios auxiliares.
 - Importe del recurso = redondear(cantidad total × precio, importe).
 - Las líneas porcentuales se acumulan como pseudo-recurso con su importe.
-- **Descuadre de redondeo** = PEM − Σ importes de recursos. Se muestra
+- **Descuadre de redondeo** = coste directo − Σ importes de recursos. Se muestra
   siempre; no se reparte ni se oculta. En el caso de validación, 2,10 €.
 
 ## 6. Costes y venta (P-008)

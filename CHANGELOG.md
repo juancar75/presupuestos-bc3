@@ -6,6 +6,11 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- Costes indirectos de obra aplicados por partida, con las opciones de
+  redondeo de Presto; PEM con indirectos y coste directo por separado. Se
+  leen del `~K` del BC3, se guardan en SQLite (migración 2) y se editan en
+  «Resumen y venta». Recursos y subcontratas pasan a comparar con coste directo
+  (`Explosion::coste_directo`, `ResultadoEscenario::coste_original/coste_escenario`).
 - `ppto-bc3`: importador FIEBDC-3 (P-010) con lectura tolerante de `~V ~K ~C
   ~D ~Y ~T ~M ~N`, codificación ANSI/UTF-8, incidencias con número de línea,
   reconstrucción de la raíz, ruptura de ciclos y comparación de precios

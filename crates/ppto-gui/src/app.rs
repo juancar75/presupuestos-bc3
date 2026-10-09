@@ -36,6 +36,8 @@ enum Accion {
     Resumen(String, String),
     QuitarOferta(usize),
     Ir(String),
+    Ci(Decimal),
+    OpcionesCi(ppto_core::presupuesto::OpcionesCi),
 }
 
 /// Resultados del motor para el estado actual del presupuesto.
@@ -43,6 +45,7 @@ enum Accion {
 struct Calculo {
     error: Option<String>,
     pem: Decimal,
+    coste_directo: Decimal,
     lineas: HashMap<String, Vec<LineaValorada>>,
     precios: HashMap<String, Decimal>,
     cantidades: BTreeMap<String, Decimal>,
@@ -61,6 +64,7 @@ impl Calculo {
             c.precios = v.precios;
             c.lineas = v.lineas;
             c.pem = v.pem;
+            c.coste_directo = v.coste_directo;
             c.cantidades = p.cantidades_partidas()?;
             c.explosion = Some(p.explosion_recursos()?);
             Ok(())
@@ -475,6 +479,18 @@ impl Aplicacion {
                     self.avisos.clear();
                     continue;
                 }
+                Accion::Ci(v) => {
+                    if v < Decimal::ZERO {
+                        self.error("Los costes indirectos no pueden ser negativos.");
+                        continue;
+                    }
+                    self.p.costes_indirectos = v;
+                    Ok(())
+                }
+                Accion::OpcionesCi(o) => {
+                    self.p.opciones_ci = o;
+                    Ok(())
+                }
                 Accion::Ir(codigo) => {
                     let padre = self
                         .p
@@ -664,6 +680,18 @@ impl Aplicacion {
             }
         });
         if let Some(l) = &linea_cap {
+            let coste = self.calc.precios.get(&hijo).copied().unwrap_or_default();
+            if coste != l.precio {
+                ui.label(
+                    RichText::new(format!(
+                        "Coste directo {} €/{}  +  {} % costes indirectos",
+                        eur(coste),
+                        c.unidad,
+                        num(self.p.costes_indirectos, 2)
+                    ))
+                    .weak(),
+                );
+            }
             ui.label(
                 RichText::new(format!(
                     "Cantidad {} {}   ·   Precio {} €/{}   ·   Importe {} €",
@@ -957,7 +985,11 @@ impl Aplicacion {
                 ui.add_space(8.0);
             }
             ui.separator();
-            ui.label(format!("Total explosión: {} €     PEM: {} €", eur(e.total), eur(e.pem)));
+            ui.label(format!(
+                "Total explosión: {} €     PEM: {} €",
+                eur(e.total),
+                eur(e.coste_directo)
+            ));
             let txt = format!("Descuadre de redondeo: {} €", eur(e.descuadre_redondeo));
             ui.label(RichText::new(txt).weak()).on_hover_text(
                 "El PEM suma importes de línea redondeados; la explosión multiplica cantidades totales. \
@@ -1170,7 +1202,7 @@ impl Aplicacion {
                             ui.label(eur(r.coste_retirado));
                             ui.label(eur(r.coste_contratado));
                             ui.label(format!("{} €/{ud}", eur(eq)));
-                            ui.label(eur(r.pem_escenario));
+                            ui.label(eur(r.coste_escenario));
                             let color = if r.ahorro >= Decimal::ZERO {
                                 Color32::from_rgb(70, 170, 90)
                             } else {
@@ -1200,8 +1232,53 @@ impl Aplicacion {
         });
     }
 
-    fn pestana_resumen(&mut self, ui: &mut Ui) {
+    fn pestana_resumen(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
         let pem = self.calc.pem;
+        let cd = self.calc.coste_directo;
+        ui.label(RichText::new("Costes indirectos").strong());
+        ui.horizontal(|ui| {
+            ui.label("Costes indirectos %");
+            if let Some(n) = self.edicion.decimal(ui, "pct|ci", self.p.costes_indirectos, 2, 60.0) {
+                acciones.push(Accion::Ci(n));
+            }
+            let mut o = self.p.opciones_ci;
+            ui.checkbox(&mut o.redondear_coste_antes, "Redondear coste antes de aplicarlos");
+            ui.checkbox(&mut o.aplicar_a_sin_descomponer, "Aplicar a partidas sin descomponer");
+            if o != self.p.opciones_ci {
+                acciones.push(Accion::OpcionesCi(o));
+            }
+        });
+        egui::Grid::new("ci")
+            .striped(true)
+            .num_columns(2)
+            .min_col_width(220.0)
+            .show(ui, |ui| {
+                ui.label("Coste directo");
+                ui.label(format!("{} €", eur(cd)));
+                ui.end_row();
+                ui.label(format!(
+                    "Costes indirectos ({} % por partida)",
+                    num(self.p.costes_indirectos, 2)
+                ));
+                ui.label(format!("{} €", eur(pem - cd)));
+                ui.end_row();
+                ui.label(RichText::new("PEM").strong());
+                ui.label(RichText::new(format!("{} €", eur(pem))).strong());
+                ui.end_row();
+            });
+        if !self.p.costes_indirectos.is_zero() && !cd.is_zero() {
+            let margen = (pem - cd) / pem * Decimal::ONE_HUNDRED;
+            ui.label(
+                RichText::new(format!(
+                    "Sobre el PEM, los indirectos son un {} % (margen sobre venta). Aplicados al total darían {} €; \
+                     la diferencia es el redondeo por partida.",
+                    num(margen, 2),
+                    eur(venta::con_costes_indirectos(cd, self.p.costes_indirectos, 2))
+                ))
+                .weak(),
+            );
+        }
+        ui.add_space(12.0);
         ui.label(RichText::new("Resumen del presupuesto").strong());
         egui::Grid::new("resumen_pct").num_columns(3).show(ui, |ui| {
             for (nombre, clave) in [
@@ -1258,7 +1335,7 @@ impl Aplicacion {
             });
 
         ui.add_space(14.0);
-        ui.label(RichText::new("Precio de venta a partir del coste (PEM)").strong());
+        ui.label(RichText::new("Precio de venta a partir del PEM").strong());
         ui.horizontal(|ui| {
             ui.label("Margen sobre venta %");
             if let Some(n) = self.edicion.decimal(ui, "pct|margen", self.margen, 2, 60.0) {
@@ -1353,7 +1430,7 @@ impl eframe::App for Aplicacion {
                 Pestana::Partida => self.pestana_partida(ui, &mut acciones),
                 Pestana::Recursos => self.pestana_recursos(ui, &mut acciones),
                 Pestana::Subcontratar => self.pestana_subcontratar(ui, &mut acciones),
-                Pestana::Resumen => self.pestana_resumen(ui),
+                Pestana::Resumen => self.pestana_resumen(ui, &mut acciones),
             }
         });
         let ctx = ui.ctx().clone();
