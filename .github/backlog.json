@@ -1,0 +1,402 @@
+{
+ "hitos": {
+  "M0": "Preparación y especificaciones",
+  "M1": "Motor económico Rust y SQLite",
+  "M2": "Intercambio BC3 y Presto 8.8",
+  "M3": "Interfaz e informes",
+  "M4": "Subcontratas y control de costes",
+  "M5": "MCP, eXpertis y publicación"
+ },
+ "tareas": [
+  {
+   "id": "P-001",
+   "titulo": "Crear repositorio GitHub y configurar la colaboración",
+   "hito": "M0",
+   "etiqueta": "documentacion",
+   "puntos": [
+    "Crear README, CONTRIBUTING, SECURITY y plantillas de Issues y Pull Requests.",
+    "Configurar permisos, revisores y GitHub Projects."
+   ],
+   "aceptacion": "repositorio preparado para recibir contribuciones externas.",
+   "prioridad": "P1-high",
+   "revision_tecnica": false,
+   "estado": "Revisión técnica",
+   "avance": "README, CONTRIBUTING, SECURITY, plantillas, CODEOWNERS y CI creados. Pendiente: tablero de GitHub Projects y protección de `main`."
+  },
+  {
+   "id": "P-002",
+   "titulo": "Evaluar IngePresupuestos",
+   "hito": "M0",
+   "etiqueta": "arquitectura",
+   "puntos": [
+    "Analizar código, base de datos, cálculos y sistema de informes.",
+    "Evaluar reutilización y compatibilidad GPL/Python/Rust."
+   ],
+   "aceptacion": "documento ADR con decisiones técnicas justificadas.",
+   "prioridad": "P1-high",
+   "revision_tecnica": false,
+   "estado": "Revisión técnica",
+   "avance": "ADR-0002 redactado. Pendiente: aprobación de la licencia por el responsable."
+  },
+  {
+   "id": "P-003",
+   "titulo": "Definir reglas de cálculo económico",
+   "hito": "M0",
+   "etiqueta": "costes",
+   "puntos": [
+    "Definir decimales, redondeos, importes, márgenes y rendimientos.",
+    "Preparar ejemplos de cálculo verificables."
+   ],
+   "aceptacion": "batería de pruebas económicas aprobada.",
+   "prioridad": "P0-critical",
+   "revision_tecnica": true,
+   "estado": "Revisión técnica",
+   "avance": "`docs/reglas-calculo.md` y pruebas en `ppto-core`. Pendiente: revisión técnica."
+  },
+  {
+   "id": "P-004",
+   "titulo": "Estudiar el estándar BC3",
+   "hito": "M0",
+   "etiqueta": "bc3",
+   "puntos": [
+    "Analizar FIEBDC-3/2024 y versiones históricas.",
+    "Estudiar compatibilidad con Presto 8.8."
+   ],
+   "aceptacion": "matriz de registros y archivos de prueba.",
+   "prioridad": "P1-high",
+   "revision_tecnica": false,
+   "estado": "En desarrollo",
+   "avance": "Borrador de `docs/bc3/matriz-registros.md`. Pendiente: contrastar con la especificación oficial y con exportaciones de Presto 8.8."
+  },
+  {
+   "id": "P-005",
+   "titulo": "Crear arquitectura Rust",
+   "hito": "M1",
+   "etiqueta": "arquitectura",
+   "puntos": [
+    "Crear Cargo workspace y módulos independientes.",
+    "Incorporar SQLite, migraciones y pruebas automáticas."
+   ],
+   "aceptacion": "compilación y pruebas mediante GitHub Actions.",
+   "prioridad": "P0-critical",
+   "revision_tecnica": false,
+   "estado": "Revisión técnica",
+   "avance": "Workspace `ppto-core`/`ppto-db`/`ppto-cli`, SQLite con migraciones y CI. Pendiente: primera ejecución de Actions en verde."
+  },
+  {
+   "id": "P-006",
+   "titulo": "Implementar partidas y precios descompuestos",
+   "hito": "M1",
+   "etiqueta": "costes",
+   "puntos": [
+    "Crear materiales, mano de obra, maquinaria y subcontratas.",
+    "Permitir descomposiciones jerárquicas y recursos reutilizables."
+   ],
+   "aceptacion": "cálculos correctos y detección de referencias circulares.",
+   "prioridad": "P0-critical",
+   "revision_tecnica": true,
+   "estado": "Revisión técnica",
+   "avance": "Prototipo con auxiliares jerárquicos, porcentajes y detección de ciclos."
+  },
+  {
+   "id": "P-007",
+   "titulo": "Desarrollar motor de mediciones",
+   "hito": "M1",
+   "etiqueta": "mediciones",
+   "puntos": [
+    "Mediciones por unidades, longitudes, superficies y volúmenes.",
+    "Fórmulas, subtotales y agrupaciones."
+   ],
+   "aceptacion": "cantidades reproducibles y validación de unidades.",
+   "prioridad": "P1-high",
+   "revision_tecnica": true,
+   "estado": "Revisión técnica",
+   "avance": "Prototipo con dimensiones, deducciones, subtotales, fórmulas y aviso de unidades."
+  },
+  {
+   "id": "P-008",
+   "titulo": "Implementar costes y precios de venta",
+   "hito": "M1",
+   "etiqueta": "costes",
+   "puntos": [
+    "Costes directos e indirectos.",
+    "Márgenes comerciales, recargos y descuentos.",
+    "Diferenciar margen sobre venta de recargo sobre coste."
+   ],
+   "aceptacion": "pruebas verificadas con margen del 30 %.",
+   "prioridad": "P1-high",
+   "revision_tecnica": true,
+   "estado": "Revisión técnica",
+   "avance": "Prototipo con CI, descuentos, margen sobre venta y recargo sobre coste (pruebas con 30 %)."
+  },
+  {
+   "id": "P-009",
+   "titulo": "Crear revisiones de presupuestos",
+   "hito": "M1",
+   "etiqueta": "versiones",
+   "puntos": [
+    "Guardar presupuesto original, variantes y revisiones.",
+    "Registrar modificaciones, usuarios y fechas."
+   ],
+   "aceptacion": "modificar R2 no altera R1.",
+   "prioridad": "P2-medium",
+   "revision_tecnica": false,
+   "estado": "Revisión técnica",
+   "avance": "Prototipo SQLite: revisiones como copias, bloqueo y auditoría; prueba «modificar R2 no altera R1»."
+  },
+  {
+   "id": "P-010",
+   "titulo": "Desarrollar importador BC3",
+   "hito": "M2",
+   "etiqueta": "bc3",
+   "puntos": [
+    "Leer conceptos, capítulos, descompuestos, mediciones y textos.",
+    "Detectar registros incorrectos y errores de importación."
+   ],
+   "aceptacion": "importación verificada con archivos de prueba FIEBDC.",
+   "prioridad": "P0-critical",
+   "revision_tecnica": false,
+   "estado": "Preparado",
+   "avance": null
+  },
+  {
+   "id": "P-011",
+   "titulo": "Desarrollar exportador BC3",
+   "hito": "M2",
+   "etiqueta": "bc3",
+   "puntos": [
+    "Generar archivos BC3 compatibles con FIEBDC.",
+    "Comprobar importación y exportación sucesivas."
+   ],
+   "aceptacion": "conservar estructura, mediciones, precios e importes.",
+   "prioridad": "P0-critical",
+   "revision_tecnica": false,
+   "estado": "Preparado",
+   "avance": null
+  },
+  {
+   "id": "P-012",
+   "titulo": "Validar compatibilidad con Presto 8.8",
+   "hito": "M2",
+   "etiqueta": "bc3",
+   "puntos": [
+    "Importar presupuestos reales autorizados.",
+    "Exportar y abrir nuevamente desde Presto.",
+    "Documentar las limitaciones de cada versión BC3."
+   ],
+   "aceptacion": "pruebas económicas y de mediciones satisfactorias.",
+   "prioridad": "P1-high",
+   "revision_tecnica": true,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-013",
+   "titulo": "Crear interfaz gráfica de escritorio",
+   "hito": "M3",
+   "etiqueta": "interfaz",
+   "puntos": [
+    "Tauri con tablas editables.",
+    "Árbol de capítulos, partidas y descompuestos.",
+    "Edición de mediciones, precios y recursos."
+   ],
+   "aceptacion": "gestionar un presupuesto sin utilizar herramientas de desarrollo.",
+   "prioridad": "P2-medium",
+   "revision_tecnica": false,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-014",
+   "titulo": "Crear motor de informes",
+   "hito": "M3",
+   "etiqueta": "informes",
+   "puntos": [
+    "Plantillas configurables.",
+    "Exportación PDF y Excel.",
+    "Filtros, columnas, agrupaciones y subtotales."
+   ],
+   "aceptacion": "cinco informes iniciales validados.",
+   "prioridad": "P2-medium",
+   "revision_tecnica": false,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-015",
+   "titulo": "Completar catálogo de informes",
+   "hito": "M3",
+   "etiqueta": "informes",
+   "puntos": [
+    "Implementar 14 informes:",
+    "1. Resumen de presupuesto por capítulos.",
+    "2. Presupuesto completo.",
+    "3. Presupuesto descompuesto.",
+    "4. Presupuesto ciego.",
+    "5. Mediciones detalladas.",
+    "6. Resumen de materiales.",
+    "7. Resumen de mano de obra.",
+    "8. Horas previstas por oficio.",
+    "9. Resumen de maquinaria.",
+    "10. Resumen de subcontratas.",
+    "11. Costes por capítulo.",
+    "12. Rentabilidad por partida.",
+    "13. Comparación de revisiones.",
+    "14. Necesidades de compra."
+   ],
+   "aceptacion": "todos los informes exportables y sus filtros comprobados.",
+   "prioridad": "P3-low",
+   "revision_tecnica": false,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-016",
+   "titulo": "Crear paquetes de trabajo",
+   "hito": "M4",
+   "etiqueta": "subcontratas",
+   "puntos": [
+    "Agrupar actividades de distintas partidas.",
+    "Definir los trabajos incluidos y excluidos.",
+    "Vincular mediciones y recursos."
+   ],
+   "aceptacion": "asociación y modificación de actividades sin alterar los descompuestos originales.",
+   "prioridad": "P2-medium",
+   "revision_tecnica": true,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-017",
+   "titulo": "Convertir mano de obra propia en subcontratación",
+   "hito": "M4",
+   "etiqueta": "subcontratas",
+   "puntos": [
+    "Sustituir costes de mano de obra propia por contratos externos.",
+    "Permitir contratación por m², ml, unidad o importe alzado.",
+    "Mantener intactos los costes originales.",
+    "Evitar duplicación de costes."
+   ],
+   "aceptacion": "simulación completa de suelo radiante validada.",
+   "prioridad": "P1-high",
+   "revision_tecnica": true,
+   "estado": "En desarrollo",
+   "avance": "Motor de escenarios con unidad o alzado y caso de suelo radiante. Pendiente: decisión sobre medios auxiliares, persistencia e interfaz."
+  },
+  {
+   "id": "P-018",
+   "titulo": "Informes de mano de obra y rendimientos",
+   "hito": "M4",
+   "etiqueta": "mano-de-obra",
+   "puntos": [
+    "Horas previstas y costes por oficio.",
+    "Rendimientos por unidad de producción.",
+    "Comparación entre ejecución propia y subcontratada.",
+    "Horas de personal liberadas por subcontratación."
+   ],
+   "aceptacion": "trazabilidad entre horas originales y actualizadas.",
+   "prioridad": "P2-medium",
+   "revision_tecnica": true,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-019",
+   "titulo": "Gestionar ofertas de subcontratistas",
+   "hito": "M4",
+   "etiqueta": "compras",
+   "puntos": [
+    "Registrar proveedores, ofertas y precios.",
+    "Comparar ofertas con diferentes unidades de contratación.",
+    "Registrar adjudicaciones."
+   ],
+   "aceptacion": "seleccionar una oferta sin modificar el presupuesto comercial original.",
+   "prioridad": "P3-low",
+   "revision_tecnica": true,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-020",
+   "titulo": "Desarrollar servidor MCP en Rust",
+   "hito": "M5",
+   "etiqueta": "mcp",
+   "puntos": [
+    "Consultar obras y presupuestos.",
+    "Buscar partidas y recursos.",
+    "Obtener mediciones y descompuestos.",
+    "Simular modificaciones económicas."
+   ],
+   "aceptacion": "operaciones de lectura y simulación verificadas.",
+   "prioridad": "P2-medium",
+   "revision_tecnica": false,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-021",
+   "titulo": "Incorporar modificaciones MCP seguras",
+   "hito": "M5",
+   "etiqueta": "seguridad",
+   "puntos": [
+    "Solicitar aprobación antes de modificar datos.",
+    "Registrar todas las operaciones.",
+    "Ejecutar cambios mediante transacciones SQLite."
+   ],
+   "aceptacion": "ninguna modificación sin autorización.",
+   "prioridad": "P2-medium",
+   "revision_tecnica": false,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-022",
+   "titulo": "Estudiar integración con eXpertis",
+   "hito": "M5",
+   "etiqueta": "expertis",
+   "puntos": [
+    "Identificar módulos y formatos de integración disponibles.",
+    "Definir correspondencia de obras, capítulos, partidas y recursos.",
+    "Analizar transferencia de costes, compras, subcontratas y mano de obra."
+   ],
+   "aceptacion": "documento de integración validado con el implantador de eXpertis.",
+   "prioridad": "P3-low",
+   "revision_tecnica": false,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-023",
+   "titulo": "Desarrollar exportador eXpertis",
+   "hito": "M5",
+   "etiqueta": "expertis",
+   "puntos": [
+    "Generar datos adaptados a las interfaces autorizadas.",
+    "Incorporar vista previa y validaciones.",
+    "Controlar duplicados, actualizaciones y errores."
+   ],
+   "aceptacion": "transferencia satisfactoria en un entorno de pruebas.",
+   "prioridad": "P3-low",
+   "revision_tecnica": false,
+   "estado": "Backlog",
+   "avance": null
+  },
+  {
+   "id": "P-024",
+   "titulo": "Publicar primera versión",
+   "hito": "M5",
+   "etiqueta": "documentacion",
+   "puntos": [
+    "Crear instalador Windows.",
+    "Publicar manual técnico y de usuario.",
+    "Preparar ejemplos de presupuestos BC3.",
+    "Incorporar pruebas automáticas y notas de versión."
+   ],
+   "aceptacion": "primera versión reproducible y descargable desde GitHub.",
+   "prioridad": "P3-low",
+   "revision_tecnica": false,
+   "estado": "Backlog",
+   "avance": null
+  }
+ ]
+}
