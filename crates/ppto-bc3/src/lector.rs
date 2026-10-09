@@ -387,6 +387,11 @@ impl Lector {
             m.lineas.extend(lineas);
             return;
         }
+        if lineas.is_empty() {
+            // Presto 8.8 escribe ~M con solo el total cuando la partida no tiene
+            // líneas de medición: la cantidad ya está en el ~D, no hay hoja que importar.
+            return;
+        }
         self.mediciones.push(MedicionBc3 {
             padre,
             hijo,

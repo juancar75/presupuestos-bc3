@@ -251,3 +251,24 @@ fn costes_indirectos_del_k_se_aplican_por_partida() {
     assert_eq!(imp.pem_declarado, Some(dec!(10157.37)));
     assert!(imp.discrepancias.is_empty(), "{:?}", imp.discrepancias);
 }
+
+#[test]
+fn estructura_real_de_presto_8_8() {
+    // Réplica sintética de la estructura exacta de un BC3 exportado por Presto 8.8:
+    // ~V sin fecha, ~K con decimales antiguos y solo CI, ~E vacío, ~M con total y sin líneas.
+    let imp = importar_fichero(datos("presto88-minimo.bc3")).unwrap();
+    assert_eq!(imp.cabecera.programa, "Presto 8.8");
+    assert_eq!(imp.cabecera.version_formato, "FIEBDC-3/2002");
+    assert_eq!(imp.porcentajes.costes_indirectos, Some(dec!(0)));
+    assert_eq!(imp.errores(), 0, "{:#?}", imp.incidencias);
+    assert_eq!(imp.avisos(), 0, "{:#?}", imp.incidencias);
+    assert!(imp.discrepancias.is_empty());
+    assert_eq!(imp.presupuesto.pem().unwrap(), dec!(155.00));
+    assert_eq!(imp.pem_declarado, Some(dec!(155.00)));
+    // ~M sin líneas no crea hoja de medición
+    assert!(imp.presupuesto.mediciones.is_empty());
+    assert_eq!(
+        imp.presupuesto.concepto("O01").unwrap().naturaleza,
+        ppto_core::concepto::Naturaleza::ManoObra
+    );
+}

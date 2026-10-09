@@ -40,6 +40,25 @@
 | Referencias circulares | Se elimina la última relación del ciclo y se informa como error | decisión de diseño |
 | Números | Punto decimal; se acepta coma si no hay punto; notación científica admitida | conforme |
 
+## Lo observado en exportaciones reales de Presto 8.8
+
+Primer fichero real contrastado (09-10-2026, presupuesto pequeño de prueba;
+no se sube al repositorio, se reproduce su estructura en
+`tests/datos/presto88-minimo.bc3`). Resultado: 0 errores, 0 precios que no
+cuadran, PEM idéntico.
+
+| Aspecto | Presto 8.8 |
+|---|---|
+| `~V` | `SOFT S.A.|FIEBDC-3/2002|Presto 8.8||ANSI|` — versión sin fecha, rótulo vacío, **ANSI** |
+| Fin de línea | CRLF |
+| `~K` | `|\2\2\3\2\2\2\2\EUR\|0|` — decimales en formato antiguo (DN vacío, DD 2, DS 2, DR 3, DI 2, DP 2, DC 2, DM 2, divisa EUR) y **solo CI** en el segundo campo |
+| `~C` | Precio y fecha `DDMMAA` en todos; tipo `0` en capítulos y partidas, `1` mano de obra, `3` material; unidad vacía si no se rellenó |
+| `~E` | Presente aunque esté vacío |
+| `~M` | **Se escribe aunque la partida no tenga líneas**: solo posición y total (`~M|01#\E01|1\1\|1||`). El importador no crea hoja de medición en ese caso |
+
+Pendiente con un presupuesto real mayor: porcentajes (`%`), costes
+indirectos ≠ 0, auxiliares, mediciones con líneas y textos.
+
 ## Comprobación de precios («precios que no cuadran»)
 
 Tras importar se recalcula todo con `ppto-core` y se compara el precio de
@@ -63,7 +82,8 @@ Ficheros en `crates/ppto-bc3/tests/datos/`, **todos sintéticos**:
 | `utf8.bc3` | Juego de caracteres UTF-8 con ñ, ü, «», € | ✅ |
 | (generado en la prueba) | 4.000 partidas, 491 KB: importación y recálculo en < 0,1 s (release) | ✅ |
 | (generado en la prueba) | Truncado en cada byte y bytes alterados: nunca bloquea | ✅ |
-| `presto88-export-*.bc3` | Exportaciones reales de Presto 8.8 (datos sintéticos o autorizados) | **pendiente: P-012** |
+| `presto88-minimo.bc3` | Estructura exacta de una exportación real de Presto 8.8 | ✅ |
+| Presupuesto real mayor de Presto 8.8 | Porcentajes, CI, auxiliares, mediciones | **pendiente: P-012** |
 
 Criterio de aceptación de ida y vuelta (P-011): importar → exportar → importar
 debe dar el mismo `Presupuesto` y el mismo PEM al céntimo.
