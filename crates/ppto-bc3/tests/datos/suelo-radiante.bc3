@@ -1,0 +1,23 @@
+~V|SINTETICO|FIEBDC-3/2020\09102026|presupuestos-bc3 (pruebas)|Vivienda tipo (sintético)|ANSI||2|||
+~K|\2\3\3\2\2\2\2\EUR\|0\13\6\0\21|3\2\2\3\2\2\2\2\2\2\2\2\2\EUR\|0|
+~C|OBRA##||Vivienda tipo (sintético)|7005.15|091026|0|
+~D|OBRA##|C01\1\1\|
+~C|C01#||Calefacción por suelo radiante|7005.15|091026|0|
+~D|C01#|SR.M2\1\210\SR.COL8\1\3\|
+~C|SR.M2|m2|Suelo radiante con panel de tetones y tubo PE-RT 16×2|29.89|091026|0|
+~D|SR.M2|MT.PANEL\1\1.05\MT.TUBO16\1\7\MT.BANDA\1\0.4\MO.OF1F\1\0.25\MO.AYUF\1\0.25\%MA\1\2\|
+~T|SR.M2|Sistema de calefacción por suelo radiante formado por panel aislante de tetones,
+tubo PE-RT 16×2 mm y banda perimetral. Incluye prueba de estanqueidad.|
+~C|%MA|%|Medios auxiliares|0.01|091026|0|
+~C|SR.COL8|ud|Colector de 8 vías instalado y conexionado|242.75|091026|0|
+~D|SR.COL8|MT.COL8\1\1\MO.OF1F\1\1.5\MO.AYUF\1\1\|
+~C|MO.OF1F|h|Oficial 1ª instalador de calefacción|24.5|091026|1|
+~C|MO.AYUF|h|Ayudante instalador de calefacción|21|091026|1|
+~C|MT.PANEL|m2|Panel aislante de tetones EPS 30 mm|9.5|091026|3|
+~C|MT.TUBO16|m|Tubo PE-RT 16×2 mm con barrera de oxígeno|1.1|091026|3|
+~C|MT.BANDA|m|Banda perimetral de espuma|0.6|091026|3|
+~C|MT.COL8|ud|Colector de 8 vías con caudalímetros|185|091026|3|
+~M|C01#\SR.M2|1\1\|210|\Planta baja\1\12.5\8\\\Planta primera\1\12.5\8\\\Baños\2\3.2\2.5\\\A deducir hueco de escalera\-1\2\3\\|
+~M|C01#\SR.COL8|1\2\|3|\Planta baja\2\\\\\Planta primera\1\\\\|
+~L|SR.M2|Pliego de condiciones de ejemplo|
+

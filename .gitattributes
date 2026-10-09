@@ -1,0 +1,5 @@
+# Los BC3 de prueba deben llegar byte a byte (cp1252, CRLF): no convertir.
+*.bc3 binary
+*.BC3 binary
+# Scripts de Windows con CRLF
+*.bat text eol=crlf
