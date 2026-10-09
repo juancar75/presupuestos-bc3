@@ -1,0 +1,22 @@
+[package]
+name = "ppto-cli"
+description = "Línea de órdenes de demostración y verificación del motor económico"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ppto"
+path = "src/main.rs"
+
+[dependencies]
+ppto-core.workspace = true
+ppto-db.workspace = true
+rust_decimal.workspace = true
+rust_decimal_macros.workspace = true
+
+[lints]
+workspace = true

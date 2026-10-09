@@ -1,0 +1,18 @@
+[package]
+name = "ppto-core"
+description = "Modelo de datos y motor económico: conceptos, precios descompuestos, mediciones, costes, venta y subcontratación"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+rust_decimal.workspace = true
+rust_decimal_macros.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

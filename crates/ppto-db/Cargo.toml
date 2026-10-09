@@ -1,0 +1,21 @@
+[package]
+name = "ppto-db"
+description = "Persistencia SQLite con migraciones, revisiones inmutables y auditoría"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ppto-core.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+rust_decimal.workspace = true
+rust_decimal_macros.workspace = true
+
+[lints]
+workspace = true
