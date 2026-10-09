@@ -1,0 +1,16 @@
+# Revisores obligatorios por área. Sustituir/añadir usuarios a medida que se
+# incorporen mantenedores y revisores técnicos.
+*                               @juancar75
+
+# Cálculo económico: revisión técnica de ingeniería y presupuestación
+/crates/ppto-core/               @juancar75
+/docs/reglas-calculo.md          @juancar75
+/docs/casos-validacion/          @juancar75
+
+# Esquema de datos e integridad
+/crates/ppto-db/migrations/      @juancar75
+
+# Licencias y decisiones
+/LICENSE                         @juancar75
+/docs/adr/                       @juancar75
+/deny.toml                       @juancar75

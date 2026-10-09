@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Vulnerabilidad de seguridad
+    url: https://github.com/juancar75/presupuestos-bc3/security/advisories/new
+    about: Informa en privado, nunca en una Issue pública.

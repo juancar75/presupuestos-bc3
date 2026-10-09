@@ -1,0 +1,32 @@
+name: Validación de ingeniería
+description: Propón o revisa una regla de cálculo, un caso de prueba o un criterio de presupuestación (no hace falta programar)
+labels: ["needs-engineering-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Usa solo **datos ficticios**. Puedes adjuntar una hoja de cálculo; la convertiremos en prueba automática.
+  - type: textarea
+    id: regla
+    attributes:
+      label: Regla o situación
+      description: P. ej. «los medios auxiliares deben recalcularse al subcontratar la mano de obra».
+    validations:
+      required: true
+  - type: textarea
+    id: ejemplo
+    attributes:
+      label: Ejemplo numérico resuelto a mano
+      description: Datos de entrada, operaciones y resultado con sus redondeos.
+    validations:
+      required: true
+  - type: textarea
+    id: referencia
+    attributes:
+      label: Referencia
+      description: Norma, práctica habitual, comportamiento de Presto u otro programa.
+  - type: input
+    id: autor
+    attributes:
+      label: Perfil del revisor
+      placeholder: Ingeniero/a de instalaciones, jefe/a de estudios, aparejador/a…

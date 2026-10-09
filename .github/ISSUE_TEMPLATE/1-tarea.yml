@@ -1,0 +1,36 @@
+name: Tarea de desarrollo
+description: Nueva funcionalidad o tarea del backlog
+labels: []
+body:
+  - type: input
+    id: id
+    attributes:
+      label: Identificador del backlog
+      placeholder: P-0NN (dejar vacío si es nueva)
+  - type: textarea
+    id: objetivo
+    attributes:
+      label: Objetivo
+      description: Qué problema de presupuestación resuelve.
+    validations:
+      required: true
+  - type: textarea
+    id: alcance
+    attributes:
+      label: Alcance
+      description: Lista de trabajos incluidos.
+    validations:
+      required: true
+  - type: textarea
+    id: aceptacion
+    attributes:
+      label: Criterio de aceptación
+      description: Comprobaciones objetivas. Si hay cálculos, incluye un ejemplo numérico.
+    validations:
+      required: true
+  - type: checkboxes
+    id: revision
+    attributes:
+      label: Revisión técnica
+      options:
+        - label: Afecta a mediciones, costes, márgenes, rendimientos o redondeos (requiere `needs-engineering-review`)

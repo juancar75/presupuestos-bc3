@@ -1,0 +1,7 @@
+/target
+*.sqlite
+*.sqlite-journal
+*.db
+# Nunca subir presupuestos reales
+/privado/
+*.privado.bc3

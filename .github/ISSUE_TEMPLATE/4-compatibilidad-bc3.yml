@@ -1,0 +1,30 @@
+name: Compatibilidad BC3 / Presto
+description: Diferencias al importar o exportar BC3 con Presto u otro programa
+labels: ["bc3"]
+body:
+  - type: input
+    id: programa
+    attributes:
+      label: Programa y versión
+      placeholder: Presto 8.8, Arquímedes 2026…
+    validations:
+      required: true
+  - type: dropdown
+    id: sentido
+    attributes:
+      label: Sentido
+      options: ["Importar en presupuestos-bc3", "Abrir en Presto lo exportado por presupuestos-bc3", "Ida y vuelta"]
+    validations:
+      required: true
+  - type: textarea
+    id: diferencia
+    attributes:
+      label: Diferencia observada
+      description: Registro afectado (~C, ~D, ~M, ~K…), valor esperado y obtenido.
+    validations:
+      required: true
+  - type: textarea
+    id: fichero
+    attributes:
+      label: Fichero BC3 mínimo
+      description: Adjunta un BC3 sintético mínimo que reproduzca el problema.

@@ -1,0 +1,33 @@
+name: Error
+description: Algo calcula, importa o muestra mal
+labels: []
+body:
+  - type: textarea
+    id: que
+    attributes:
+      label: Qué ocurre
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: Qué debería ocurrir
+      description: Si es un importe, indica el cálculo correcto paso a paso.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducir
+    attributes:
+      label: Cómo reproducirlo
+      description: Pasos y fichero de ejemplo con DATOS SINTÉTICOS (nunca presupuestos de clientes).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versión o commit
+  - type: dropdown
+    id: so
+    attributes:
+      label: Sistema operativo
+      options: [Windows, Linux, macOS]
