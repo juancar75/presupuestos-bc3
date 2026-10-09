@@ -5,6 +5,17 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- `ppto-gui`: interfaz de escritorio básica (prototipo de P-013): árbol de
+  capítulos, descompuesto y mediciones editables con recálculo inmediato,
+  recursos con precios editables, comparación de ofertas de subcontrata,
+  resumen PEM→PEC y precio de venta por margen; abrir y guardar revisiones
+  en SQLite.
+- `ppto-core`: `actualizar_medicion`, `fijar_rendimiento`, `fijar_precio` y
+  módulo `formato` (lectura y escritura de números en notación española).
+- `ppto-db`: `listar_revisiones` y `siguiente_etiqueta`.
+- `scripts/windows/`: accesos directos para abrir la interfaz y ejecutar pruebas.
+
 ## [0.1.0-alpha.1] — 2026-10-09
 
 ### Añadido

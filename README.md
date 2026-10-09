@@ -5,8 +5,8 @@ mercado español, con intercambio **BC3 / FIEBDC-3**, motor económico
 verificable, control de costes y subcontratación, informes configurables e
 integración **MCP**.
 
-> **Estado: prototipo (v0.1.0-alpha.1).** Motor económico y persistencia
-> SQLite funcionando y probados; BC3, interfaz, informes y MCP en desarrollo.
+> **Estado: prototipo (v0.1.0-alpha.1).** Motor económico, persistencia
+> SQLite e interfaz básica funcionando; BC3, informes y MCP en desarrollo.
 > No usar todavía para presupuestos reales.
 
 ## Qué hace hoy
@@ -38,6 +38,17 @@ ESCENARIOS DE SUBCONTRATACIÓN DEL MONTAJE
 
 Cada cifra está calculada a mano en
 [`docs/casos-validacion/suelo-radiante.md`](docs/casos-validacion/suelo-radiante.md).
+
+## Interfaz de escritorio (prototipo)
+
+```console
+cargo run --release -p ppto-gui
+```
+
+En Windows basta con hacer doble clic en `scripts\windows\abrir-interfaz.bat`.
+Permite editar mediciones, rendimientos y precios del ejemplo (o de un
+`.sqlite` guardado) y ver al momento el PEM, los recursos, la comparación de
+ofertas de subcontrata y el resumen. Todavía no importa BC3.
 
 ## Hoja de ruta
 
