@@ -1244,6 +1244,10 @@ impl Aplicacion {
             let mut o = self.p.opciones_ci;
             ui.checkbox(&mut o.redondear_coste_antes, "Redondear coste antes de aplicarlos");
             ui.checkbox(&mut o.aplicar_a_sin_descomponer, "Aplicar a partidas sin descomponer");
+            ui.checkbox(
+                &mut o.redondear_auxiliares,
+                "Redondear partidas que actúan como auxiliares",
+            );
             if o != self.p.opciones_ci {
                 acciones.push(Accion::OpcionesCi(o));
             }

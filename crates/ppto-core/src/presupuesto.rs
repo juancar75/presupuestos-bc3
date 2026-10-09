@@ -47,6 +47,11 @@ pub struct OpcionesCi {
     /// Aplicar indirectos también a partidas sin descomposición.
     /// (Presto: casilla «No aplicar costes indirectos a partidas sin descomponer» desmarcada.)
     pub aplicar_a_sin_descomponer: bool,
+    /// Redondear el precio de las partidas cuando se usan como auxiliares dentro
+    /// de otras. (Presto: casilla «Redondear partidas que actúan como auxiliares»,
+    /// desmarcada por defecto: se usa el precio sin redondear.)
+    #[serde(default)]
+    pub redondear_auxiliares: bool,
 }
 
 impl Default for OpcionesCi {
@@ -54,6 +59,7 @@ impl Default for OpcionesCi {
         Self {
             redondear_coste_antes: true,
             aplicar_a_sin_descomponer: true,
+            redondear_auxiliares: false,
         }
     }
 }
@@ -255,6 +261,7 @@ impl Presupuesto {
                 lineas.insert(codigo.clone(), self.lineas_rec(codigo, &mut cache)?);
             }
         }
+        cache.retain(|k, _| !k.starts_with('\u{1}'));
         let pem = cache.get(&self.raiz).copied().unwrap_or_default();
         let coste_directo = if self.costes_indirectos.is_zero() {
             pem
@@ -352,6 +359,17 @@ impl Presupuesto {
         Ok(p)
     }
 
+    /// Precio de un auxiliar sin redondear (suma exacta de sus importes de línea).
+    fn precio_bruto(&self, codigo: &str, cache: &mut HashMap<String, Decimal>) -> Result<Decimal, ErrorMotor> {
+        let clave = format!("\u{1}bruto\u{1}{codigo}");
+        if let Some(p) = cache.get(&clave) {
+            return Ok(*p);
+        }
+        let p: Decimal = self.lineas_rec(codigo, cache)?.iter().map(|l| l.importe).sum();
+        cache.insert(clave, p);
+        Ok(p)
+    }
+
     pub(crate) fn lineas_rec(
         &self,
         codigo: &str,
@@ -393,7 +411,11 @@ impl Presupuesto {
                 }
             } else {
                 let cantidad = redondear(l.cantidad(), d.rendimiento);
-                let precio = self.precio_rec(&l.hijo, cache)?;
+                let precio = if hijo.naturaleza == Naturaleza::Partida && !self.opciones_ci.redondear_auxiliares {
+                    self.precio_bruto(&l.hijo, cache)?
+                } else {
+                    self.precio_rec(&l.hijo, cache)?
+                };
                 LineaValorada {
                     hijo: l.hijo.clone(),
                     naturaleza: hijo.naturaleza,
@@ -498,6 +520,27 @@ mod tests {
         assert_eq!(p.precio("P").unwrap(), dec!(125.66));
         assert_eq!(mascara_porcentaje("%MA"), "");
         assert_eq!(mascara_porcentaje("MO&PERD"), "MO");
+    }
+
+    #[test]
+    fn auxiliares_sin_redondear_por_defecto_como_presto() {
+        // Auxiliar A con importes de línea a 4 decimales: 1 × 10,0040 → bruto 10,0040, redondeado 10,00.
+        // Partida P usa 10 ud de A: sin redondear 100,04; redondeando el auxiliar 100,00.
+        let mut p = Presupuesto::new("t", "OBRA", "Obra");
+        p.decimales.rendimiento = 4;
+        p.decimales.importe_linea = 4;
+        p.insertar(Concepto::basico("M", "ud", "m", Naturaleza::Material, dec!(10)))
+            .unwrap();
+        p.insertar(Concepto::partida("A", "ud", "aux", vec![L::new("M", dec!(1.0004))]))
+            .unwrap();
+        p.insertar(Concepto::partida("P", "ud", "p", vec![L::new("A", dec!(10))]))
+            .unwrap();
+        assert_eq!(p.precio("A").unwrap(), dec!(10.00));
+        assert_eq!(p.precio("P").unwrap(), dec!(100.04));
+        p.opciones_ci.redondear_auxiliares = true;
+        assert_eq!(p.precio("P").unwrap(), dec!(100.00));
+        // valorar() no expone claves internas
+        assert!(p.valorar().unwrap().precios.keys().all(|k| !k.starts_with('\u{1}')));
     }
 
     #[test]

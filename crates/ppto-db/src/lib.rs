@@ -46,6 +46,7 @@ pub struct InfoRevision {
 const MIGRACIONES: &[&str] = &[
     include_str!("../migrations/0001_esquema_inicial.sql"),
     include_str!("../migrations/0002_costes_indirectos.sql"),
+    include_str!("../migrations/0003_redondear_auxiliares.sql"),
 ];
 
 pub struct Almacen {
@@ -105,8 +106,8 @@ impl Almacen {
         tx.execute(
             "INSERT INTO revisiones (presupuesto_id, etiqueta, autor, nombre, raiz,
                 dec_dimensiones, dec_medicion, dec_rendimiento, dec_importe_linea, dec_precio, dec_importe,
-                costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer, redondear_auxiliares)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 presupuesto_id,
                 etiqueta,
@@ -121,7 +122,8 @@ impl Almacen {
                 d.importe,
                 p.costes_indirectos.to_string(),
                 p.opciones_ci.redondear_coste_antes,
-                p.opciones_ci.aplicar_a_sin_descomponer
+                p.opciones_ci.aplicar_a_sin_descomponer,
+                p.opciones_ci.redondear_auxiliares
             ],
         )?;
         let rev = tx.last_insert_rowid();
@@ -137,10 +139,10 @@ impl Almacen {
         let n = tx.execute(
             "INSERT INTO revisiones (presupuesto_id, etiqueta, revision_origen_id, autor, nombre, raiz,
                 dec_dimensiones, dec_medicion, dec_rendimiento, dec_importe_linea, dec_precio, dec_importe,
-                costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer)
+                costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer, redondear_auxiliares)
              SELECT presupuesto_id, ?2, id, ?3, nombre, raiz,
                 dec_dimensiones, dec_medicion, dec_rendimiento, dec_importe_linea, dec_precio, dec_importe,
-                costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer
+                costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer, redondear_auxiliares
              FROM revisiones WHERE id = ?1",
             params![origen, etiqueta, autor],
         )?;
@@ -209,7 +211,8 @@ impl Almacen {
             .query_row(
                 "SELECT nombre, raiz, dec_dimensiones, dec_medicion, dec_rendimiento,
                         dec_importe_linea, dec_precio, dec_importe,
-                        costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer
+                        costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer,
+                        redondear_auxiliares
                  FROM revisiones WHERE id = ?1",
                 [rev],
                 |r| {
@@ -224,7 +227,12 @@ impl Almacen {
                             precio: r.get(6)?,
                             importe: r.get(7)?,
                         },
-                        (r.get::<_, String>(8)?, r.get::<_, bool>(9)?, r.get::<_, bool>(10)?),
+                        (
+                            r.get::<_, String>(8)?,
+                            r.get::<_, bool>(9)?,
+                            r.get::<_, bool>(10)?,
+                            r.get::<_, bool>(11)?,
+                        ),
                     ))
                 },
             )
@@ -319,12 +327,13 @@ impl Almacen {
             });
         }
 
-        let (ci_txt, redondear_coste_antes, aplicar_a_sin_descomponer) = ci;
+        let (ci_txt, redondear_coste_antes, aplicar_a_sin_descomponer, redondear_auxiliares) = ci;
         Ok(Presupuesto {
             costes_indirectos: dec_de(&ci_txt)?,
             opciones_ci: OpcionesCi {
                 redondear_coste_antes,
                 aplicar_a_sin_descomponer,
+                redondear_auxiliares,
             },
             nombre,
             decimales,
@@ -621,6 +630,7 @@ mod tests {
         let mut p = suelo_radiante();
         p.costes_indirectos = dec!(45);
         p.opciones_ci.aplicar_a_sin_descomponer = false;
+        p.opciones_ci.redondear_auxiliares = true;
         let r1 = a.guardar_revision(id, "R1", "j", &p).unwrap();
         let r2 = a.derivar_revision(r1, "R2", "j").unwrap();
         for r in [r1, r2] {
