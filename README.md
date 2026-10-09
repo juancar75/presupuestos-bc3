@@ -51,6 +51,16 @@ recalcula todos los precios para señalar los que **no cuadran** con lo que
 declara el fichero. También desde la interfaz: botón «Importar BC3…».
 Criterios de interpretación en [`docs/bc3/matriz-registros.md`](docs/bc3/matriz-registros.md).
 
+## Informe Excel
+
+```console
+cargo run -p ppto-cli -- importar presupuesto.bc3 --excel presupuesto.xlsx
+```
+
+Seis hojas: resumen por capítulos (coste directo, indirectos, PEM, GG, BI,
+IVA), presupuesto, descompuestos, mediciones, recursos y horas por oficio.
+También con el botón «Excel…» de la interfaz.
+
 ## Interfaz de escritorio (prototipo)
 
 ```console

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ppto-core", "crates/ppto-db", "crates/ppto-cli", "crates/ppto-gui", "crates/ppto-bc3"]
+members = ["crates/ppto-core", "crates/ppto-db", "crates/ppto-cli", "crates/ppto-gui", "crates/ppto-bc3", "crates/ppto-informes"]
 
 [workspace.package]
 version = "0.1.0-alpha.1"
@@ -19,6 +19,7 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 ppto-core = { path = "crates/ppto-core" }
 ppto-db = { path = "crates/ppto-db" }
 ppto-bc3 = { path = "crates/ppto-bc3" }
+ppto-informes = { path = "crates/ppto-informes" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

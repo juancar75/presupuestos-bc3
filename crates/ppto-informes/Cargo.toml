@@ -1,6 +1,6 @@
 [package]
-name = "ppto-cli"
-description = "Línea de órdenes de demostración y verificación del motor económico"
+name = "ppto-informes"
+description = "Informes del presupuesto: Excel (y más adelante PDF)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,16 +8,13 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
-[[bin]]
-name = "ppto"
-path = "src/main.rs"
-
 [dependencies]
 ppto-core.workspace = true
-ppto-db.workspace = true
-ppto-bc3.workspace = true
-ppto-informes.workspace = true
+rust_xlsxwriter = "0.99"
 rust_decimal.workspace = true
+
+[dev-dependencies]
+calamine = "0.36"
 rust_decimal_macros.workspace = true
 
 [lints]

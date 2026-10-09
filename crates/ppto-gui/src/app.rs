@@ -266,6 +266,31 @@ impl Aplicacion {
         None
     }
 
+    fn exportar_excel(&mut self) {
+        let nombre = format!(
+            "{}.xlsx",
+            self.p
+                .nombre
+                .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
+        );
+        let Some(ruta) = rfd::FileDialog::new()
+            .add_filter("Excel", &["xlsx"])
+            .set_file_name(nombre)
+            .save_file()
+        else {
+            return;
+        };
+        let o = ppto_informes::OpcionesInforme {
+            gastos_generales: self.gg,
+            beneficio_industrial: self.bi,
+            iva: self.iva,
+        };
+        match ppto_informes::guardar_excel(&self.p, &o, &ruta) {
+            Ok(()) => self.info(format!("Informe Excel guardado en {}", ruta.display())),
+            Err(e) => self.error(format!("No se pudo generar el Excel: {e}")),
+        }
+    }
+
     fn dialogo_importar(&mut self) {
         if let Some(ruta) = rfd::FileDialog::new()
             .add_filter("FIEBDC-3 (BC3)", &["bc3", "BC3"])
@@ -550,6 +575,13 @@ impl Aplicacion {
                 .clicked()
             {
                 self.dialogo_importar();
+            }
+            if ui
+                .button("📊 Excel…")
+                .on_hover_text("Resumen, presupuesto, descompuestos, mediciones, recursos y horas por oficio")
+                .clicked()
+            {
+                self.exportar_excel();
             }
             if self.informe.is_some() && ui.button("Informe de importación").clicked() {
                 self.ver_informe = true;

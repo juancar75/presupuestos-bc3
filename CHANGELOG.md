@@ -6,6 +6,11 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- `ppto-informes`: libro Excel con Resumen, Presupuesto (agrupado por
+  capítulos), Descompuestos, Mediciones, Recursos y Horas por oficio,
+  preparado para imprimir en A4. `ppto demo|importar … --excel f.xlsx` y
+  botón «Excel…» en la interfaz. Cifras del motor, sin fórmulas de Excel.
+- Opción «Redondear partidas que actúan como auxiliares» (Presto; desmarcada).
 - Costes indirectos de obra aplicados por partida, con las opciones de
   redondeo de Presto; PEM con indirectos y coste directo por separado. Se
   leen del `~K` del BC3, se guardan en SQLite (migración 2) y se editan en
