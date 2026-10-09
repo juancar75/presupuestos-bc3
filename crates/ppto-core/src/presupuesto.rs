@@ -31,6 +31,16 @@ pub struct Presupuesto {
     pub mediciones: BTreeMap<(String, String), Medicion>,
 }
 
+/// Resultado de valorar el presupuesto completo.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Valoracion {
+    /// Precio unitario de cada concepto (total, si es capítulo).
+    pub precios: HashMap<String, Decimal>,
+    /// Líneas valoradas de cada concepto con descomposición.
+    pub lineas: HashMap<String, Vec<LineaValorada>>,
+    pub pem: Decimal,
+}
+
 /// Una línea de descomposición ya valorada.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LineaValorada {
@@ -191,6 +201,27 @@ impl Presupuesto {
         self.validar()?;
         let mut cache = HashMap::new();
         self.precio_rec(codigo, &mut cache)
+    }
+
+    /// Valora todo el presupuesto de una vez (una sola validación y una caché
+    /// compartida). Es la forma eficiente de obtener precios y líneas de
+    /// presupuestos grandes; `precio` y `lineas_valoradas` valoran uno a uno.
+    pub fn valorar(&self) -> Result<Valoracion, ErrorMotor> {
+        self.validar()?;
+        let mut cache = HashMap::with_capacity(self.conceptos.len());
+        let mut lineas = HashMap::new();
+        for (codigo, c) in &self.conceptos {
+            self.precio_rec(codigo, &mut cache)?;
+            if !c.descomposicion.is_empty() {
+                lineas.insert(codigo.clone(), self.lineas_rec(codigo, &mut cache)?);
+            }
+        }
+        let pem = cache.get(&self.raiz).copied().unwrap_or_default();
+        Ok(Valoracion {
+            precios: cache,
+            lineas,
+            pem,
+        })
     }
 
     /// Presupuesto de ejecución material (total del concepto raíz).

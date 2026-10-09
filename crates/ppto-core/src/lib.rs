@@ -32,4 +32,5 @@ pub use decimales::{Decimales, redondear};
 pub use error::ErrorMotor;
 pub use medicion::{LineaMedicion, Medicion, TipoLinea};
 pub use presupuesto::Presupuesto;
+pub use presupuesto::Valoracion;
 pub use rust_decimal::Decimal;
