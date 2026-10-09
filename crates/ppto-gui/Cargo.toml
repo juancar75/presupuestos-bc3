@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 ppto-core.workspace = true
 ppto-db.workspace = true
+ppto-bc3.workspace = true
 rust_decimal.workspace = true
 rust_decimal_macros.workspace = true
 eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }

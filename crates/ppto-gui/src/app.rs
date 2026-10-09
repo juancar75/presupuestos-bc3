@@ -35,6 +35,7 @@ enum Accion {
     Medicion(String, String, Medicion),
     Resumen(String, String),
     QuitarOferta(usize),
+    Ir(String),
 }
 
 /// Resultados del motor para el estado actual del presupuesto.
@@ -56,13 +57,10 @@ impl Calculo {
             return c;
         }
         let r: Result<(), ppto_core::ErrorMotor> = (|| {
-            for codigo in p.conceptos.keys() {
-                c.precios.insert(codigo.clone(), p.precio(codigo)?);
-                if !p.conceptos[codigo].descomposicion.is_empty() {
-                    c.lineas.insert(codigo.clone(), p.lineas_valoradas(codigo)?);
-                }
-            }
-            c.pem = p.pem()?;
+            let v = p.valorar()?;
+            c.precios = v.precios;
+            c.lineas = v.lineas;
+            c.pem = v.pem;
             c.cantidades = p.cantidades_partidas()?;
             c.explosion = Some(p.explosion_recursos()?);
             Ok(())
@@ -123,6 +121,8 @@ pub struct Aplicacion {
     margen: Decimal,
     ofertas: Vec<PaqueteTrabajo>,
     form: FormOferta,
+    informe: Option<ppto_bc3::Importacion>,
+    ver_informe: bool,
 }
 
 impl Aplicacion {
@@ -150,6 +150,8 @@ impl Aplicacion {
             margen: dec!(30),
             ofertas: ofertas_montaje_suelo_radiante().to_vec(),
             form: FormOferta::default(),
+            informe: None,
+            ver_informe: false,
         };
         app.recalcular();
         // Pestaña inicial (útil para capturas y pruebas): PPTO_GUI_PESTANA=recursos|subcontratar|resumen
@@ -160,7 +162,12 @@ impl Aplicacion {
             _ => Pestana::Partida,
         };
         if let Some(ruta) = inicial {
-            app.abrir(ruta);
+            let es_bc3 = ruta.extension().is_some_and(|e| e.eq_ignore_ascii_case("bc3"));
+            if es_bc3 {
+                app.importar_bc3(ruta)
+            } else {
+                app.abrir(ruta)
+            }
         }
         app
     }
@@ -237,6 +244,158 @@ impl Aplicacion {
             Ok(_) => self.error("El fichero no contiene ningún presupuesto."),
             Err(e) => self.error(format!("No se pudo abrir: {e}")),
         }
+    }
+
+    /// Primera partida del árbol (en profundidad), para no dejar la vista vacía.
+    fn primera_partida(&self, capitulo: &str) -> Option<(String, String)> {
+        for l in &self.p.conceptos.get(capitulo)?.descomposicion {
+            match self.p.conceptos.get(&l.hijo).map(|c| c.naturaleza) {
+                Some(Naturaleza::Capitulo) => {
+                    if let Some(r) = self.primera_partida(&l.hijo) {
+                        return Some(r);
+                    }
+                }
+                Some(_) => return Some((capitulo.to_owned(), l.hijo.clone())),
+                None => {}
+            }
+        }
+        None
+    }
+
+    fn dialogo_importar(&mut self) {
+        if let Some(ruta) = rfd::FileDialog::new()
+            .add_filter("FIEBDC-3 (BC3)", &["bc3", "BC3"])
+            .pick_file()
+        {
+            self.importar_bc3(ruta);
+        }
+    }
+
+    fn importar_bc3(&mut self, ruta: PathBuf) {
+        match ppto_bc3::importar_fichero(&ruta) {
+            Ok(imp) => {
+                self.p = imp.presupuesto.clone();
+                let k = &imp.porcentajes;
+                self.gg = k.gastos_generales.unwrap_or(self.gg);
+                self.bi = k.beneficio_industrial.unwrap_or(self.bi);
+                self.iva = k.iva.unwrap_or(self.iva);
+                self.fichero = None;
+                self.presupuesto_id = None;
+                self.revisiones.clear();
+                self.revision_actual = None;
+                self.cambios = true;
+                self.sel = None;
+                self.ofertas.clear();
+                self.avisos.clear();
+                self.recalcular();
+                self.sel = self.primera_partida(&self.p.raiz.clone());
+                let nombre = ruta
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                self.info(format!(
+                    "Importado {nombre}: {} conceptos, {} errores, {} avisos, {} precios que no cuadran. Guárdalo para conservarlo.",
+                    self.p.conceptos.len(),
+                    imp.errores(),
+                    imp.avisos(),
+                    imp.discrepancias.len()
+                ));
+                self.ver_informe = imp.errores() + imp.avisos() + imp.discrepancias.len() > 0;
+                self.informe = Some(imp);
+            }
+            Err(e) => self.error(format!("No se pudo importar: {e}")),
+        }
+    }
+
+    fn ventana_informe(&mut self, ctx: &egui::Context, acciones: &mut Vec<Accion>) {
+        let Some(imp) = &self.informe else { return };
+        let mut abierta = self.ver_informe;
+        egui::Window::new("Informe de importación BC3")
+            .open(&mut abierta)
+            .default_size([760.0, 520.0])
+            .show(ctx, |ui| {
+                let c = &imp.cabecera;
+                ui.label(format!(
+                    "{} · {} · {}",
+                    c.programa, c.version_formato, c.juego_caracteres
+                ));
+                let regs: Vec<String> = imp.registros.iter().map(|(k, v)| format!("~{k} {v}")).collect();
+                ui.label(RichText::new(regs.join("   ")).weak());
+                match imp.pem_declarado {
+                    Some(d) if d == self.calc.pem => {
+                        ui.label(
+                            RichText::new(format!("PEM {} € — coincide con el BC3", eur(d)))
+                                .color(Color32::from_rgb(70, 170, 90)),
+                        );
+                    }
+                    Some(d) => {
+                        ui.label(
+                            RichText::new(format!(
+                                "PEM calculado {} € · declarado {} € · diferencia {} €",
+                                eur(self.calc.pem),
+                                eur(d),
+                                eur(self.calc.pem - d)
+                            ))
+                            .color(Color32::from_rgb(220, 150, 40)),
+                        );
+                    }
+                    None => {}
+                }
+                ui.separator();
+                ui.label(
+                    RichText::new(format!(
+                        "Precios que no cuadran con el BC3: {}",
+                        imp.discrepancias.len()
+                    ))
+                    .strong(),
+                );
+                egui::ScrollArea::vertical()
+                    .id_salt("disc")
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        egui::Grid::new("discrepancias")
+                            .striped(true)
+                            .num_columns(5)
+                            .show(ui, |ui| {
+                                for t in ["Código", "Resumen", "Declarado", "Calculado", "Diferencia"] {
+                                    ui.label(RichText::new(t).weak());
+                                }
+                                ui.end_row();
+                                for d in imp.discrepancias.iter().take(500) {
+                                    let r = ui.add(egui::Button::new(&d.codigo).frame(false));
+                                    if r.clicked() {
+                                        acciones.push(Accion::Ir(d.codigo.clone()));
+                                    }
+                                    ui.label(corto(&d.resumen, 40));
+                                    ui.label(eur(d.declarado));
+                                    ui.label(eur(d.calculado));
+                                    ui.label(eur(d.diferencia()));
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                ui.separator();
+                ui.label(
+                    RichText::new(format!(
+                        "Incidencias: {} errores, {} avisos, {} en total",
+                        imp.errores(),
+                        imp.avisos(),
+                        imp.incidencias.len()
+                    ))
+                    .strong(),
+                );
+                egui::ScrollArea::vertical().id_salt("inc").show(ui, |ui| {
+                    for i in &imp.incidencias {
+                        let color = match i.gravedad {
+                            ppto_bc3::Gravedad::Error => Color32::from_rgb(220, 80, 60),
+                            ppto_bc3::Gravedad::Aviso => Color32::from_rgb(220, 150, 40),
+                            ppto_bc3::Gravedad::Info => Color32::GRAY,
+                        };
+                        ui.label(RichText::new(i.to_string().replace('→', "->")).color(color));
+                    }
+                });
+            });
+        self.ver_informe = abierta;
     }
 
     fn cambiar_revision(&mut self, id: i64) {
@@ -316,6 +475,19 @@ impl Aplicacion {
                     self.avisos.clear();
                     continue;
                 }
+                Accion::Ir(codigo) => {
+                    let padre = self
+                        .p
+                        .conceptos
+                        .values()
+                        .find(|c| c.descomposicion.iter().any(|l| l.hijo == codigo))
+                        .map(|c| c.codigo.clone());
+                    if let Some(padre) = padre {
+                        self.sel = Some((padre, codigo));
+                        self.pestana = Pestana::Partida;
+                    }
+                    continue;
+                }
                 Accion::QuitarOferta(i) => {
                     if i < self.ofertas.len() {
                         self.ofertas.remove(i);
@@ -355,6 +527,16 @@ impl Aplicacion {
             }
             if ui.button("📂 Abrir…").clicked() {
                 self.dialogo_abrir();
+            }
+            if ui
+                .button("📥 Importar BC3…")
+                .on_hover_text("Leer un presupuesto FIEBDC-3 (p. ej. exportado de Presto)")
+                .clicked()
+            {
+                self.dialogo_importar();
+            }
+            if self.informe.is_some() && ui.button("Informe de importación").clicked() {
+                self.ver_informe = true;
             }
             let txt_guardar = if self.fichero.is_some() {
                 "💾 Guardar revisión"
@@ -399,7 +581,7 @@ impl Aplicacion {
                 }
             }
             if self.cambios {
-                ui.label(RichText::new("● cambios sin guardar").color(Color32::from_rgb(220, 150, 40)));
+                ui.label(RichText::new("* cambios sin guardar").color(Color32::from_rgb(220, 150, 40)));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(RichText::new(format!("{} €", eur(self.calc.pem))).size(20.0).strong());
@@ -425,7 +607,7 @@ impl Aplicacion {
             if c.naturaleza == Naturaleza::Capitulo {
                 egui::CollapsingHeader::new(RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong())
                     .id_salt(("cap", capitulo, &l.hijo))
-                    .default_open(true)
+                    .default_open(self.calc.lineas.get(&l.hijo).is_none_or(|v| v.len() <= 40))
                     .show(ui, |ui| {
                         ui.label(RichText::new(format!("{} €", eur(l.importe))).weak());
                         self.rama(ui, &l.hijo, acciones);
@@ -1137,6 +1319,7 @@ impl eframe::App for Aplicacion {
         egui::Panel::bottom("estado").show(ui, |ui| {
             ui.horizontal(|ui| match (&self.calc.error, &self.mensaje) {
                 (Some(e), _) => {
+                    let e = e.replace('→', "->");
                     ui.label(RichText::new(format!("⚠ {e}")).color(Color32::from_rgb(220, 80, 60)));
                 }
                 (None, Some((m, true))) => {
@@ -1173,6 +1356,8 @@ impl eframe::App for Aplicacion {
                 Pestana::Resumen => self.pestana_resumen(ui),
             }
         });
+        let ctx = ui.ctx().clone();
+        self.ventana_informe(&ctx, &mut acciones);
         if !acciones.is_empty() {
             self.aplicar(acciones);
         }

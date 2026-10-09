@@ -4,6 +4,9 @@
 //! Uso:
 //!   ppto demo                 Imprime el caso sintético de suelo radiante.
 //!   ppto demo --db <fichero>  Además lo guarda en SQLite como revisión R1.
+//!   ppto importar <f.bc3> [--db <f.sqlite>] [--todo]
+//!                             Importa un BC3, informa de incidencias y de los
+//!                             precios que no cuadran; opcionalmente lo guarda.
 
 use ppto_core::concepto::Naturaleza;
 use ppto_core::ejemplos::{ofertas_montaje_suelo_radiante, suelo_radiante};
@@ -25,11 +28,101 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("importar") if args.len() >= 2 => {
+            let db = args.iter().position(|a| a == "--db").and_then(|i| args.get(i + 1));
+            let todo = args.iter().any(|a| a == "--todo");
+            match importar(&args[1], db.map(String::as_str), todo) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         _ => {
-            eprintln!("uso: ppto demo [--db <fichero.sqlite>]");
+            eprintln!(
+                "uso:\n  ppto demo [--db <fichero.sqlite>]\n  ppto importar <fichero.bc3> [--db <fichero.sqlite>] [--todo]"
+            );
             ExitCode::from(2)
         }
     }
+}
+
+fn importar(ruta: &str, db: Option<&str>, todo: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let imp = ppto_bc3::importar_fichero(ruta)?;
+    let p = &imp.presupuesto;
+    let c = &imp.cabecera;
+    println!("{ruta}");
+    println!(
+        "  Programa: {}  ·  Formato: {}  ·  Caracteres: {}",
+        c.programa, c.version_formato, c.juego_caracteres
+    );
+    let regs: Vec<String> = imp.registros.iter().map(|(k, v)| format!("~{k} {v}")).collect();
+    println!("  Registros: {}", regs.join("  "));
+    println!(
+        "  Conceptos: {}  ·  Mediciones: {}",
+        p.conceptos.len(),
+        p.mediciones.len()
+    );
+    let k = &imp.porcentajes;
+    let pc = |v: Option<Decimal>| v.map(|x| format!("{} %", num(x, 2))).unwrap_or_else(|| "—".into());
+    println!(
+        "  ~K: CI {}  GG {}  BI {}  baja {}  IVA {}",
+        pc(k.costes_indirectos),
+        pc(k.gastos_generales),
+        pc(k.beneficio_industrial),
+        pc(k.baja),
+        pc(k.iva)
+    );
+
+    let limite = if todo { usize::MAX } else { 25 };
+    println!(
+        "\nINCIDENCIAS: {} errores, {} avisos, {} en total",
+        imp.errores(),
+        imp.avisos(),
+        imp.incidencias.len()
+    );
+    for i in imp.incidencias.iter().take(limite) {
+        println!("  {i}");
+    }
+    if imp.incidencias.len() > limite {
+        println!("  … {} más (use --todo)", imp.incidencias.len() - limite);
+    }
+
+    println!("\nPRECIOS QUE NO CUADRAN CON EL BC3: {}", imp.discrepancias.len());
+    for d in imp.discrepancias.iter().take(limite) {
+        println!(
+            "  {:<14} declarado {:>12}  calculado {:>12}  diferencia {:>10}  {}",
+            d.codigo,
+            eur(d.declarado),
+            eur(d.calculado),
+            eur(d.diferencia()),
+            d.resumen.chars().take(40).collect::<String>()
+        );
+    }
+    if imp.discrepancias.len() > limite {
+        println!("  … {} más (use --todo)", imp.discrepancias.len() - limite);
+    }
+
+    let pem = p.pem()?;
+    match imp.pem_declarado {
+        Some(d) if d == pem => println!("\nPEM {} € (coincide con el BC3)", eur(pem)),
+        Some(d) => println!(
+            "\nPEM calculado {} €  ·  declarado en el BC3 {} €  ·  diferencia {} €",
+            eur(pem),
+            eur(d),
+            eur(pem - d)
+        ),
+        None => println!("\nPEM {} €", eur(pem)),
+    }
+
+    if let Some(ruta_db) = db {
+        let mut a = ppto_db::Almacen::abrir(ruta_db)?;
+        let id = a.crear_presupuesto(&p.nombre)?;
+        let rev = a.guardar_revision(id, "R1", "importación BC3", p)?;
+        println!("Guardado en {ruta_db} (presupuesto {id}, revisión {rev}).");
+    }
+    Ok(())
 }
 
 fn demo(db: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
