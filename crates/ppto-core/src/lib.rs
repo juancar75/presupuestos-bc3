@@ -21,6 +21,7 @@ pub mod decimales;
 pub mod ejemplos;
 pub mod error;
 pub mod explosion;
+pub mod formato;
 pub mod medicion;
 pub mod presupuesto;
 pub mod subcontrata;

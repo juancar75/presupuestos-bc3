@@ -30,6 +30,18 @@ pub enum ErrorDb {
 
 pub type Resultado<T> = Result<T, ErrorDb>;
 
+/// Datos de cabecera de una revisión guardada.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InfoRevision {
+    pub id: i64,
+    pub presupuesto_id: i64,
+    pub presupuesto: String,
+    pub etiqueta: String,
+    pub autor: String,
+    pub creado_en: String,
+    pub bloqueada: bool,
+}
+
 const MIGRACIONES: &[&str] = &[include_str!("../migrations/0001_esquema_inicial.sql")];
 
 pub struct Almacen {
@@ -304,6 +316,45 @@ impl Almacen {
         })
     }
 
+    /// Revisiones guardadas en el fichero, de la más antigua a la más reciente.
+    pub fn listar_revisiones(&self) -> Resultado<Vec<InfoRevision>> {
+        let mut st = self.con.prepare(
+            "SELECT r.id, r.presupuesto_id, p.nombre, r.etiqueta, r.autor, r.creado_en, r.bloqueada
+             FROM revisiones r JOIN presupuestos p ON p.id = r.presupuesto_id ORDER BY r.id",
+        )?;
+        let v = st
+            .query_map([], |r| {
+                Ok(InfoRevision {
+                    id: r.get(0)?,
+                    presupuesto_id: r.get(1)?,
+                    presupuesto: r.get(2)?,
+                    etiqueta: r.get(3)?,
+                    autor: r.get(4)?,
+                    creado_en: r.get(5)?,
+                    bloqueada: r.get::<_, i64>(6)? == 1,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(v)
+    }
+
+    /// Primera etiqueta «R<n>» libre para un presupuesto.
+    pub fn siguiente_etiqueta(&self, presupuesto_id: i64) -> Resultado<String> {
+        let mut n = 1;
+        loop {
+            let etiqueta = format!("R{n}");
+            let existe: i64 = self.con.query_row(
+                "SELECT COUNT(*) FROM revisiones WHERE presupuesto_id = ?1 AND etiqueta = ?2",
+                params![presupuesto_id, etiqueta],
+                |r| r.get(0),
+            )?;
+            if existe == 0 {
+                return Ok(etiqueta);
+            }
+            n += 1;
+        }
+    }
+
     /// Operaciones registradas para una revisión: (usuario, operación, detalle).
     pub fn auditoria(&self, rev: i64) -> Resultado<Vec<(String, String, String)>> {
         let mut st = self
@@ -527,6 +578,22 @@ mod tests {
             Err(ErrorDb::RevisionBloqueada(_))
         ));
         assert_eq!(a.cargar_revision(r1).unwrap(), suelo_radiante());
+    }
+
+    #[test]
+    fn listado_y_siguiente_etiqueta() {
+        let mut a = Almacen::en_memoria().unwrap();
+        let id = a.crear_presupuesto("Vivienda").unwrap();
+        assert_eq!(a.siguiente_etiqueta(id).unwrap(), "R1");
+        let r1 = a.guardar_revision(id, "R1", "ana", &suelo_radiante()).unwrap();
+        a.derivar_revision(r1, "R2", "luis").unwrap();
+        a.bloquear_revision(r1, "ana").unwrap();
+        assert_eq!(a.siguiente_etiqueta(id).unwrap(), "R3");
+        let l = a.listar_revisiones().unwrap();
+        assert_eq!(l.len(), 2);
+        assert_eq!((l[0].etiqueta.as_str(), l[0].bloqueada), ("R1", true));
+        assert_eq!((l[1].etiqueta.as_str(), l[1].autor.as_str()), ("R2", "luis"));
+        assert_eq!(l[1].presupuesto, "Vivienda");
     }
 
     #[test]

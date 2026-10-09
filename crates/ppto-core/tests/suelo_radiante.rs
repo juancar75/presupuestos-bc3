@@ -175,3 +175,31 @@ fn resumen_y_margen_sobre_el_ejemplo() {
     // Venta con 30 % de margen sobre el coste directo del suelo radiante
     assert_eq!(venta::venta_por_margen(dec!(29.89), dec!(30), 2).unwrap(), dec!(42.70));
 }
+
+#[test]
+fn edicion_de_mediciones_rendimientos_y_precios() {
+    use ppto_core::medicion::LineaMedicion;
+    let mut p = suelo_radiante();
+    // Añadir 10 m² más de medición: 220 × 29,89 = 6.575,80
+    let mut m = p.mediciones[&("C01".to_string(), "SR.M2".to_string())].clone();
+    m.lineas.push(LineaMedicion::normal(
+        "Ampliación",
+        Some(dec!(1)),
+        Some(dec!(5)),
+        Some(dec!(2)),
+        None,
+    ));
+    let avisos = p.actualizar_medicion("C01", "SR.M2", m).unwrap();
+    assert!(avisos.is_empty());
+    assert_eq!(p.lineas_valoradas("C01").unwrap()[0].importe, dec!(6575.80));
+    // Rendimiento de tubo 7 → 8 m/m²: +1,10 → suma 30,40; MA 0,608 → 0,61; precio 31,01
+    p.fijar_rendimiento("SR.M2", "MT.TUBO16", dec!(8)).unwrap();
+    assert_eq!(p.precio("SR.M2").unwrap(), dec!(31.01));
+    // Precio del oficial 24,50 → 26,00: colector 185 + 39,00 + 21 = 245,00
+    p.fijar_precio("MO.OF1F", dec!(26.00)).unwrap();
+    assert_eq!(p.precio("SR.COL8").unwrap(), dec!(245.00));
+    // No se puede fijar precio a una partida ni un precio negativo
+    assert!(p.fijar_precio("SR.M2", dec!(1)).is_err());
+    assert!(p.fijar_precio("MT.TUBO16", dec!(-1)).is_err());
+    assert!(p.fijar_rendimiento("SR.M2", "MT.COL8", dec!(1)).is_err());
+}

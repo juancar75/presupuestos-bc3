@@ -7,8 +7,9 @@
 
 use ppto_core::concepto::Naturaleza;
 use ppto_core::ejemplos::{ofertas_montaje_suelo_radiante, suelo_radiante};
+use ppto_core::formato::{eur, num};
 use ppto_core::subcontrata::simular;
-use ppto_core::{Decimal, Presupuesto, redondear, venta};
+use ppto_core::{Decimal, Presupuesto, venta};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -29,29 +30,6 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
-}
-
-/// Formato español con separador de miles: 7.005,15
-fn num(v: Decimal, d: u32) -> String {
-    let s = format!("{:.*}", d as usize, redondear(v, d));
-    let (ent, dec) = s.split_once('.').map_or((s.as_str(), None), |(e, f)| (e, Some(f)));
-    let (signo, dig) = ent.strip_prefix('-').map_or(("", ent), |x| ("-", x));
-    let mut out = String::from(signo);
-    for (i, c) in dig.chars().enumerate() {
-        if i > 0 && (dig.len() - i) % 3 == 0 {
-            out.push('.');
-        }
-        out.push(c);
-    }
-    if let Some(f) = dec {
-        out.push(',');
-        out.push_str(f);
-    }
-    out
-}
-
-fn eur(v: Decimal) -> String {
-    num(v, 2)
 }
 
 fn demo(db: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
@@ -156,21 +134,4 @@ fn descompuesto(p: &Presupuesto, codigo: &str) -> Result<(), ppto_core::ErrorMot
     }
     println!("  Precio{:>36}\n", eur(p.precio(codigo)?));
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rust_decimal_macros::dec;
-
-    #[test]
-    fn formato_espanol() {
-        assert_eq!(eur(dec!(7005.15)), "7.005,15");
-        assert_eq!(eur(dec!(10086.72)), "10.086,72");
-        assert_eq!(eur(dec!(-2.1)), "-2,10");
-        assert_eq!(eur(dec!(123)), "123,00");
-        assert_eq!(eur(dec!(1234567.891)), "1.234.567,89");
-        assert_eq!(num(dec!(1470), 3), "1.470,000");
-        assert_eq!(num(dec!(0.125), 2), "0,13");
-    }
 }

@@ -95,6 +95,60 @@ impl Presupuesto {
         Ok(())
     }
 
+    /// Sustituye la medición de `hijo` en el capítulo `padre` y actualiza su
+    /// cantidad (rendimiento de la línea) con el nuevo total. Devuelve los
+    /// avisos de coherencia de unidades.
+    pub fn actualizar_medicion(
+        &mut self,
+        padre: &str,
+        hijo: &str,
+        medicion: Medicion,
+    ) -> Result<Vec<String>, ErrorMotor> {
+        let unidad = self.concepto(hijo)?.unidad.clone();
+        let r = medicion.calcular(&self.decimales, &unidad)?;
+        let linea = self
+            .concepto_mut(padre)?
+            .descomposicion
+            .iter_mut()
+            .find(|l| l.hijo == hijo)
+            .ok_or_else(|| ErrorMotor::PartidaSinMedicion(hijo.to_owned()))?;
+        linea.factor = Decimal::ONE;
+        linea.rendimiento = r.total;
+        self.mediciones.insert((padre.to_owned(), hijo.to_owned()), medicion);
+        Ok(r.avisos)
+    }
+
+    /// Cambia el rendimiento de la línea `hijo` dentro del descompuesto de `padre`.
+    pub fn fijar_rendimiento(&mut self, padre: &str, hijo: &str, rendimiento: Decimal) -> Result<(), ErrorMotor> {
+        let linea = self
+            .concepto_mut(padre)?
+            .descomposicion
+            .iter_mut()
+            .find(|l| l.hijo == hijo)
+            .ok_or_else(|| ErrorMotor::RecursoNoEnPartida {
+                partida: padre.to_owned(),
+                recurso: hijo.to_owned(),
+            })?;
+        linea.factor = Decimal::ONE;
+        linea.rendimiento = rendimiento;
+        Ok(())
+    }
+
+    /// Cambia el precio propio de un recurso básico.
+    pub fn fijar_precio(&mut self, codigo: &str, precio: Decimal) -> Result<(), ErrorMotor> {
+        let c = self.concepto_mut(codigo)?;
+        if !c.naturaleza.es_basico() {
+            return Err(ErrorMotor::ValorInvalido(format!(
+                "«{codigo}» no es un recurso básico: su precio sale de su descomposición"
+            )));
+        }
+        if precio < Decimal::ZERO {
+            return Err(ErrorMotor::ValorInvalido("el precio no puede ser negativo".into()));
+        }
+        c.precio = precio;
+        Ok(())
+    }
+
     /// Comprueba que todos los hijos existen y que no hay ciclos.
     pub fn validar(&self) -> Result<(), ErrorMotor> {
         let mut estado: HashMap<&str, u8> = HashMap::new(); // 1 = en pila, 2 = cerrado
