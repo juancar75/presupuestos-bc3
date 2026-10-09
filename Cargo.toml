@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ppto-core", "crates/ppto-db", "crates/ppto-cli"]
+members = ["crates/ppto-core", "crates/ppto-db", "crates/ppto-cli", "crates/ppto-gui"]
 
 [workspace.package]
 version = "0.1.0-alpha.1"

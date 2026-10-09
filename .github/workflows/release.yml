@@ -14,16 +14,20 @@ jobs:
         include:
           - os: windows-latest
             exe: ppto.exe
+            gui: ppto-gui.exe
           - os: ubuntu-latest
             exe: ppto
+            gui: ppto-gui
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
-      - run: cargo build --release -p ppto-cli
+      - run: cargo build --release -p ppto-cli -p ppto-gui
       - uses: softprops/action-gh-release@v2
         with:
-          files: target/release/${{ matrix.exe }}
+          files: |
+            target/release/${{ matrix.exe }}
+            target/release/${{ matrix.gui }}
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
