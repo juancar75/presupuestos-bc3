@@ -31,6 +31,13 @@ pub struct Presupuesto {
     pub mediciones: BTreeMap<(String, String), Medicion>,
 }
 
+/// Máscara de un concepto porcentual (FIEBDC-3): el prefijo del código antes
+/// del primer «%» o «&». El porcentaje se aplica solo a las líneas anteriores
+/// cuyo código empieza por ella; si está vacía, a todas.
+pub fn mascara_porcentaje(codigo: &str) -> &str {
+    codigo.find(['%', '&']).map_or("", |i| &codigo[..i])
+}
+
 /// Resultado de valorar el presupuesto completo.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Valoracion {
@@ -266,8 +273,7 @@ impl Presupuesto {
         let c = self.concepto(codigo)?;
         let d = &self.decimales;
         let es_capitulo = c.naturaleza == Naturaleza::Capitulo;
-        let mut out = Vec::with_capacity(c.descomposicion.len());
-        let mut acumulado = Decimal::ZERO;
+        let mut out: Vec<LineaValorada> = Vec::with_capacity(c.descomposicion.len());
         for l in &c.descomposicion {
             let hijo = self.concepto(&l.hijo)?;
             let linea = if es_capitulo {
@@ -281,13 +287,21 @@ impl Presupuesto {
                     importe: redondear(cantidad * precio, d.importe),
                 }
             } else if hijo.naturaleza == Naturaleza::Porcentaje {
+                // Base: líneas anteriores cuyo código empieza por la máscara
+                // (parte del código antes de «%» o «&»; vacía = todas).
+                let mascara = mascara_porcentaje(&l.hijo);
+                let base: Decimal = out
+                    .iter()
+                    .filter(|p| p.hijo.starts_with(mascara))
+                    .map(|p| p.importe)
+                    .sum();
                 let cantidad = redondear(l.cantidad(), d.rendimiento);
                 LineaValorada {
                     hijo: l.hijo.clone(),
                     naturaleza: hijo.naturaleza,
                     cantidad,
-                    precio: acumulado,
-                    importe: redondear(cantidad * acumulado / Decimal::ONE_HUNDRED, d.importe_linea),
+                    precio: base,
+                    importe: redondear(cantidad * base / Decimal::ONE_HUNDRED, d.importe_linea),
                 }
             } else {
                 let cantidad = redondear(l.cantidad(), d.rendimiento);
@@ -300,7 +314,6 @@ impl Presupuesto {
                     importe: redondear(cantidad * precio, d.importe_linea),
                 }
             };
-            acumulado += linea.importe;
             out.push(linea);
         }
         Ok(out)
@@ -365,6 +378,38 @@ mod tests {
         q.insertar(Concepto::partida("A", "ud", "A", vec![L::new("NOEXISTE", dec!(1))]))
             .unwrap();
         assert_eq!(q.validar(), Err(ErrorMotor::ConceptoInexistente("NOEXISTE".into())));
+    }
+
+    #[test]
+    fn porcentaje_con_mascara_solo_afecta_a_su_prefijo() {
+        // O1 (mano de obra) 20,00 + M1 (material) 100,00; «O%MA» 10 % solo sobre «O…» = 2,00
+        let mut p = Presupuesto::new("t", "OBRA", "Obra");
+        p.insertar(Concepto::basico("O1", "h", "o", Naturaleza::ManoObra, dec!(20)))
+            .unwrap();
+        p.insertar(Concepto::basico("M1", "ud", "m", Naturaleza::Material, dec!(100)))
+            .unwrap();
+        p.insertar(Concepto::porcentaje("O%MA", "MA sobre mano de obra"))
+            .unwrap();
+        p.insertar(Concepto::porcentaje("%CI", "CI sobre todo")).unwrap();
+        p.insertar(Concepto::partida(
+            "P",
+            "ud",
+            "p",
+            vec![
+                L::new("O1", dec!(1)),
+                L::new("M1", dec!(1)),
+                L::new("O%MA", dec!(10)),
+                L::new("%CI", dec!(3)),
+            ],
+        ))
+        .unwrap();
+        let l = p.lineas_valoradas("P").unwrap();
+        assert_eq!((l[2].precio, l[2].importe), (dec!(20.00), dec!(2.00)));
+        // %CI sin máscara: 3 % sobre 20 + 100 + 2 = 122 → 3,66
+        assert_eq!((l[3].precio, l[3].importe), (dec!(122.00), dec!(3.66)));
+        assert_eq!(p.precio("P").unwrap(), dec!(125.66));
+        assert_eq!(mascara_porcentaje("%MA"), "");
+        assert_eq!(mascara_porcentaje("MO&PERD"), "MO");
     }
 
     #[test]

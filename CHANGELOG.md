@@ -13,6 +13,8 @@ versionado [semántico](https://semver.org/lang/es/).
 - `ppto importar <fichero.bc3> [--db …] [--todo]` y botón «Importar BC3…»
   con informe de importación en la interfaz.
 - `Presupuesto::valorar`: valoración en bloque (4.000 partidas en ~70 ms).
+- Líneas porcentuales con máscara FIEBDC-3 (prefijo del código antes de `%`/`&`);
+  en BC3 el rendimiento del porcentaje se lee como fracción (0.03 = 3 %).
 - `ppto-gui`: interfaz de escritorio básica (prototipo de P-013): árbol de
   capítulos, descompuesto y mediciones editables con recálculo inmediato,
   recursos con precios editables, comparación de ofertas de subcontrata,

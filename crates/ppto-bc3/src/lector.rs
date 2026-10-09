@@ -441,15 +441,15 @@ impl Lector {
 
         // 2. Naturaleza y conceptos del modelo.
         let mut conceptos: BTreeMap<String, Concepto> = BTreeMap::new();
-        let mut pct_precio: HashMap<String, Decimal> = HashMap::new();
+        let mut es_pct: BTreeSet<String> = BTreeSet::new();
         let mut avisos = Vec::new();
         for codigo in &self.orden {
             let c = &self.conceptos[codigo];
             let tiene_desc = self.desc.get(codigo).is_some_and(|v| !v.is_empty());
             let naturaleza = if c.capitulo {
                 Naturaleza::Capitulo
-            } else if c.codigo.contains('%') || c.unidad == "%" {
-                pct_precio.insert(codigo.clone(), c.precio.unwrap_or_default());
+            } else if c.codigo.contains(['%', '&']) {
+                es_pct.insert(codigo.clone());
                 Naturaleza::Porcentaje
             } else if tiene_desc {
                 if matches!(c.tipo.as_str(), "1" | "2" | "3") {
@@ -590,19 +590,27 @@ impl Lector {
                         }
                     }
                 };
-                let linea = if let Some(p) = pct_precio.get(&l.hijo) {
-                    // Puntos porcentuales: si el ~C del porcentaje trae precio
-                    // (p. ej. 0,01) se multiplica; si no, el rendimiento ya son puntos.
+                let linea = if es_pct.contains(&l.hijo) {
+                    // FIEBDC-3: el rendimiento de un porcentaje es una fracción
+                    // (0.03 = 3 %). El motor trabaja en puntos.
                     info_pct = true;
-                    let puntos = if p.is_zero() {
-                        factor * l.rendimiento.unwrap_or(Decimal::ONE)
-                    } else {
-                        factor * l.rendimiento.unwrap_or(Decimal::ONE) * *p * Decimal::ONE_HUNDRED
-                    };
+                    let puntos = (factor * l.rendimiento.unwrap_or(Decimal::ZERO) * Decimal::ONE_HUNDRED).normalize();
+                    if puntos.abs() > Decimal::ONE_HUNDRED {
+                        self.anotar(
+                            Gravedad::Aviso,
+                            l.linea,
+                            "D",
+                            format!(
+                                "{padre} → {}: porcentaje del {} %; ¿el rendimiento venía en puntos en vez de en fracción?",
+                                l.hijo,
+                                num(puntos, 2)
+                            ),
+                        );
+                    }
                     LineaDescomposicion {
                         hijo: l.hijo,
                         factor: Decimal::ONE,
-                        rendimiento: puntos.normalize(),
+                        rendimiento: puntos,
                     }
                 } else {
                     LineaDescomposicion {
@@ -622,8 +630,9 @@ impl Lector {
                 Gravedad::Info,
                 0,
                 "D",
-                "líneas porcentuales: puntos = factor × rendimiento × (precio del concepto % × 100, o 1 si no tiene precio), \
-                 aplicados sobre la suma de las líneas anteriores. Criterio pendiente de validar con Presto 8.8 (P-012).",
+                "líneas porcentuales (código con «%» o «&»): el rendimiento es una fracción (0.03 = 3 %) y se aplica \
+                 a las líneas anteriores cuyo código empieza por la máscara (prefijo antes del «%»). \
+                 Conforme a FIEBDC-3; pendiente de contrastar con Presto 8.8 (P-012).",
             );
         }
 

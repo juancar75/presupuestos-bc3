@@ -5,10 +5,10 @@
 ~C|C01#||Calefacción por suelo radiante|7005.15|091026|0|
 ~D|C01#|SR.M2\1\210\SR.COL8\1\3\|
 ~C|SR.M2|m2|Suelo radiante con panel de tetones y tubo PE-RT 16×2|29.89|091026|0|
-~D|SR.M2|MT.PANEL\1\1.05\MT.TUBO16\1\7\MT.BANDA\1\0.4\MO.OF1F\1\0.25\MO.AYUF\1\0.25\%MA\1\2\|
+~D|SR.M2|MT.PANEL\1\1.05\MT.TUBO16\1\7\MT.BANDA\1\0.4\MO.OF1F\1\0.25\MO.AYUF\1\0.25\%MA\1\0.02\|
 ~T|SR.M2|Sistema de calefacción por suelo radiante formado por panel aislante de tetones,
 tubo PE-RT 16×2 mm y banda perimetral. Incluye prueba de estanqueidad.|
-~C|%MA|%|Medios auxiliares|0.01|091026|0|
+~C|%MA|%|Medios auxiliares||091026|0|
 ~C|SR.COL8|ud|Colector de 8 vías instalado y conexionado|242.75|091026|0|
 ~D|SR.COL8|MT.COL8\1\1\MO.OF1F\1\1.5\MO.AYUF\1\1\|
 ~C|MO.OF1F|h|Oficial 1ª instalador de calefacción|24.5|091026|1|

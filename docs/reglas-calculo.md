@@ -34,12 +34,13 @@ precio_partida = redondear(Σ importes, precio)
 
 - Los precios auxiliares (p. ej. mortero) se calculan igual y se usan como
   hijo en otras partidas. Prueba: `presupuesto::tests::precio_auxiliar_jerarquico_reutilizable`.
-- **Líneas porcentuales** (naturaleza `Porcentaje`, unidad `%`): la cantidad
-  está en puntos porcentuales y se aplica sobre la suma de los importes de
-  las líneas **anteriores** del mismo descompuesto:
-  `importe = redondear(cantidad × base / 100, importe_linea)`.
-  *Pendiente de contrastar con Presto 8.8 (P-012): máscaras de aplicación por
-  código y porcentajes acumulativos.*
+- **Líneas porcentuales** (naturaleza `Porcentaje`): la cantidad está en
+  puntos porcentuales y se aplica sobre la suma de los importes de las líneas
+  **anteriores** del mismo descompuesto cuyo código empieza por la
+  **máscara** (prefijo del código antes de `%` o `&`; vacía = todas), como
+  define FIEBDC-3: `importe = redondear(cantidad × base / 100, importe_linea)`.
+  Ejemplo: `O%MA` 10 % sobre oficial 20,00 y material 100,00 → 2,00.
+  Prueba: `porcentaje_con_mascara_solo_afecta_a_su_prefijo`.
 - Se rechazan referencias circulares (A → B → … → A) indicando el ciclo, y
   los hijos inexistentes. Prueba: `detecta_referencia_circular`.
 

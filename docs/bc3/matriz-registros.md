@@ -10,7 +10,7 @@
 | Registro | Contenido | Importar | Exportar | Modelo interno | Notas |
 |---|---|:-:|:-:|---|---|
 | `~V` | Propietario, versión, programa, rótulo, juego de caracteres | ✅ | P-011 | `Cabecera` | El juego de caracteres decide la decodificación |
-| `~K` | Decimales, CI/GG/BI/baja/IVA, divisa | ◐ | P-011 | `Porcentajes` | Se leen CI/GG/BI/baja/IVA. **Los decimales no se aplican todavía** (se usan los del proyecto) |
+| `~K` | Decimales, CI/GG/BI/baja/IVA, divisa | ◐ | P-011 | `Porcentajes` | Se leen CI/GG/BI/baja/IVA. **Los decimales no se aplican todavía** (se usan los del proyecto). Un decimal negativo significa «como máximo» |
 | `~C` | Código, unidad, resumen, precio, fecha, tipo | ✅ | P-011 | `Concepto` | Solo el primer código sinónimo y el primer precio |
 | `~D` | Descomposición: hijo, factor, rendimiento | ✅ | P-011 | `LineaDescomposicion` | Factor vacío = 1 |
 | `~Y` | Añadir a una descomposición | ✅ | — | se fusiona | |
@@ -30,8 +30,8 @@
 |---|---|---|
 | Codificación | `ANSI` o vacío → Windows-1252; `UTF-8` → UTF-8; `850`/`437` → Windows-1252 con aviso. Sin `~V` y con bytes UTF-8 válidos → UTF-8 | a validar con Presto 8.8 |
 | Códigos | Se quitan espacios y `#` finales. `##` = raíz, `#` = capítulo | conforme a la norma |
-| Naturaleza | Capítulo si `#`; porcentaje si el código contiene `%` o la unidad es `%`; partida si tiene descomposición; si no, tipo `1` mano de obra, `2` maquinaria, `3` material, otro → «otros» | a validar |
-| Porcentajes | Puntos = factor × rendimiento × (precio del `~C` del % × 100), o factor × rendimiento si ese precio es 0. Se aplican sobre la suma de las líneas anteriores. **Las máscaras de aplicación no se interpretan** | **a validar con Presto 8.8** |
+| Naturaleza | Capítulo si `#`; porcentaje si el código contiene `%` o `&`; partida si tiene descomposición; si no, tipo `1` mano de obra, `2` maquinaria, `3` material, otro → «otros» | a validar |
+| Porcentajes | Código con `%` (no acumulable) o `&` (acumulable). Rendimiento en **fracción** (`0.03` = 3 %). Máscara = prefijo del código antes del `%`/`&`: se aplica a las líneas anteriores cuyo código empieza por ella (vacía = todas). En precios compuestos `%` y `&` se calculan igual. Aviso si resulta > 100 % (exportador que escribe puntos) | conforme a FIEBDC-3; contrastar con Presto 8.8 |
 | Rendimiento vacío | En capítulos se toma el total de `~M`; si no hay, 1 (con aviso fuera de capítulos) | a validar |
 | Medición frente a `~D` | Se conserva la cantidad del `~D` (lo que exportó el programa) y se avisa si las líneas de `~M` suman otra cosa | decisión de diseño |
 | Concepto usado y no definido | Se crea con precio 0 y se informa como error | decisión de diseño |

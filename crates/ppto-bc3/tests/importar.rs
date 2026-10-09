@@ -154,14 +154,39 @@ fn ficheros_truncados_o_corruptos_no_bloquean_el_programa() {
 }
 
 #[test]
-fn porcentaje_sin_precio_toma_el_rendimiento_como_puntos() {
+fn porcentajes_segun_fiebdc_fraccion_y_mascara() {
+    // P: MO1 20,00 + MAT1 100,00; «MO%A» 0.10 (10 % solo sobre «MO…») = 2,00;
+    // «%CI» 0.03 sobre todo lo anterior (122,00) = 3,66 → precio 125,66
     let bc3 = "~V|x|FIEBDC-3/2020|x||ANSI|\n\
                ~C|R##||r|0|\n~D|R##|P\\1\\1\\|\n\
-               ~C|P|ud|p|0|\n~D|P|M\\1\\1\\%X\\1\\3\\|\n\
-               ~C|M|ud|m|100||3|\n~C|%X|%|tres por ciento|0|\n";
+               ~C|P|ud|p|125.66|\n~D|P|MO1\\1\\1\\MAT1\\1\\1\\MO%A\\1\\0.10\\%CI\\1\\0.03\\|\n\
+               ~C|MO1|h|oficial|20||1|\n~C|MAT1|ud|material|100||3|\n\
+               ~C|MO%A|%|medios auxiliares sobre mano de obra||0|\n~C|%CI|%|costes indirectos||0|\n";
     let imp = importar(bc3.as_bytes()).unwrap();
-    // 100 + 3 % = 103,00
-    assert_eq!(imp.presupuesto.precio("P").unwrap(), dec!(103.00));
+    assert_eq!(imp.presupuesto.precio("P").unwrap(), dec!(125.66));
+    assert!(
+        imp.discrepancias.iter().all(|d| d.codigo != "P"),
+        "{:?}",
+        imp.discrepancias
+    );
+    assert_eq!(imp.avisos(), 0, "{:#?}", imp.incidencias);
+}
+
+#[test]
+fn porcentaje_en_puntos_se_avisa() {
+    // Un exportador que escriba «3» en vez de «0.03» daría un 300 %: se avisa.
+    let bc3 = "~V|x|FIEBDC-3/2020|x||ANSI|\n~C|R##||r|0|\n~D|R##|P\\1\\1\\|\n\
+               ~C|P|ud|p|103|\n~D|P|M\\1\\1\\%X\\1\\3\\|\n~C|M|ud|m|100||3|\n~C|%X|%|x||0|\n";
+    let imp = importar(bc3.as_bytes()).unwrap();
+    assert!(
+        imp.incidencias
+            .iter()
+            .any(|i| i.mensaje.contains("porcentaje del 300,00 %")),
+        "{:#?}",
+        imp.incidencias
+    );
+    // Y la comparación de precios lo delata: declarado 103, calculado 400
+    assert_eq!(imp.discrepancias[0].calculado, dec!(400.00));
 }
 
 #[test]
