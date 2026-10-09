@@ -103,6 +103,7 @@ struct Formatos {
     pct: Format,
     texto: Format,
     nota: Format,
+    texto_largo: Format,
 }
 
 impl Formatos {
@@ -133,6 +134,12 @@ impl Formatos {
             num3: base.clone().set_num_format("#,##0.000"),
             pct: base.clone().set_num_format("0.00\\ %"),
             texto: base.clone().set_text_wrap().set_align(FormatAlign::Top),
+            texto_largo: base
+                .clone()
+                .set_text_wrap()
+                .set_align(FormatAlign::Top)
+                .set_font_size(9)
+                .set_font_color(Color::RGB(0x444444)),
             nota: base.set_italic().set_font_color(Color::RGB(0x666666)),
         }
     }
@@ -312,6 +319,13 @@ fn rama(
         } else {
             partida(h, c, l, *fila, f)?;
             *fila += 1;
+            if let Some(t) = c.texto.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+                h.write_string_with_format(*fila, 2, t, &f.texto_largo)?;
+                // Altura aproximada: ~75 caracteres por línea (letra 9) en la columna de 60
+                let lineas = t.lines().map(|l| l.chars().count() / 75 + 1).sum::<usize>().max(1);
+                h.set_row_height(*fila, (lineas as u32 * 13 + 4) as u16)?;
+                *fila += 1;
+            }
         }
     }
     Ok(())

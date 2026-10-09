@@ -37,6 +37,7 @@ enum Accion {
     QuitarOferta(usize),
     Ir(String),
     Ci(Decimal),
+    Texto(String, String),
     OpcionesCi(ppto_core::presupuesto::OpcionesCi),
 }
 
@@ -504,6 +505,13 @@ impl Aplicacion {
                     self.avisos.clear();
                     continue;
                 }
+                Accion::Texto(codigo, texto) => {
+                    if let Some(c) = self.p.conceptos.get_mut(&codigo) {
+                        c.texto = (!texto.trim().is_empty()).then_some(texto);
+                    }
+                    self.cambios = true;
+                    continue;
+                }
                 Accion::Ci(v) => {
                     if v < Decimal::ZERO {
                         self.error("Los costes indirectos no pueden ser negativos.");
@@ -739,6 +747,22 @@ impl Aplicacion {
         ui.add_space(6.0);
 
         egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::CollapsingHeader::new(RichText::new("Texto descriptivo").strong())
+                .id_salt(("texto", &hijo))
+                .default_open(true)
+                .show(ui, |ui| {
+                    let mut texto = c.texto.clone().unwrap_or_default();
+                    let r = ui.add(
+                        egui::TextEdit::multiline(&mut texto)
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(3)
+                            .hint_text("Descripción completa de la partida (texto largo)"),
+                    );
+                    if r.changed() {
+                        acciones.push(Accion::Texto(c.codigo.clone(), texto));
+                    }
+                });
+            ui.add_space(6.0);
             ui.label(RichText::new("Precio descompuesto").strong());
             if let Some(lineas) = self.calc.lineas.get(&hijo).cloned() {
                 egui::Grid::new("descompuesto")
