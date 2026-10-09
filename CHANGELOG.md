@@ -6,6 +6,13 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- `ppto-bc3`: importador FIEBDC-3 (P-010) con lectura tolerante de `~V ~K ~C
+  ~D ~Y ~T ~M ~N`, codificación ANSI/UTF-8, incidencias con número de línea,
+  reconstrucción de la raíz, ruptura de ciclos y comparación de precios
+  recalculados frente a los declarados en el BC3.
+- `ppto importar <fichero.bc3> [--db …] [--todo]` y botón «Importar BC3…»
+  con informe de importación en la interfaz.
+- `Presupuesto::valorar`: valoración en bloque (4.000 partidas en ~70 ms).
 - `ppto-gui`: interfaz de escritorio básica (prototipo de P-013): árbol de
   capítulos, descompuesto y mediciones editables con recálculo inmediato,
   recursos con precios editables, comparación de ofertas de subcontrata,
