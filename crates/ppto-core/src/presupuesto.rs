@@ -407,7 +407,13 @@ impl Presupuesto {
                     naturaleza: hijo.naturaleza,
                     cantidad,
                     precio: base,
-                    importe: redondear(cantidad * base / Decimal::ONE_HUNDRED, d.importe_linea),
+                    // Como Presto 8.8: la base se pasa a «cantidad» (base/100) redondeada
+                    // a los decimales de rendimiento y se multiplica por los puntos.
+                    // Contrastado con una obra real: 52/52 partidas al céntimo.
+                    importe: redondear(
+                        redondear(base / Decimal::ONE_HUNDRED, d.rendimiento) * cantidad,
+                        d.importe_linea,
+                    ),
                 }
             } else {
                 let cantidad = redondear(l.cantidad(), d.rendimiento);
@@ -421,7 +427,9 @@ impl Presupuesto {
                     naturaleza: hijo.naturaleza,
                     cantidad,
                     precio,
-                    importe: redondear(cantidad * precio, d.importe_linea),
+                    // Presto 8.8 multiplica factor × rendimiento sin redondear
+                    // (p. ej. 0,08333 × 6 = 0,49998, no 0,500): obra real, E21.
+                    importe: redondear(l.cantidad() * precio, d.importe_linea),
                 }
             };
             out.push(linea);

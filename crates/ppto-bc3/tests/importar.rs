@@ -285,3 +285,23 @@ fn ansi_declarado_pero_recodificado() {
     let imp = importar(mal.as_bytes()).unwrap();
     assert!(imp.incidencias.iter().any(|i| i.mensaje.contains("se perdieron")));
 }
+
+#[test]
+fn redondeos_de_presto_8_8_en_porcentajes_y_factores() {
+    // Casos sintéticos que reproducen el criterio observado en una obra real:
+    // 1) % : cantidad = redondeo(base/100, 3) × puntos → 0,113 × −48 = −5,42
+    //    (no 11,34 × −0,48 = −5,44): 11,34 − 5,42 + 15,00 = 20,92
+    // 2) factor × rendimiento sin redondear: 0,08333 × 6 × 100 = 49,998 → 50,00
+    let bc3 = "~V||FIEBDC-3/2002|Presto 8.8||ANSI|\r\n\
+~K|\\2\\2\\3\\2\\2\\2\\2\\EUR\\|0|\r\n\
+~C|R##||Obra|70.92||0|\r\n~C|CAP#||Cap|70.92||0|\r\n\
+~C|P1|u|Compuerta|20.92||0|\r\n~C|P2|u|Difusor|50||0|\r\n\
+~C|MAT|u|Material|11.34||3|\r\n~C|%DTO|%|Dto|-48||3|\r\n~C|MO|u|Montaje|15||1|\r\n\
+~C|DIF|u|Difusor|100||3|\r\n\
+~D|R##|CAP\\1\\1\\|\r\n~D|CAP#|P1\\1\\1\\P2\\1\\1\\|\r\n\
+~D|P1|MAT\\1\\1\\%DTO\\1\\-0.48\\MO\\1\\1\\|\r\n~D|P2|DIF\\0.08333\\6\\|\r\n";
+    let imp = importar(bc3.as_bytes()).unwrap();
+    assert_eq!(imp.errores(), 0, "{:#?}", imp.incidencias);
+    assert!(imp.discrepancias.is_empty(), "{:?}", imp.discrepancias);
+    assert_eq!(imp.presupuesto.pem().unwrap(), dec!(70.92));
+}

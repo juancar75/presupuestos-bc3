@@ -72,11 +72,13 @@ porcentajes de descuento (`%PANASONIC −0.65`, `%KOOLAIR −0.48`…), accesori
 Contraste: con los precios de partida que declara Presto, el programa
 reproduce **al céntimo** los 5 capítulos y el PEM (157.310,88 €) y el coste
 directo (108.489,57 €), lo que valida la aplicación de CI por partida.
-Recalculando las partidas desde su descomposición, 34 de 52 cuadran y 18
-difieren 0,01–0,03 € (PEM −1,70 €, 0,001 %). Todas las que difieren tienen
-líneas `%`; la causa (redondeo interno de Presto en los porcentajes o
-decimales internos del precio) está **pendiente de contrastar** mirando la
-descomposición de una de ellas en Presto.
+Recalculando las partidas desde su descomposición cuadran **52 de 52** y el
+PEM coincide exacto, tras aplicar dos criterios de Presto confirmados con
+captura de pantalla:
+
+1. **Porcentajes**: cantidad = redondeo(base / 100, decimales de rendimiento)
+   × puntos (`%KOOLAIR`: base 11,34 → 0,113 × −48 = −5,42, no −5,44).
+2. **Factor × rendimiento** sin redondear (0,08333 × 6 = 0,49998).
 
 La copia recibida por la subida web llegó recodificada a UTF-8 con «�» en lugar
 de las tildes: el importador lo detecta y avisa.
