@@ -1857,7 +1857,11 @@ mod pruebas {
         app.aplicar(vec![Accion::AnadirLinea("C01".into(), "SR.COL8".into(), dec!(3))]);
         assert_eq!(app.calc.pem, dec!(7005.15));
         // Mover y cambiar unidad
-        let antes: Vec<_> = app.p.conceptos["SR.M2"].descomposicion.iter().map(|l| l.hijo.clone()).collect();
+        let antes: Vec<_> = app.p.conceptos["SR.M2"]
+            .descomposicion
+            .iter()
+            .map(|l| l.hijo.clone())
+            .collect();
         app.aplicar(vec![Accion::Mover("SR.M2".into(), antes[1].clone(), true)]);
         assert_eq!(app.p.conceptos["SR.M2"].descomposicion[0].hijo, antes[1]);
         app.aplicar(vec![Accion::Unidad("SR.M2".into(), " m² ".into())]);
