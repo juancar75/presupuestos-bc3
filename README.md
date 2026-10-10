@@ -7,8 +7,9 @@ integración **MCP**.
 
 > **Estado: prototipo (v0.1.0-alpha.1).** Motor económico, persistencia
 > SQLite, interfaz básica, importación y exportación BC3 e informe Excel
-> funcionando, y servidor MCP de consulta; validación con Presto 8.8,
-> informes PDF y cambios vía MCP en desarrollo.
+> funcionando, y servidor MCP de consulta. **BC3 validado con Presto 8.8 en
+> ambos sentidos** (obra real: PEM al céntimo). Edición completa en la
+> interfaz, informes PDF y cambios vía MCP en desarrollo.
 > No usar todavía para presupuestos reales.
 
 ## Qué hace hoy

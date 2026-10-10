@@ -5,6 +5,23 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Validado con Presto 8.8 (10-10-2026)
+- **Importación de una obra real** (climatización, 208 conceptos, CI 45 %,
+  descuentos y porcentajes): 52/52 partidas, 5 capítulos y PEM 157.310,88 €
+  al céntimo. El fichero real no se incluye en el repositorio.
+- **Exportación**: el BC3 del ejemplo abierto en Presto da 7.005,15 € y el
+  mismo desglose por partidas y naturalezas.
+
+### Corregido
+- Redondeos como Presto 8.8: porcentaje = redondeo(base/100, dec. rendimiento)
+  × puntos; factor × rendimiento sin redondear antes de multiplicar.
+- `~C` de partidas = coste sin costes indirectos; capítulos y raíz, con ellos
+  (lectura y escritura).
+- BC3 que declara ANSI pero llega en UTF-8: se lee bien y se avisa; aviso si
+  hay caracteres «�» (tildes perdidas antes de importar).
+- Material (tipo 3) con descomposición: información, no aviso.
+- CI: la comprobación DCO ignora los commits de fusión que crea GitHub.
+
 ### Añadido
 - `ppto-mcp`: servidor MCP de lectura y simulación (P-020) — abrir BC3/SQLite,
   resumen, búsqueda, detalle de conceptos, recursos y horas, simulación de
