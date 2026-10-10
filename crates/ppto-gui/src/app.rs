@@ -2,7 +2,10 @@
 //! Ventana principal: árbol de capítulos, partida (descompuesto y mediciones),
 //! recursos, subcontratación y resumen.
 
+mod alta;
+
 use crate::celdas::Edicion;
+use alta::{Alta, TipoAlta};
 use eframe::egui::{self, Color32, RichText, Ui};
 use ppto_core::concepto::Naturaleza;
 use ppto_core::ejemplos::{ofertas_montaje_suelo_radiante, suelo_radiante};
@@ -39,6 +42,33 @@ enum Accion {
     Ci(Decimal),
     Texto(String, String),
     OpcionesCi(ppto_core::presupuesto::OpcionesCi),
+    Unidad(String, String),
+    NuevoCapitulo {
+        padre: String,
+        codigo: String,
+        resumen: String,
+    },
+    NuevaPartida {
+        capitulo: String,
+        codigo: String,
+        unidad: String,
+        resumen: String,
+    },
+    /// Crea un recurso y lo añade como línea de `en`; si algo falla, no queda nada.
+    NuevoRecurso {
+        codigo: String,
+        unidad: String,
+        resumen: String,
+        naturaleza: Naturaleza,
+        precio: Decimal,
+        en: String,
+        cantidad: Decimal,
+    },
+    AnadirLinea(String, String, Decimal),
+    /// Quitar línea (padre, hijo); `true` = borrar también lo que quede sin usar.
+    QuitarLinea(String, String, bool),
+    Mover(String, String, bool),
+    Alta(TipoAlta),
 }
 
 /// Resultados del motor para el estado actual del presupuesto.
@@ -128,6 +158,7 @@ pub struct Aplicacion {
     form: FormOferta,
     informe: Option<ppto_bc3::Importacion>,
     ver_informe: bool,
+    alta: Option<Alta>,
 }
 
 impl Aplicacion {
@@ -135,6 +166,27 @@ impl Aplicacion {
         let mut estilo = (*cc.egui_ctx.global_style()).clone();
         estilo.spacing.item_spacing = egui::vec2(8.0, 5.0);
         cc.egui_ctx.set_global_style(estilo);
+        let mut app = Self::sin_ventana();
+        // Pestaña inicial (útil para capturas y pruebas): PPTO_GUI_PESTANA=recursos|subcontratar|resumen
+        app.pestana = match std::env::var("PPTO_GUI_PESTANA").as_deref() {
+            Ok("recursos") => Pestana::Recursos,
+            Ok("subcontratar") => Pestana::Subcontratar,
+            Ok("resumen") => Pestana::Resumen,
+            _ => Pestana::Partida,
+        };
+        if let Some(ruta) = inicial {
+            let es_bc3 = ruta.extension().is_some_and(|e| e.eq_ignore_ascii_case("bc3"));
+            if es_bc3 {
+                app.importar_bc3(ruta)
+            } else {
+                app.abrir(ruta)
+            }
+        }
+        app
+    }
+
+    /// Estado inicial (ejemplo cargado) sin depender de la ventana: lo usan las pruebas.
+    fn sin_ventana() -> Self {
         let mut app = Self {
             p: suelo_radiante(),
             calc: Calculo::default(),
@@ -157,23 +209,9 @@ impl Aplicacion {
             form: FormOferta::default(),
             informe: None,
             ver_informe: false,
+            alta: None,
         };
         app.recalcular();
-        // Pestaña inicial (útil para capturas y pruebas): PPTO_GUI_PESTANA=recursos|subcontratar|resumen
-        app.pestana = match std::env::var("PPTO_GUI_PESTANA").as_deref() {
-            Ok("recursos") => Pestana::Recursos,
-            Ok("subcontratar") => Pestana::Subcontratar,
-            Ok("resumen") => Pestana::Resumen,
-            _ => Pestana::Partida,
-        };
-        if let Some(ruta) = inicial {
-            let es_bc3 = ruta.extension().is_some_and(|e| e.eq_ignore_ascii_case("bc3"));
-            if es_bc3 {
-                app.importar_bc3(ruta)
-            } else {
-                app.abrir(ruta)
-            }
-        }
         app
     }
 
@@ -198,6 +236,21 @@ impl Aplicacion {
         self.avisos.clear();
         self.recalcular();
         self.info("Ejemplo sintético cargado.");
+    }
+
+    fn nuevo_presupuesto(&mut self) {
+        self.p = Presupuesto::new("Presupuesto nuevo", "OBRA", "Presupuesto nuevo");
+        self.fichero = None;
+        self.presupuesto_id = None;
+        self.revisiones.clear();
+        self.revision_actual = None;
+        self.cambios = false;
+        self.sel = None;
+        self.ofertas.clear();
+        self.avisos.clear();
+        self.informe = None;
+        self.recalcular();
+        self.info("Presupuesto vacío: cree un capítulo con «+ Capítulo» en el árbol.");
     }
 
     fn info(&mut self, t: impl Into<String>) {
@@ -577,6 +630,65 @@ impl Aplicacion {
                     self.cambios = true;
                     continue;
                 }
+                Accion::Alta(t) => {
+                    self.abrir_alta(t);
+                    continue;
+                }
+                Accion::Unidad(c, u) => self.p.fijar_unidad(&c, &u),
+                Accion::NuevoCapitulo { padre, codigo, resumen } => self
+                    .p
+                    .nuevo_capitulo(&padre, &codigo, &resumen)
+                    .map(|()| self.info(format!("Capítulo {codigo} creado."))),
+                Accion::NuevaPartida {
+                    capitulo,
+                    codigo,
+                    unidad,
+                    resumen,
+                } => self.p.nueva_partida(&capitulo, &codigo, &unidad, &resumen).map(|()| {
+                    self.sel = Some((capitulo, codigo.clone()));
+                    self.pestana = Pestana::Partida;
+                    self.info(format!(
+                        "Partida {codigo} creada: añada sus líneas con «Añadir línea…»."
+                    ));
+                }),
+                Accion::NuevoRecurso {
+                    codigo,
+                    unidad,
+                    resumen,
+                    naturaleza,
+                    precio,
+                    en,
+                    cantidad,
+                } => self
+                    .p
+                    .nuevo_recurso(&codigo, &unidad, &resumen, naturaleza, precio)
+                    .and_then(|()| {
+                        self.p.anadir_linea(&en, &codigo, cantidad).inspect_err(|_| {
+                            let _ = self.p.borrar_concepto(&codigo);
+                        })
+                    }),
+                Accion::AnadirLinea(padre, hijo, q) => self.p.anadir_linea(&padre, &hijo, q),
+                Accion::QuitarLinea(padre, hijo, purgar) => {
+                    let r = if purgar {
+                        self.p.quitar_y_purgar(&padre, &hijo).map(|b| {
+                            if !b.is_empty() {
+                                self.info(format!("Borrados por quedar sin uso: {}", b.join(", ")));
+                            }
+                        })
+                    } else {
+                        self.p.quitar_linea(&padre, &hijo)
+                    };
+                    if r.is_ok()
+                        && self
+                            .sel
+                            .as_ref()
+                            .is_some_and(|(sp, sh)| (sp == &padre && sh == &hijo) || !self.p.conceptos.contains_key(sh))
+                    {
+                        self.sel = None;
+                    }
+                    r
+                }
+                Accion::Mover(padre, hijo, arriba) => self.p.mover_linea(&padre, &hijo, arriba),
                 Accion::Precio(c, v) => self.p.fijar_precio(&c, v),
                 Accion::Rendimiento(padre, hijo, v) => self.p.fijar_rendimiento(&padre, &hijo, v),
                 Accion::Medicion(padre, hijo, m) => self.p.actualizar_medicion(&padre, &hijo, m).map(|av| {
@@ -600,6 +712,9 @@ impl Aplicacion {
                 .clicked()
             {
                 self.cargar_ejemplo();
+            }
+            if ui.button("Nuevo").on_hover_text("Presupuesto vacío").clicked() {
+                self.nuevo_presupuesto();
             }
             if ui.button("📂 Abrir…").clicked() {
                 self.dialogo_abrir();
@@ -683,6 +798,14 @@ impl Aplicacion {
     fn arbol(&self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
         ui.heading(&self.p.conceptos[&self.p.raiz].resumen);
         ui.separator();
+        ui.horizontal(|ui| {
+            if ui.button("+ Capítulo").clicked() {
+                acciones.push(Accion::Alta(TipoAlta::Capitulo {
+                    padre: self.p.raiz.clone(),
+                }));
+            }
+            ui.label(RichText::new("Clic derecho: más opciones").weak().small());
+        });
         egui::ScrollArea::vertical().show(ui, |ui| {
             self.rama(ui, &self.p.raiz, acciones);
         });
@@ -695,13 +818,31 @@ impl Aplicacion {
         for l in lineas {
             let c = &self.p.conceptos[&l.hijo];
             if c.naturaleza == Naturaleza::Capitulo {
-                egui::CollapsingHeader::new(RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong())
+                let r = egui::CollapsingHeader::new(RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong())
                     .id_salt(("cap", capitulo, &l.hijo))
                     .default_open(self.calc.lineas.get(&l.hijo).is_none_or(|v| v.len() <= 40))
                     .show(ui, |ui| {
                         ui.label(RichText::new(format!("{} €", eur(l.importe))).weak());
                         self.rama(ui, &l.hijo, acciones);
+                        if self.calc.lineas.get(&l.hijo).is_none_or(Vec::is_empty) {
+                            ui.label(RichText::new("(vacío: clic derecho en el capítulo)").weak().small());
+                        }
                     });
+                r.header_response.context_menu(|ui| {
+                    if ui.button("Nueva partida aquí").clicked() {
+                        acciones.push(Accion::Alta(TipoAlta::Partida {
+                            capitulo: l.hijo.clone(),
+                        }));
+                    }
+                    if ui.button("Nuevo subcapítulo").clicked() {
+                        acciones.push(Accion::Alta(TipoAlta::Capitulo { padre: l.hijo.clone() }));
+                    }
+                    if ui.button("Añadir partida existente…").clicked() {
+                        acciones.push(Accion::Alta(TipoAlta::Linea { padre: l.hijo.clone() }));
+                    }
+                    ui.separator();
+                    menu_linea(ui, capitulo, &l.hijo, acciones);
+                });
             } else {
                 let elegido = self.sel.as_ref() == Some(&(capitulo.to_owned(), l.hijo.clone()));
                 let r = ui.add(
@@ -722,6 +863,7 @@ impl Aplicacion {
                 if r.clicked() {
                     acciones.push(Accion::Seleccionar(capitulo.to_owned(), l.hijo.clone()));
                 }
+                r.context_menu(|ui| menu_linea(ui, capitulo, &l.hijo, acciones));
             }
         }
     }
@@ -744,7 +886,14 @@ impl Aplicacion {
 
         ui.horizontal(|ui| {
             ui.label(RichText::new(&c.codigo).strong().size(16.0));
-            ui.label(RichText::new(&c.unidad).weak());
+            let mut unidad = c.unidad.clone();
+            if ui
+                .add(egui::TextEdit::singleline(&mut unidad).desired_width(40.0))
+                .on_hover_text("Unidad")
+                .changed()
+            {
+                acciones.push(Accion::Unidad(c.codigo.clone(), unidad));
+            }
             let mut resumen = c.resumen.clone();
             if ui
                 .add(egui::TextEdit::singleline(&mut resumen).desired_width(480.0))
@@ -801,9 +950,9 @@ impl Aplicacion {
             if let Some(lineas) = self.calc.lineas.get(&hijo).cloned() {
                 egui::Grid::new("descompuesto")
                     .striped(true)
-                    .num_columns(7)
+                    .num_columns(8)
                     .show(ui, |ui| {
-                        for t in ["Código", "Ud", "Resumen", "Tipo", "Cantidad", "Precio", "Importe"] {
+                        for t in ["Código", "Ud", "Resumen", "Tipo", "Cantidad", "Precio", "Importe", ""] {
                             ui.label(RichText::new(t).weak());
                         }
                         ui.end_row();
@@ -840,6 +989,21 @@ impl Aplicacion {
                                 ui.label(format!("{}{nota}", eur(l.precio)));
                             }
                             ui.label(eur(l.importe));
+                            ui.horizontal(|ui| {
+                                if ui.small_button("^").on_hover_text("Subir").clicked() {
+                                    acciones.push(Accion::Mover(hijo.clone(), l.hijo.clone(), true));
+                                }
+                                if ui.small_button("v").on_hover_text("Bajar").clicked() {
+                                    acciones.push(Accion::Mover(hijo.clone(), l.hijo.clone(), false));
+                                }
+                                if ui
+                                    .small_button("x")
+                                    .on_hover_text("Quitar la línea (el recurso sigue en la obra)")
+                                    .clicked()
+                                {
+                                    acciones.push(Accion::QuitarLinea(hijo.clone(), l.hijo.clone(), false));
+                                }
+                            });
                             ui.end_row();
                         }
                         for _ in 0..5 {
@@ -851,6 +1015,14 @@ impl Aplicacion {
                         );
                         ui.end_row();
                     });
+                if ui.button("+ Añadir línea…").clicked() {
+                    acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
+                }
+            } else if c.naturaleza == Naturaleza::Partida {
+                ui.label(RichText::new("Partida sin descomposición: precio 0,00.").weak());
+                if ui.button("+ Añadir línea…").clicked() {
+                    acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
+                }
             } else {
                 ui.label(RichText::new("Recurso básico sin descomposición.").weak());
             }
@@ -1529,9 +1701,28 @@ impl eframe::App for Aplicacion {
         });
         let ctx = ui.ctx().clone();
         self.ventana_informe(&ctx, &mut acciones);
+        self.ventana_alta(&ctx, &mut acciones);
         if !acciones.is_empty() {
             self.aplicar(acciones);
         }
+    }
+}
+
+/// Opciones comunes a cualquier línea del árbol.
+fn menu_linea(ui: &mut Ui, padre: &str, hijo: &str, acciones: &mut Vec<Accion>) {
+    if ui.button("Subir").clicked() {
+        acciones.push(Accion::Mover(padre.to_owned(), hijo.to_owned(), true));
+    }
+    if ui.button("Bajar").clicked() {
+        acciones.push(Accion::Mover(padre.to_owned(), hijo.to_owned(), false));
+    }
+    ui.separator();
+    if ui
+        .button(format!("Quitar {hijo} de {padre}"))
+        .on_hover_text("Lo que quede sin usar en ningún otro sitio se borra")
+        .clicked()
+    {
+        acciones.push(Accion::QuitarLinea(padre.to_owned(), hijo.to_owned(), true));
     }
 }
 
@@ -1564,5 +1755,113 @@ fn color_naturaleza(n: Naturaleza) -> Color32 {
         Naturaleza::Subcontrata => Color32::from_rgb(170, 110, 210),
         Naturaleza::Porcentaje => Color32::GRAY,
         _ => Color32::LIGHT_GRAY,
+    }
+}
+
+#[cfg(test)]
+mod pruebas {
+    //! Edición desde la interfaz (P-014): acciones y pintado sin ventana.
+    use super::*;
+    use eframe::egui::{Context, RawInput};
+
+    /// Pinta árbol, pestaña Partida y ventana de alta; devuelve las acciones pedidas.
+    fn pintar(app: &mut Aplicacion) -> Vec<Accion> {
+        let ctx = Context::default();
+        let mut acciones = Vec::new();
+        for _ in 0..2 {
+            let mut salida = ctx.run_ui(RawInput::default(), |ui| {
+                egui::Panel::left("a").show(ui, |ui| app.arbol(ui, &mut acciones));
+                egui::CentralPanel::default_margins().show(ui, |ui| app.pestana_partida(ui, &mut acciones));
+                let c = ui.ctx().clone();
+                app.ventana_alta(&c, &mut acciones);
+            });
+            salida.textures_delta.clear();
+        }
+        acciones
+    }
+
+    #[test]
+    fn presupuesto_nuevo_completo_desde_la_interfaz() {
+        // Mismo caso que el motor: P1 = 0,5 × 20 + 2 × 3,10 + 3 % = 16,69; 12 m → 200,28 €
+        let mut app = Aplicacion::sin_ventana();
+        app.nuevo_presupuesto();
+        assert_eq!(app.calc.pem, Decimal::ZERO);
+        pintar(&mut app);
+        app.aplicar(vec![Accion::NuevoCapitulo {
+            padre: "OBRA".into(),
+            codigo: "C01".into(),
+            resumen: "Fontanería".into(),
+        }]);
+        app.aplicar(vec![Accion::NuevaPartida {
+            capitulo: "C01".into(),
+            codigo: "P1".into(),
+            unidad: "m".into(),
+            resumen: "Tubería".into(),
+        }]);
+        assert_eq!(app.sel, Some(("C01".into(), "P1".into())));
+        pintar(&mut app);
+        let recurso = |codigo: &str, n, precio, q| Accion::NuevoRecurso {
+            codigo: codigo.into(),
+            unidad: "u".into(),
+            resumen: codigo.into(),
+            naturaleza: n,
+            precio,
+            en: "P1".into(),
+            cantidad: q,
+        };
+        app.aplicar(vec![
+            recurso("MO1", Naturaleza::ManoObra, dec!(20), dec!(0.5)),
+            recurso("MT1", Naturaleza::Material, dec!(3.10), dec!(2)),
+            recurso("%MA", Naturaleza::Porcentaje, dec!(0), dec!(3)),
+            Accion::Rendimiento("C01".into(), "P1".into(), dec!(12)),
+        ]);
+        assert_eq!(app.calc.error, None);
+        assert_eq!(app.calc.pem, dec!(200.28));
+        assert!(app.cambios);
+        pintar(&mut app);
+
+        // Un recurso con código ya usado no se cuelga por error en lugar del nuevo
+        app.aplicar(vec![recurso("MO1", Naturaleza::Material, dec!(99), dec!(1))]);
+        assert!(app.mensaje.as_ref().is_some_and(|(m, e)| *e && m.contains("duplicado")));
+        assert_eq!(app.calc.pem, dec!(200.28));
+        // Un recurso nuevo que no puede colgarse no se queda huérfano
+        app.aplicar(vec![Accion::NuevoRecurso {
+            codigo: "MO9".into(),
+            unidad: "h".into(),
+            resumen: "x".into(),
+            naturaleza: Naturaleza::ManoObra,
+            precio: dec!(1),
+            en: "C01".into(),
+            cantidad: dec!(1),
+        }]);
+        assert!(!app.p.conceptos.contains_key("MO9"));
+
+        // Quitar la partida del árbol: se borra con todo lo que solo usaba ella
+        app.aplicar(vec![Accion::QuitarLinea("C01".into(), "P1".into(), true)]);
+        assert_eq!(app.calc.pem, Decimal::ZERO);
+        assert_eq!(app.sel, None);
+        assert!(!app.p.conceptos.contains_key("MO1"));
+        pintar(&mut app);
+    }
+
+    #[test]
+    fn ventana_de_alta_y_lineas_del_descompuesto() {
+        let mut app = Aplicacion::sin_ventana();
+        app.aplicar(vec![Accion::Alta(TipoAlta::Linea { padre: "SR.M2".into() })]);
+        assert!(app.alta.as_ref().is_some_and(|a| a.codigo == "R0001"));
+        pintar(&mut app);
+        assert!(app.alta.is_some(), "la ventana sigue abierta hasta confirmar");
+        // Quitar y volver a poner el colector cambia el PEM y lo recupera
+        app.aplicar(vec![Accion::QuitarLinea("C01".into(), "SR.COL8".into(), false)]);
+        assert_eq!(app.calc.pem, dec!(6276.90));
+        app.aplicar(vec![Accion::AnadirLinea("C01".into(), "SR.COL8".into(), dec!(3))]);
+        assert_eq!(app.calc.pem, dec!(7005.15));
+        // Mover y cambiar unidad
+        let antes: Vec<_> = app.p.conceptos["SR.M2"].descomposicion.iter().map(|l| l.hijo.clone()).collect();
+        app.aplicar(vec![Accion::Mover("SR.M2".into(), antes[1].clone(), true)]);
+        assert_eq!(app.p.conceptos["SR.M2"].descomposicion[0].hijo, antes[1]);
+        app.aplicar(vec![Accion::Unidad("SR.M2".into(), " m² ".into())]);
+        assert_eq!(app.p.conceptos["SR.M2"].unidad, "m²");
+        pintar(&mut app);
     }
 }
