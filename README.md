@@ -7,7 +7,8 @@ integración **MCP**.
 
 > **Estado: prototipo (v0.1.0-alpha.1).** Motor económico, persistencia
 > SQLite, interfaz básica, importación y exportación BC3 e informe Excel
-> funcionando; validación con Presto 8.8, informes PDF y MCP en desarrollo.
+> funcionando, y servidor MCP de consulta; validación con Presto 8.8,
+> informes PDF y cambios vía MCP en desarrollo.
 > No usar todavía para presupuestos reales.
 
 ## Qué hace hoy
@@ -68,6 +69,12 @@ cargo run -p ppto-cli -- importar presupuesto.bc3 --excel presupuesto.xlsx
 Seis hojas: resumen por capítulos (coste directo, indirectos, PEM, GG, BI,
 IVA), presupuesto, descompuestos, mediciones, recursos y horas por oficio.
 También con el botón «Excel…» de la interfaz.
+
+## Claude Desktop (MCP)
+
+`cargo build --release -p ppto-mcp` y añadir `target\release\ppto-mcp.exe` a
+la configuración de Claude Desktop. Permite preguntar por el presupuesto y
+simular cambios y subcontratas sin modificarlo. Ver [`docs/mcp.md`](docs/mcp.md).
 
 ## Interfaz de escritorio (prototipo)
 

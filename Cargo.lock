@@ -2021,6 +2021,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppto-mcp"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "ppto-bc3",
+ "ppto-core",
+ "ppto-db",
+ "ppto-informes",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde_json",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"

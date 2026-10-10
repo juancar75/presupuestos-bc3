@@ -6,6 +6,10 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- `ppto-mcp`: servidor MCP de lectura y simulación (P-020) — abrir BC3/SQLite,
+  resumen, búsqueda, detalle de conceptos, recursos y horas, simulación de
+  CI/precios/cantidades y de subcontratas, exportación a Excel y BC3.
+  Guía en `docs/mcp.md`.
 - Exportador BC3 (P-011) en el formato de Presto 8.8 (FIEBDC-3/2002, ANSI,
   CRLF) con pruebas de ida y vuelta; `--bc3 salida.bc3` en `demo` e
   `importar` y botón «Exportar BC3…».

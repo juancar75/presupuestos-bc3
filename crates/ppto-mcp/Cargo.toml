@@ -1,0 +1,30 @@
+[package]
+name = "ppto-mcp"
+description = "Servidor MCP (Model Context Protocol) para consultar y simular presupuestos desde Claude"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ppto-mcp"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+ppto-core.workspace = true
+ppto-db.workspace = true
+ppto-bc3.workspace = true
+ppto-informes.workspace = true
+rust_decimal.workspace = true
+serde_json = "1.0"
+
+[dev-dependencies]
+rust_decimal_macros.workspace = true
+
+[lints]
+workspace = true
