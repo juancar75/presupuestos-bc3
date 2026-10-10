@@ -29,6 +29,59 @@ pub struct Presupuesto {
     pub conceptos: BTreeMap<String, Concepto>,
     /// Mediciones por par (padre, hijo).
     pub mediciones: BTreeMap<(String, String), Medicion>,
+    /// Costes indirectos de la obra, en puntos (45 = 45 %). Se aplican a cada
+    /// unidad de obra colgada de un capítulo, como hace Presto.
+    #[serde(default)]
+    pub costes_indirectos: Decimal,
+    #[serde(default)]
+    pub opciones_ci: OpcionesCi,
+}
+
+/// Opciones de aplicación de los costes indirectos (equivalentes a las de
+/// «Propiedades de la obra → Cálculo» de Presto, con sus valores por defecto).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpcionesCi {
+    /// Redondear el coste directo de la partida antes de aplicar los indirectos.
+    /// (Presto: casilla «No redondear coste antes de calcular indirectos» desmarcada.)
+    pub redondear_coste_antes: bool,
+    /// Aplicar indirectos también a partidas sin descomposición.
+    /// (Presto: casilla «No aplicar costes indirectos a partidas sin descomponer» desmarcada.)
+    pub aplicar_a_sin_descomponer: bool,
+    /// Redondear el precio de las partidas cuando se usan como auxiliares dentro
+    /// de otras. (Presto: casilla «Redondear partidas que actúan como auxiliares»,
+    /// desmarcada por defecto: se usa el precio sin redondear.)
+    #[serde(default)]
+    pub redondear_auxiliares: bool,
+}
+
+impl Default for OpcionesCi {
+    fn default() -> Self {
+        Self {
+            redondear_coste_antes: true,
+            aplicar_a_sin_descomponer: true,
+            redondear_auxiliares: false,
+        }
+    }
+}
+
+/// Máscara de un concepto porcentual (FIEBDC-3): el prefijo del código antes
+/// del primer «%» o «&». El porcentaje se aplica solo a las líneas anteriores
+/// cuyo código empieza por ella; si está vacía, a todas.
+pub fn mascara_porcentaje(codigo: &str) -> &str {
+    codigo.find(['%', '&']).map_or("", |i| &codigo[..i])
+}
+
+/// Resultado de valorar el presupuesto completo.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Valoracion {
+    /// Precio unitario de cada concepto (total, si es capítulo).
+    pub precios: HashMap<String, Decimal>,
+    /// Líneas valoradas de cada concepto con descomposición.
+    pub lineas: HashMap<String, Vec<LineaValorada>>,
+    /// PEM con costes indirectos.
+    pub pem: Decimal,
+    /// PEM sin costes indirectos.
+    pub coste_directo: Decimal,
 }
 
 /// Una línea de descomposición ya valorada.
@@ -53,6 +106,8 @@ impl Presupuesto {
             raiz,
             conceptos,
             mediciones: BTreeMap::new(),
+            costes_indirectos: Decimal::ZERO,
+            opciones_ci: OpcionesCi::default(),
         }
     }
 
@@ -95,6 +150,60 @@ impl Presupuesto {
         Ok(())
     }
 
+    /// Sustituye la medición de `hijo` en el capítulo `padre` y actualiza su
+    /// cantidad (rendimiento de la línea) con el nuevo total. Devuelve los
+    /// avisos de coherencia de unidades.
+    pub fn actualizar_medicion(
+        &mut self,
+        padre: &str,
+        hijo: &str,
+        medicion: Medicion,
+    ) -> Result<Vec<String>, ErrorMotor> {
+        let unidad = self.concepto(hijo)?.unidad.clone();
+        let r = medicion.calcular(&self.decimales, &unidad)?;
+        let linea = self
+            .concepto_mut(padre)?
+            .descomposicion
+            .iter_mut()
+            .find(|l| l.hijo == hijo)
+            .ok_or_else(|| ErrorMotor::PartidaSinMedicion(hijo.to_owned()))?;
+        linea.factor = Decimal::ONE;
+        linea.rendimiento = r.total;
+        self.mediciones.insert((padre.to_owned(), hijo.to_owned()), medicion);
+        Ok(r.avisos)
+    }
+
+    /// Cambia el rendimiento de la línea `hijo` dentro del descompuesto de `padre`.
+    pub fn fijar_rendimiento(&mut self, padre: &str, hijo: &str, rendimiento: Decimal) -> Result<(), ErrorMotor> {
+        let linea = self
+            .concepto_mut(padre)?
+            .descomposicion
+            .iter_mut()
+            .find(|l| l.hijo == hijo)
+            .ok_or_else(|| ErrorMotor::RecursoNoEnPartida {
+                partida: padre.to_owned(),
+                recurso: hijo.to_owned(),
+            })?;
+        linea.factor = Decimal::ONE;
+        linea.rendimiento = rendimiento;
+        Ok(())
+    }
+
+    /// Cambia el precio propio de un recurso básico.
+    pub fn fijar_precio(&mut self, codigo: &str, precio: Decimal) -> Result<(), ErrorMotor> {
+        let c = self.concepto_mut(codigo)?;
+        if !c.naturaleza.es_basico() {
+            return Err(ErrorMotor::ValorInvalido(format!(
+                "«{codigo}» no es un recurso básico: su precio sale de su descomposición"
+            )));
+        }
+        if precio < Decimal::ZERO {
+            return Err(ErrorMotor::ValorInvalido("el precio no puede ser negativo".into()));
+        }
+        c.precio = precio;
+        Ok(())
+    }
+
     /// Comprueba que todos los hijos existen y que no hay ciclos.
     pub fn validar(&self) -> Result<(), ErrorMotor> {
         let mut estado: HashMap<&str, u8> = HashMap::new(); // 1 = en pila, 2 = cerrado
@@ -132,16 +241,93 @@ impl Presupuesto {
         Ok(())
     }
 
-    /// Precio unitario de un concepto (total si es capítulo).
+    /// Coste directo unitario de un concepto (total con indirectos si es capítulo).
     pub fn precio(&self, codigo: &str) -> Result<Decimal, ErrorMotor> {
         self.validar()?;
         let mut cache = HashMap::new();
         self.precio_rec(codigo, &mut cache)
     }
 
-    /// Presupuesto de ejecución material (total del concepto raíz).
+    /// Valora todo el presupuesto de una vez (una sola validación y una caché
+    /// compartida). Es la forma eficiente de obtener precios y líneas de
+    /// presupuestos grandes; `precio` y `lineas_valoradas` valoran uno a uno.
+    pub fn valorar(&self) -> Result<Valoracion, ErrorMotor> {
+        self.validar()?;
+        let mut cache = HashMap::with_capacity(self.conceptos.len());
+        let mut lineas = HashMap::new();
+        for (codigo, c) in &self.conceptos {
+            self.precio_rec(codigo, &mut cache)?;
+            if !c.descomposicion.is_empty() {
+                lineas.insert(codigo.clone(), self.lineas_rec(codigo, &mut cache)?);
+            }
+        }
+        cache.retain(|k, _| !k.starts_with('\u{1}'));
+        let pem = cache.get(&self.raiz).copied().unwrap_or_default();
+        let coste_directo = if self.costes_indirectos.is_zero() {
+            pem
+        } else {
+            self.coste_directo()?
+        };
+        Ok(Valoracion {
+            precios: cache,
+            lineas,
+            pem,
+            coste_directo,
+        })
+    }
+
+    /// Presupuesto de ejecución material (total del concepto raíz), con los
+    /// costes indirectos incluidos en el precio de cada unidad de obra.
     pub fn pem(&self) -> Result<Decimal, ErrorMotor> {
         self.precio(&self.raiz)
+    }
+
+    /// Coste directo de la obra: el PEM calculado sin costes indirectos.
+    pub fn coste_directo(&self) -> Result<Decimal, ErrorMotor> {
+        if self.costes_indirectos.is_zero() {
+            return self.pem();
+        }
+        let mut sin_ci = self.clone();
+        sin_ci.costes_indirectos = Decimal::ZERO;
+        sin_ci.pem()
+    }
+
+    /// Precio de una unidad de obra con costes indirectos, a partir de su
+    /// coste directo unitario (ver `OpcionesCi`).
+    fn con_indirectos(
+        &self,
+        codigo: &str,
+        coste: Decimal,
+        cache: &mut HashMap<String, Decimal>,
+    ) -> Result<Decimal, ErrorMotor> {
+        let c = self.concepto(codigo)?;
+        if self.costes_indirectos.is_zero()
+            || c.naturaleza == Naturaleza::Capitulo
+            || c.naturaleza == Naturaleza::Porcentaje
+            || (c.descomposicion.is_empty() && !self.opciones_ci.aplicar_a_sin_descomponer)
+        {
+            return Ok(coste);
+        }
+        let base = if self.opciones_ci.redondear_coste_antes {
+            coste
+        } else if c.descomposicion.is_empty() {
+            c.precio
+        } else {
+            self.lineas_rec(codigo, cache)?.iter().map(|l| l.importe).sum()
+        };
+        Ok(redondear(
+            base * (Decimal::ONE + self.costes_indirectos / Decimal::ONE_HUNDRED),
+            self.decimales.precio,
+        ))
+    }
+
+    /// Precio de venta unitario de un concepto colgado de un capítulo
+    /// (coste directo más costes indirectos).
+    pub fn precio_con_indirectos(&self, codigo: &str) -> Result<Decimal, ErrorMotor> {
+        self.validar()?;
+        let mut cache = HashMap::new();
+        let coste = self.precio_rec(codigo, &mut cache)?;
+        self.con_indirectos(codigo, coste, &mut cache)
     }
 
     /// Líneas valoradas de un concepto.
@@ -173,6 +359,17 @@ impl Presupuesto {
         Ok(p)
     }
 
+    /// Precio de un auxiliar sin redondear (suma exacta de sus importes de línea).
+    fn precio_bruto(&self, codigo: &str, cache: &mut HashMap<String, Decimal>) -> Result<Decimal, ErrorMotor> {
+        let clave = format!("\u{1}bruto\u{1}{codigo}");
+        if let Some(p) = cache.get(&clave) {
+            return Ok(*p);
+        }
+        let p: Decimal = self.lineas_rec(codigo, cache)?.iter().map(|l| l.importe).sum();
+        cache.insert(clave, p);
+        Ok(p)
+    }
+
     pub(crate) fn lineas_rec(
         &self,
         codigo: &str,
@@ -181,13 +378,13 @@ impl Presupuesto {
         let c = self.concepto(codigo)?;
         let d = &self.decimales;
         let es_capitulo = c.naturaleza == Naturaleza::Capitulo;
-        let mut out = Vec::with_capacity(c.descomposicion.len());
-        let mut acumulado = Decimal::ZERO;
+        let mut out: Vec<LineaValorada> = Vec::with_capacity(c.descomposicion.len());
         for l in &c.descomposicion {
             let hijo = self.concepto(&l.hijo)?;
             let linea = if es_capitulo {
                 let cantidad = redondear(l.cantidad(), d.medicion);
-                let precio = self.precio_rec(&l.hijo, cache)?;
+                let coste = self.precio_rec(&l.hijo, cache)?;
+                let precio = self.con_indirectos(&l.hijo, coste, cache)?;
                 LineaValorada {
                     hijo: l.hijo.clone(),
                     naturaleza: hijo.naturaleza,
@@ -196,26 +393,45 @@ impl Presupuesto {
                     importe: redondear(cantidad * precio, d.importe),
                 }
             } else if hijo.naturaleza == Naturaleza::Porcentaje {
+                // Base: líneas anteriores cuyo código empieza por la máscara
+                // (parte del código antes de «%» o «&»; vacía = todas).
+                let mascara = mascara_porcentaje(&l.hijo);
+                let base: Decimal = out
+                    .iter()
+                    .filter(|p| p.hijo.starts_with(mascara))
+                    .map(|p| p.importe)
+                    .sum();
                 let cantidad = redondear(l.cantidad(), d.rendimiento);
                 LineaValorada {
                     hijo: l.hijo.clone(),
                     naturaleza: hijo.naturaleza,
                     cantidad,
-                    precio: acumulado,
-                    importe: redondear(cantidad * acumulado / Decimal::ONE_HUNDRED, d.importe_linea),
+                    precio: base,
+                    // Como Presto 8.8: la base se pasa a «cantidad» (base/100) redondeada
+                    // a los decimales de rendimiento y se multiplica por los puntos.
+                    // Contrastado con una obra real: 52/52 partidas al céntimo.
+                    importe: redondear(
+                        redondear(base / Decimal::ONE_HUNDRED, d.rendimiento) * cantidad,
+                        d.importe_linea,
+                    ),
                 }
             } else {
                 let cantidad = redondear(l.cantidad(), d.rendimiento);
-                let precio = self.precio_rec(&l.hijo, cache)?;
+                let precio = if hijo.naturaleza == Naturaleza::Partida && !self.opciones_ci.redondear_auxiliares {
+                    self.precio_bruto(&l.hijo, cache)?
+                } else {
+                    self.precio_rec(&l.hijo, cache)?
+                };
                 LineaValorada {
                     hijo: l.hijo.clone(),
                     naturaleza: hijo.naturaleza,
                     cantidad,
                     precio,
-                    importe: redondear(cantidad * precio, d.importe_linea),
+                    // Presto 8.8 multiplica factor × rendimiento sin redondear
+                    // (p. ej. 0,08333 × 6 = 0,49998, no 0,500): obra real, E21.
+                    importe: redondear(l.cantidad() * precio, d.importe_linea),
                 }
             };
-            acumulado += linea.importe;
             out.push(linea);
         }
         Ok(out)
@@ -280,6 +496,59 @@ mod tests {
         q.insertar(Concepto::partida("A", "ud", "A", vec![L::new("NOEXISTE", dec!(1))]))
             .unwrap();
         assert_eq!(q.validar(), Err(ErrorMotor::ConceptoInexistente("NOEXISTE".into())));
+    }
+
+    #[test]
+    fn porcentaje_con_mascara_solo_afecta_a_su_prefijo() {
+        // O1 (mano de obra) 20,00 + M1 (material) 100,00; «O%MA» 10 % solo sobre «O…» = 2,00
+        let mut p = Presupuesto::new("t", "OBRA", "Obra");
+        p.insertar(Concepto::basico("O1", "h", "o", Naturaleza::ManoObra, dec!(20)))
+            .unwrap();
+        p.insertar(Concepto::basico("M1", "ud", "m", Naturaleza::Material, dec!(100)))
+            .unwrap();
+        p.insertar(Concepto::porcentaje("O%MA", "MA sobre mano de obra"))
+            .unwrap();
+        p.insertar(Concepto::porcentaje("%CI", "CI sobre todo")).unwrap();
+        p.insertar(Concepto::partida(
+            "P",
+            "ud",
+            "p",
+            vec![
+                L::new("O1", dec!(1)),
+                L::new("M1", dec!(1)),
+                L::new("O%MA", dec!(10)),
+                L::new("%CI", dec!(3)),
+            ],
+        ))
+        .unwrap();
+        let l = p.lineas_valoradas("P").unwrap();
+        assert_eq!((l[2].precio, l[2].importe), (dec!(20.00), dec!(2.00)));
+        // %CI sin máscara: 3 % sobre 20 + 100 + 2 = 122 → 3,66
+        assert_eq!((l[3].precio, l[3].importe), (dec!(122.00), dec!(3.66)));
+        assert_eq!(p.precio("P").unwrap(), dec!(125.66));
+        assert_eq!(mascara_porcentaje("%MA"), "");
+        assert_eq!(mascara_porcentaje("MO&PERD"), "MO");
+    }
+
+    #[test]
+    fn auxiliares_sin_redondear_por_defecto_como_presto() {
+        // Auxiliar A con importes de línea a 4 decimales: 1 × 10,0040 → bruto 10,0040, redondeado 10,00.
+        // Partida P usa 10 ud de A: sin redondear 100,04; redondeando el auxiliar 100,00.
+        let mut p = Presupuesto::new("t", "OBRA", "Obra");
+        p.decimales.rendimiento = 4;
+        p.decimales.importe_linea = 4;
+        p.insertar(Concepto::basico("M", "ud", "m", Naturaleza::Material, dec!(10)))
+            .unwrap();
+        p.insertar(Concepto::partida("A", "ud", "aux", vec![L::new("M", dec!(1.0004))]))
+            .unwrap();
+        p.insertar(Concepto::partida("P", "ud", "p", vec![L::new("A", dec!(10))]))
+            .unwrap();
+        assert_eq!(p.precio("A").unwrap(), dec!(10.00));
+        assert_eq!(p.precio("P").unwrap(), dec!(100.04));
+        p.opciones_ci.redondear_auxiliares = true;
+        assert_eq!(p.precio("P").unwrap(), dec!(100.00));
+        // valorar() no expone claves internas
+        assert!(p.valorar().unwrap().precios.keys().all(|k| !k.starts_with('\u{1}')));
     }
 
     #[test]

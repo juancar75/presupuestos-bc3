@@ -11,5 +11,6 @@ Un ADR aceptado no se edita: se sustituye por otro que lo cite.
 | [0003](0003-aritmetica-decimal-y-redondeo.md) | Aritmética decimal y redondeo comercial | Propuesto |
 | [0004](0004-revisiones-como-copias.md) | Revisiones como copias completas | Propuesto |
 | [0005](0005-subcontratacion-como-escenario.md) | Subcontratación como escenario sobre presupuesto inmutable | Propuesto |
+| [0006](0006-prototipo-interfaz-egui.md) | Prototipo de interfaz con egui | Propuesto |
 
 Plantilla: copiar `0000-plantilla.md`.

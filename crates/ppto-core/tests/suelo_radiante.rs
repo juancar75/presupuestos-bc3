@@ -7,7 +7,7 @@
 use ppto_core::concepto::Naturaleza;
 use ppto_core::ejemplos::{ofertas_montaje_suelo_radiante, suelo_radiante};
 use ppto_core::subcontrata::{Asignacion, Contratacion, PaqueteTrabajo, simular};
-use ppto_core::{Decimal, ErrorMotor, venta};
+use ppto_core::{Decimal, ErrorMotor, Presupuesto, venta};
 use rust_decimal_macros::dec;
 
 #[test]
@@ -68,7 +68,7 @@ fn ofertas_con_distinta_unidad_de_contratacion() {
     let ra = simular(&p, std::slice::from_ref(&a)).unwrap();
     assert_eq!(ra.coste_retirado, dec!(2389.80)); // 210 × (6,13 + 5,25)
     assert_eq!(ra.coste_contratado, dec!(1890.00)); // 210 m² × 9,00
-    assert_eq!(ra.pem_escenario, dec!(6505.35));
+    assert_eq!(ra.coste_escenario, dec!(6505.35));
     assert_eq!(ra.ahorro, dec!(499.80));
     assert_eq!(ra.horas_liberadas["MO.OF1F"], dec!(52.5));
     assert_eq!(ra.horas_liberadas["MO.AYUF"], dec!(52.5));
@@ -77,11 +77,11 @@ fn ofertas_con_distinta_unidad_de_contratacion() {
     let rb = simular(&p, std::slice::from_ref(&b)).unwrap();
     assert_eq!(rb.detalle[0].cantidad_contratada, dec!(1470.00)); // 210 × 7 m/m²
     assert_eq!(rb.coste_contratado, dec!(2352.00));
-    assert_eq!(rb.pem_escenario, dec!(6967.35));
+    assert_eq!(rb.coste_escenario, dec!(6967.35));
 
     let rc = simular(&p, std::slice::from_ref(&c)).unwrap();
     assert_eq!(rc.coste_contratado, dec!(2300.00));
-    assert_eq!(rc.pem_escenario, dec!(6915.35));
+    assert_eq!(rc.coste_escenario, dec!(6915.35));
 
     // Comparación homogénea en €/m² de partida
     assert_eq!(ra.precio_equivalente("SUB-A", "SR.M2", 2), Some(dec!(9.00)));
@@ -174,4 +174,96 @@ fn resumen_y_margen_sobre_el_ejemplo() {
     assert_eq!(r.total, dec!(10086.72));
     // Venta con 30 % de margen sobre el coste directo del suelo radiante
     assert_eq!(venta::venta_por_margen(dec!(29.89), dec!(30), 2).unwrap(), dec!(42.70));
+}
+
+#[test]
+fn edicion_de_mediciones_rendimientos_y_precios() {
+    use ppto_core::medicion::LineaMedicion;
+    let mut p = suelo_radiante();
+    // Añadir 10 m² más de medición: 220 × 29,89 = 6.575,80
+    let mut m = p.mediciones[&("C01".to_string(), "SR.M2".to_string())].clone();
+    m.lineas.push(LineaMedicion::normal(
+        "Ampliación",
+        Some(dec!(1)),
+        Some(dec!(5)),
+        Some(dec!(2)),
+        None,
+    ));
+    let avisos = p.actualizar_medicion("C01", "SR.M2", m).unwrap();
+    assert!(avisos.is_empty());
+    assert_eq!(p.lineas_valoradas("C01").unwrap()[0].importe, dec!(6575.80));
+    // Rendimiento de tubo 7 → 8 m/m²: +1,10 → suma 30,40; MA 0,608 → 0,61; precio 31,01
+    p.fijar_rendimiento("SR.M2", "MT.TUBO16", dec!(8)).unwrap();
+    assert_eq!(p.precio("SR.M2").unwrap(), dec!(31.01));
+    // Precio del oficial 24,50 → 26,00: colector 185 + 39,00 + 21 = 245,00
+    p.fijar_precio("MO.OF1F", dec!(26.00)).unwrap();
+    assert_eq!(p.precio("SR.COL8").unwrap(), dec!(245.00));
+    // No se puede fijar precio a una partida ni un precio negativo
+    assert!(p.fijar_precio("SR.M2", dec!(1)).is_err());
+    assert!(p.fijar_precio("MT.TUBO16", dec!(-1)).is_err());
+    assert!(p.fijar_rendimiento("SR.M2", "MT.COL8", dec!(1)).is_err());
+}
+
+#[test]
+fn costes_indirectos_por_partida_como_presto() {
+    use ppto_core::presupuesto::OpcionesCi;
+    let mut p = suelo_radiante();
+    p.costes_indirectos = dec!(45);
+    // SR.M2: 29,89 × 1,45 = 43,3405 → 43,34 ; SR.COL8: 242,75 × 1,45 = 351,9875 → 351,99
+    assert_eq!(p.precio_con_indirectos("SR.M2").unwrap(), dec!(43.34));
+    assert_eq!(p.precio_con_indirectos("SR.COL8").unwrap(), dec!(351.99));
+    // El coste unitario no cambia
+    assert_eq!(p.precio("SR.M2").unwrap(), dec!(29.89));
+    // PEM = 210 × 43,34 + 3 × 351,99 = 9.101,40 + 1.055,97 = 10.157,37
+    assert_eq!(p.pem().unwrap(), dec!(10157.37));
+    assert_eq!(p.coste_directo().unwrap(), dec!(7005.15));
+    // Aplicado al total daría 7.005,15 × 1,45 = 10.157,4675 → 10.157,47: el redondeo por
+    // partida explica la diferencia, igual que en Presto.
+    let v = p.valorar().unwrap();
+    assert_eq!((v.pem, v.coste_directo), (dec!(10157.37), dec!(7005.15)));
+    // Recursos y escenarios trabajan sobre coste directo
+    let e = p.explosion_recursos().unwrap();
+    assert_eq!((e.coste_directo, e.descuadre_redondeo), (dec!(7005.15), dec!(2.10)));
+    let [a, _, _] = ofertas_montaje_suelo_radiante();
+    let r = simular(&p, &[a]).unwrap();
+    assert_eq!((r.coste_original, r.coste_escenario), (dec!(7005.15), dec!(6505.35)));
+
+    // Opción «no aplicar indirectos a partidas sin descomponer»
+    let mut q = Presupuesto::new("t", "OBRA", "Obra");
+    q.insertar(ppto_core::Concepto::basico("R", "ud", "r", Naturaleza::Otros, dec!(10)))
+        .unwrap();
+    q.colgar("OBRA", "R", None).unwrap();
+    q.costes_indirectos = dec!(45);
+    assert_eq!(q.pem().unwrap(), dec!(14.50));
+    q.opciones_ci = OpcionesCi {
+        aplicar_a_sin_descomponer: false,
+        ..Default::default()
+    };
+    assert_eq!(q.pem().unwrap(), dec!(10.00));
+}
+
+#[test]
+fn opcion_no_redondear_coste_antes_de_indirectos() {
+    use ppto_core::concepto::{Concepto, LineaDescomposicion as L};
+    use ppto_core::presupuesto::OpcionesCi;
+    // Rendimiento e importe de línea con 4 decimales: 1,0004 × 10,00 = 10,0040.
+    // Coste de la partida redondeado a 2 decimales: 10,00.
+    let mut p = Presupuesto::new("t", "OBRA", "Obra");
+    p.decimales.rendimiento = 4;
+    p.decimales.importe_linea = 4;
+    p.insertar(Concepto::basico("M", "ud", "m", Naturaleza::Material, dec!(10.00)))
+        .unwrap();
+    p.insertar(Concepto::partida("P", "ud", "p", vec![L::new("M", dec!(1.0004))]))
+        .unwrap();
+    p.colgar("OBRA", "P", None).unwrap();
+    p.costes_indirectos = dec!(45);
+    assert_eq!(p.precio("P").unwrap(), dec!(10.00));
+    // Redondeando antes (Presto por defecto): 10,00 × 1,45 = 14,50
+    assert_eq!(p.precio_con_indirectos("P").unwrap(), dec!(14.50));
+    // Sin redondear antes: 10,0040 × 1,45 = 14,5058 → 14,51
+    p.opciones_ci = OpcionesCi {
+        redondear_coste_antes: false,
+        ..Default::default()
+    };
+    assert_eq!(p.precio_con_indirectos("P").unwrap(), dec!(14.51));
 }

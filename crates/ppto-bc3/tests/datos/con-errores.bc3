@@ -1,0 +1,18 @@
+basura antes del primer registro
+~V|SINTETICO|FIEBDC-3/2020|pruebas|Con errores|ANSI|
+~C|CAP1#||Capítulo uno|100|
+~D|CAP1#|P1\1\2\P2\1\1\PFANTASMA\1\1\|
+~C|P1|m2|Partida con precio declarado erróneo|45|
+~D|P1|R1\1\2.5\R2\x\1\|
+~C|P2|ud|Partida en ciclo|10|
+~D|P2|P3\1\1\|
+~C|P3|ud|Partida en ciclo 2|10|
+~D|P3|P2\1\1\R1\1\1\|
+~C|R1|h|Recurso uno|10|0|1|
+~C|R2|kg|Recurso dos|abc|0|3|
+~C|R1|h|Recurso uno repetido|10|0|1|
+~M|CAP1#\P1|1|2|\Zona A\1\3\\\\|
+~M|CAP1#\NOEXISTE|1|1|\x\1\\\\|
+~Z|registro raro|
+~T|NADIE|texto huérfano|
+~C|CAP2#||Capítulo suelto sin raíz|0|

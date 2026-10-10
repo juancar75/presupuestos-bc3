@@ -8,6 +8,7 @@
 //! - Toda escritura en una transacción y registrada en `auditoria`.
 
 use ppto_core::medicion::{LineaMedicion, Medicion, TipoLinea};
+use ppto_core::presupuesto::OpcionesCi;
 use ppto_core::{Concepto, Decimal, Decimales, LineaDescomposicion, Naturaleza, Presupuesto};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::collections::BTreeMap;
@@ -30,7 +31,23 @@ pub enum ErrorDb {
 
 pub type Resultado<T> = Result<T, ErrorDb>;
 
-const MIGRACIONES: &[&str] = &[include_str!("../migrations/0001_esquema_inicial.sql")];
+/// Datos de cabecera de una revisión guardada.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InfoRevision {
+    pub id: i64,
+    pub presupuesto_id: i64,
+    pub presupuesto: String,
+    pub etiqueta: String,
+    pub autor: String,
+    pub creado_en: String,
+    pub bloqueada: bool,
+}
+
+const MIGRACIONES: &[&str] = &[
+    include_str!("../migrations/0001_esquema_inicial.sql"),
+    include_str!("../migrations/0002_costes_indirectos.sql"),
+    include_str!("../migrations/0003_redondear_auxiliares.sql"),
+];
 
 pub struct Almacen {
     con: Connection,
@@ -88,8 +105,9 @@ impl Almacen {
         let d = p.decimales;
         tx.execute(
             "INSERT INTO revisiones (presupuesto_id, etiqueta, autor, nombre, raiz,
-                dec_dimensiones, dec_medicion, dec_rendimiento, dec_importe_linea, dec_precio, dec_importe)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                dec_dimensiones, dec_medicion, dec_rendimiento, dec_importe_linea, dec_precio, dec_importe,
+                costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer, redondear_auxiliares)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 presupuesto_id,
                 etiqueta,
@@ -101,7 +119,11 @@ impl Almacen {
                 d.rendimiento,
                 d.importe_linea,
                 d.precio,
-                d.importe
+                d.importe,
+                p.costes_indirectos.to_string(),
+                p.opciones_ci.redondear_coste_antes,
+                p.opciones_ci.aplicar_a_sin_descomponer,
+                p.opciones_ci.redondear_auxiliares
             ],
         )?;
         let rev = tx.last_insert_rowid();
@@ -116,9 +138,11 @@ impl Almacen {
         let tx = self.con.transaction()?;
         let n = tx.execute(
             "INSERT INTO revisiones (presupuesto_id, etiqueta, revision_origen_id, autor, nombre, raiz,
-                dec_dimensiones, dec_medicion, dec_rendimiento, dec_importe_linea, dec_precio, dec_importe)
+                dec_dimensiones, dec_medicion, dec_rendimiento, dec_importe_linea, dec_precio, dec_importe,
+                costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer, redondear_auxiliares)
              SELECT presupuesto_id, ?2, id, ?3, nombre, raiz,
-                dec_dimensiones, dec_medicion, dec_rendimiento, dec_importe_linea, dec_precio, dec_importe
+                dec_dimensiones, dec_medicion, dec_rendimiento, dec_importe_linea, dec_precio, dec_importe,
+                costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer, redondear_auxiliares
              FROM revisiones WHERE id = ?1",
             params![origen, etiqueta, autor],
         )?;
@@ -182,11 +206,13 @@ impl Almacen {
     }
 
     pub fn cargar_revision(&self, rev: i64) -> Resultado<Presupuesto> {
-        let (nombre, raiz, decimales) = self
+        let (nombre, raiz, decimales, ci) = self
             .con
             .query_row(
                 "SELECT nombre, raiz, dec_dimensiones, dec_medicion, dec_rendimiento,
-                        dec_importe_linea, dec_precio, dec_importe
+                        dec_importe_linea, dec_precio, dec_importe,
+                        costes_indirectos, ci_redondear_coste_antes, ci_aplicar_sin_descomponer,
+                        redondear_auxiliares
                  FROM revisiones WHERE id = ?1",
                 [rev],
                 |r| {
@@ -201,6 +227,12 @@ impl Almacen {
                             precio: r.get(6)?,
                             importe: r.get(7)?,
                         },
+                        (
+                            r.get::<_, String>(8)?,
+                            r.get::<_, bool>(9)?,
+                            r.get::<_, bool>(10)?,
+                            r.get::<_, bool>(11)?,
+                        ),
                     ))
                 },
             )
@@ -295,13 +327,59 @@ impl Almacen {
             });
         }
 
+        let (ci_txt, redondear_coste_antes, aplicar_a_sin_descomponer, redondear_auxiliares) = ci;
         Ok(Presupuesto {
+            costes_indirectos: dec_de(&ci_txt)?,
+            opciones_ci: OpcionesCi {
+                redondear_coste_antes,
+                aplicar_a_sin_descomponer,
+                redondear_auxiliares,
+            },
             nombre,
             decimales,
             raiz,
             conceptos,
             mediciones,
         })
+    }
+
+    /// Revisiones guardadas en el fichero, de la más antigua a la más reciente.
+    pub fn listar_revisiones(&self) -> Resultado<Vec<InfoRevision>> {
+        let mut st = self.con.prepare(
+            "SELECT r.id, r.presupuesto_id, p.nombre, r.etiqueta, r.autor, r.creado_en, r.bloqueada
+             FROM revisiones r JOIN presupuestos p ON p.id = r.presupuesto_id ORDER BY r.id",
+        )?;
+        let v = st
+            .query_map([], |r| {
+                Ok(InfoRevision {
+                    id: r.get(0)?,
+                    presupuesto_id: r.get(1)?,
+                    presupuesto: r.get(2)?,
+                    etiqueta: r.get(3)?,
+                    autor: r.get(4)?,
+                    creado_en: r.get(5)?,
+                    bloqueada: r.get::<_, i64>(6)? == 1,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(v)
+    }
+
+    /// Primera etiqueta «R<n>» libre para un presupuesto.
+    pub fn siguiente_etiqueta(&self, presupuesto_id: i64) -> Resultado<String> {
+        let mut n = 1;
+        loop {
+            let etiqueta = format!("R{n}");
+            let existe: i64 = self.con.query_row(
+                "SELECT COUNT(*) FROM revisiones WHERE presupuesto_id = ?1 AND etiqueta = ?2",
+                params![presupuesto_id, etiqueta],
+                |r| r.get(0),
+            )?;
+            if existe == 0 {
+                return Ok(etiqueta);
+            }
+            n += 1;
+        }
     }
 
     /// Operaciones registradas para una revisión: (usuario, operación, detalle).
@@ -527,6 +605,66 @@ mod tests {
             Err(ErrorDb::RevisionBloqueada(_))
         ));
         assert_eq!(a.cargar_revision(r1).unwrap(), suelo_radiante());
+    }
+
+    #[test]
+    fn listado_y_siguiente_etiqueta() {
+        let mut a = Almacen::en_memoria().unwrap();
+        let id = a.crear_presupuesto("Vivienda").unwrap();
+        assert_eq!(a.siguiente_etiqueta(id).unwrap(), "R1");
+        let r1 = a.guardar_revision(id, "R1", "ana", &suelo_radiante()).unwrap();
+        a.derivar_revision(r1, "R2", "luis").unwrap();
+        a.bloquear_revision(r1, "ana").unwrap();
+        assert_eq!(a.siguiente_etiqueta(id).unwrap(), "R3");
+        let l = a.listar_revisiones().unwrap();
+        assert_eq!(l.len(), 2);
+        assert_eq!((l[0].etiqueta.as_str(), l[0].bloqueada), ("R1", true));
+        assert_eq!((l[1].etiqueta.as_str(), l[1].autor.as_str()), ("R2", "luis"));
+        assert_eq!(l[1].presupuesto, "Vivienda");
+    }
+
+    #[test]
+    fn costes_indirectos_se_guardan_y_se_recuperan() {
+        let mut a = Almacen::en_memoria().unwrap();
+        let id = a.crear_presupuesto("x").unwrap();
+        let mut p = suelo_radiante();
+        p.costes_indirectos = dec!(45);
+        p.opciones_ci.aplicar_a_sin_descomponer = false;
+        p.opciones_ci.redondear_auxiliares = true;
+        let r1 = a.guardar_revision(id, "R1", "j", &p).unwrap();
+        let r2 = a.derivar_revision(r1, "R2", "j").unwrap();
+        for r in [r1, r2] {
+            let leido = a.cargar_revision(r).unwrap();
+            assert_eq!(leido, p);
+            assert_eq!(leido.pem().unwrap(), dec!(10157.37));
+        }
+    }
+
+    #[test]
+    fn fichero_con_esquema_v1_se_actualiza_sin_perder_datos() {
+        let ruta = std::env::temp_dir().join(format!("ppto-db-v1-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&ruta);
+        {
+            // Fichero creado por la versión anterior (solo migración 1)
+            let con = Connection::open(&ruta).unwrap();
+            con.execute_batch(MIGRACIONES[0]).unwrap();
+            con.pragma_update(None, "user_version", 1).unwrap();
+            con.execute_batch(
+                "INSERT INTO presupuestos (id, nombre) VALUES (1, 'antiguo');
+                 INSERT INTO revisiones (id, presupuesto_id, etiqueta, autor, nombre, raiz,
+                    dec_dimensiones, dec_medicion, dec_rendimiento, dec_importe_linea, dec_precio, dec_importe)
+                 VALUES (1, 1, 'R1', 'j', 'antiguo', 'OBRA', 2, 2, 3, 2, 2, 2);
+                 INSERT INTO conceptos VALUES (1, 'OBRA', '', 'Obra', 'capitulo', '0', NULL);",
+            )
+            .unwrap();
+        }
+        let a = Almacen::abrir(&ruta).unwrap();
+        assert_eq!(a.version_esquema().unwrap(), MIGRACIONES.len());
+        let p = a.cargar_revision(1).unwrap();
+        assert_eq!(p.costes_indirectos, Decimal::ZERO);
+        assert_eq!(p.opciones_ci, OpcionesCi::default());
+        drop(a);
+        let _ = std::fs::remove_file(&ruta);
     }
 
     #[test]

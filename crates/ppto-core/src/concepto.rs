@@ -22,7 +22,8 @@ pub enum Naturaleza {
     Subcontrata,
     /// Línea porcentual (medios auxiliares, costes indirectos dentro del
     /// descompuesto…). Su cantidad es en puntos porcentuales y se aplica
-    /// sobre la suma de las líneas anteriores del mismo descompuesto.
+    /// sobre la suma de las líneas anteriores del mismo descompuesto cuyo
+    /// código empieza por la máscara (prefijo del código antes de `%`/`&`).
     Porcentaje,
     /// Tipo 0 de FIEBDC: otros costes con precio propio.
     Otros,

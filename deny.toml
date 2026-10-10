@@ -14,9 +14,17 @@ allow = [
     "Unicode-3.0",
     "MPL-2.0",
     "GPL-3.0-or-later",
+    # Boost: permisiva y compatible con GPL (clipboard-win, error-code; portapapeles en Windows)
+    "BSL-1.0",
 ]
 confidence-threshold = 0.9
 unused-allowed-license = "allow"
+
+# Fuentes tipográficas incrustadas por egui. Se distribuyen como datos
+# agregados, no como código derivado; ver THIRD-PARTY-NOTICES.md.
+[[licenses.exceptions]]
+crate = "epaint_default_fonts"
+allow = ["OFL-1.1", "Ubuntu-font-1.0"]
 
 [bans]
 multiple-versions = "warn"

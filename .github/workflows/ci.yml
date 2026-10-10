@@ -51,7 +51,7 @@ jobs:
           fetch-depth: 0
       - name: Comprobar Signed-off-by
         run: |
-          faltan=$(git log --format='%H %(trailers:key=Signed-off-by,valueonly)' \
+          faltan=$(git log --no-merges --format='%H %(trailers:key=Signed-off-by,valueonly)' \
             ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} \
             | awk 'NF==1 {print $1}')
           if [ -n "$faltan" ]; then

@@ -67,10 +67,12 @@ pub struct DetalleAsignacion {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResultadoEscenario {
-    pub pem_original: Decimal,
+    /// Coste directo de la obra antes de subcontratar.
+    pub coste_original: Decimal,
     pub coste_retirado: Decimal,
     pub coste_contratado: Decimal,
-    pub pem_escenario: Decimal,
+    /// Coste directo de la obra con las subcontratas del escenario.
+    pub coste_escenario: Decimal,
     /// Positivo = ahorro respecto al original.
     pub ahorro: Decimal,
     pub horas_liberadas: BTreeMap<String, Decimal>,
@@ -92,7 +94,7 @@ impl ResultadoEscenario {
 /// Simula la sustitución de recursos por subcontratación sin tocar `p`.
 pub fn simular(p: &Presupuesto, paquetes: &[PaqueteTrabajo]) -> Result<ResultadoEscenario, ErrorMotor> {
     let dec = p.decimales;
-    let pem = p.pem()?;
+    let pem = p.coste_directo()?;
     let cantidades = p.cantidades_partidas()?;
     let mut reclamado: BTreeMap<(String, String), String> = BTreeMap::new();
     let mut detalle = Vec::new();
@@ -167,13 +169,13 @@ pub fn simular(p: &Presupuesto, paquetes: &[PaqueteTrabajo]) -> Result<Resultado
             *horas_liberadas.entry(k.clone()).or_insert(Decimal::ZERO) += *v;
         }
     }
-    let pem_escenario = pem - coste_retirado + coste_contratado;
+    let coste_escenario = pem - coste_retirado + coste_contratado;
     Ok(ResultadoEscenario {
-        pem_original: pem,
+        coste_original: pem,
         coste_retirado,
         coste_contratado,
-        pem_escenario,
-        ahorro: pem - pem_escenario,
+        coste_escenario,
+        ahorro: pem - coste_escenario,
         horas_liberadas,
         detalle,
         notas,
