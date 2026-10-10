@@ -28,7 +28,8 @@ pub(super) struct Alta {
     pub elegido: Option<String>,
 }
 
-const NATURALEZAS: [Naturaleza; 6] = [
+const NATURALEZAS: [Naturaleza; 7] = [
+    Naturaleza::Partida,
     Naturaleza::ManoObra,
     Naturaleza::Material,
     Naturaleza::Maquinaria,
@@ -116,10 +117,15 @@ impl Aplicacion {
 
     /// Formulario de nueva línea. Devuelve `true` si hay que cerrar la ventana.
     fn form_linea(&self, ui: &mut egui::Ui, a: &mut Alta, padre: &str, acciones: &mut Vec<Accion>) -> bool {
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut a.nuevo, false, "Concepto existente");
-            ui.selectable_value(&mut a.nuevo, true, "Recurso nuevo");
-        });
+        let en_capitulo = self.p.conceptos[padre].naturaleza == Naturaleza::Capitulo;
+        if en_capitulo {
+            a.nuevo = false;
+        } else {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut a.nuevo, false, "Concepto existente");
+                ui.selectable_value(&mut a.nuevo, true, "Concepto nuevo");
+            });
+        }
         ui.separator();
         let usados: Vec<&str> = self.p.conceptos[padre]
             .descomposicion
@@ -133,7 +139,12 @@ impl Aplicacion {
                     .selected_text(nombre_naturaleza(a.naturaleza))
                     .show_ui(ui, |ui| {
                         for n in NATURALEZAS {
-                            ui.selectable_value(&mut a.naturaleza, n, nombre_naturaleza(n));
+                            let t = if n == Naturaleza::Partida {
+                                "Subpartida (auxiliar descompuesto)"
+                            } else {
+                                nombre_naturaleza(n)
+                            };
+                            ui.selectable_value(&mut a.naturaleza, n, t);
                         }
                     });
             });
@@ -142,6 +153,15 @@ impl Aplicacion {
                 ui.label(
                     RichText::new("Ej.: «%MA». Se aplica sobre las líneas anteriores cuyo código empieza por lo que va antes del «%».")
                         .weak(),
+                );
+            } else if a.naturaleza == Naturaleza::Partida {
+                campo(ui, "Código", &mut a.codigo, 120.0);
+                campo(ui, "Unidad", &mut a.unidad, 60.0);
+                ui.label(
+                    RichText::new(
+                        "Se crea vacía; después pulse su código en el descompuesto para entrar y añadir sus líneas.",
+                    )
+                    .weak(),
                 );
             } else {
                 campo(ui, "Código", &mut a.codigo, 120.0);
@@ -157,6 +177,7 @@ impl Aplicacion {
                 .conceptos
                 .values()
                 .filter(|c| c.naturaleza != Naturaleza::Capitulo && c.codigo != padre)
+                .filter(|c| !en_capitulo || c.naturaleza == Naturaleza::Partida)
                 .filter(|c| !usados.contains(&c.codigo.as_str()))
                 .filter(|c| filtro.is_empty() || sin_tildes(&format!("{} {}", c.codigo, c.resumen)).contains(&filtro))
                 .take(200)
@@ -186,7 +207,11 @@ impl Aplicacion {
         };
         campo(ui, etiqueta, &mut a.cantidad, 90.0);
         let cantidad = leer(&a.cantidad);
-        let precio = if a.nuevo { leer(&a.precio) } else { Some(Decimal::ZERO) };
+        let precio = if a.nuevo && !matches!(a.naturaleza, Naturaleza::Partida | Naturaleza::Porcentaje) {
+            leer(&a.precio)
+        } else {
+            Some(Decimal::ZERO)
+        };
         let listo = cantidad.is_some() && precio.is_some() && (a.nuevo || a.elegido.is_some());
         if cantidad.is_none() || precio.is_none() {
             ui.label(

@@ -884,6 +884,25 @@ impl Aplicacion {
             .and_then(|v| v.iter().find(|l| l.hijo == hijo))
             .cloned();
 
+        let padre_es_capitulo = self
+            .p
+            .conceptos
+            .get(&padre)
+            .is_some_and(|p| p.naturaleza == Naturaleza::Capitulo);
+        ui.horizontal(|ui| {
+            if !padre_es_capitulo
+                && ui
+                    .button(format!("<< Volver a {padre}"))
+                    .on_hover_text("Subir al nivel anterior")
+                    .clicked()
+                && let Some(abuelo) = self.p.padres(&padre).into_iter().next()
+            {
+                acciones.push(Accion::Seleccionar(abuelo, padre.clone()));
+            }
+            let mut ruta = self.p.ruta(&padre);
+            ruta.push(hijo.clone());
+            ui.label(RichText::new(ruta.join("  >  ")).weak().small());
+        });
         ui.horizontal(|ui| {
             ui.label(RichText::new(&c.codigo).strong().size(16.0));
             let mut unidad = c.unidad.clone();
@@ -958,7 +977,17 @@ impl Aplicacion {
                         ui.end_row();
                         for l in &lineas {
                             let h = &self.p.conceptos[&l.hijo];
-                            ui.label(&h.codigo);
+                            if h.naturaleza == Naturaleza::Partida {
+                                if ui
+                                    .link(&h.codigo)
+                                    .on_hover_text("Entrar en la subpartida para ver o editar su descompuesto")
+                                    .clicked()
+                                {
+                                    acciones.push(Accion::Seleccionar(hijo.clone(), l.hijo.clone()));
+                                }
+                            } else {
+                                ui.label(&h.codigo);
+                            }
                             ui.label(&h.unidad);
                             ui.label(corto(&h.resumen, 46)).on_hover_text(&h.resumen);
                             ui.label(
@@ -1028,6 +1057,28 @@ impl Aplicacion {
             }
 
             ui.add_space(12.0);
+            if !padre_es_capitulo {
+                // Subpartida: su cantidad es el rendimiento dentro de la partida superior
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("Cantidad en {padre}:")).strong());
+                    if let Some(l) = &linea_cap
+                        && let Some(v) = self.edicion.decimal(
+                            ui,
+                            &format!("q|{padre}|{hijo}"),
+                            l.cantidad,
+                            dec.rendimiento,
+                            ANCHO_NUM,
+                        )
+                    {
+                        acciones.push(Accion::Rendimiento(padre.clone(), hijo.clone(), v));
+                    }
+                    ui.label(RichText::new(&c.unidad).weak());
+                });
+                for a in &self.avisos {
+                    ui.label(RichText::new(format!("⚠ {a}")).color(Color32::from_rgb(220, 150, 40)));
+                }
+                return;
+            }
             ui.label(RichText::new(format!("Medición en {}", padre)).strong());
             let clave = (padre.clone(), hijo.clone());
             match self.p.mediciones.get(&clave).cloned() {
@@ -1867,5 +1918,53 @@ mod pruebas {
         app.aplicar(vec![Accion::Unidad("SR.M2".into(), " m² ".into())]);
         assert_eq!(app.p.conceptos["SR.M2"].unidad, "m²");
         pintar(&mut app);
+    }
+
+    #[test]
+    fn subpartidas_desde_la_interfaz() {
+        // Mismo caso que el motor: AUX2 10,00 → AUX1 23,10 → P1 25,10; 10 m → 251,00 €
+        let mut app = Aplicacion::sin_ventana();
+        app.nuevo_presupuesto();
+        app.aplicar(vec![
+            Accion::NuevoCapitulo {
+                padre: "OBRA".into(),
+                codigo: "C01".into(),
+                resumen: "Cap".into(),
+            },
+            Accion::NuevaPartida {
+                capitulo: "C01".into(),
+                codigo: "P1".into(),
+                unidad: "m".into(),
+                resumen: "Partida".into(),
+            },
+        ]);
+        let nuevo = |codigo: &str, n, precio, en: &str, q| Accion::NuevoRecurso {
+            codigo: codigo.into(),
+            unidad: "ud".into(),
+            resumen: codigo.into(),
+            naturaleza: n,
+            precio,
+            en: en.into(),
+            cantidad: q,
+        };
+        app.aplicar(vec![
+            nuevo("AUX1", Naturaleza::Partida, dec!(0), "P1", dec!(1)),
+            nuevo("MO", Naturaleza::ManoObra, dec!(20), "P1", dec!(0.1)),
+        ]);
+        // Entrar en la subpartida (clic en su código) y descomponerla
+        app.aplicar(vec![Accion::Seleccionar("P1".into(), "AUX1".into())]);
+        pintar(&mut app);
+        app.aplicar(vec![
+            nuevo("AUX2", Naturaleza::Partida, dec!(0), "AUX1", dec!(2)),
+            nuevo("MT", Naturaleza::Material, dec!(3.10), "AUX1", dec!(1)),
+            Accion::Seleccionar("AUX1".into(), "AUX2".into()),
+            Accion::AnadirLinea("AUX2".into(), "MO".into(), dec!(0.5)),
+            Accion::Rendimiento("C01".into(), "P1".into(), dec!(10)),
+        ]);
+        pintar(&mut app);
+        assert_eq!(app.calc.error, None);
+        assert_eq!(app.calc.precios["AUX1"], dec!(23.10));
+        assert_eq!(app.calc.pem, dec!(251.00));
+        assert_eq!(app.p.ruta("AUX2"), ["OBRA", "C01", "P1", "AUX1", "AUX2"]);
     }
 }

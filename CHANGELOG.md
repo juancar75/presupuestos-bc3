@@ -13,6 +13,9 @@ versionado [semántico](https://semver.org/lang/es/).
 - Interfaz: botón «Nuevo», «+ Capítulo», menú contextual en el árbol, ventana
   «Añadir línea…» con buscador o recurso nuevo, ^ v x en el descompuesto y
   unidad editable.
+- Subpartidas (auxiliares descompuestos) a cualquier nivel: crear desde
+  «Añadir línea…», entrar pulsando su código, «<< Volver» y ruta superior;
+  `Presupuesto::ruta`.
 
 ### Validado con Presto 8.8 (10-10-2026)
 - **Importación de una obra real** (climatización, 208 conceptos, CI 45 %,

@@ -88,3 +88,40 @@ fn quitar_y_purgar() {
     q.anadir_linea("C01", "SR.COL8", dec!(3)).unwrap();
     assert_eq!(q.pem().unwrap(), dec!(7005.15));
 }
+
+#[test]
+fn subpartidas_a_varios_niveles_como_presto() {
+    // P1 (m) = 1 × AUX1 + 0,1 h × 20,00; AUX1 (ud) = 2 × AUX2 + 1 m × 3,10;
+    // AUX2 (ud) = 0,5 h × 20,00 = 10,00 → AUX1 = 20,00 + 3,10 = 23,10 → P1 = 23,10 + 2,00 = 25,10.
+    // 10 m → PEM 251,00 €.
+    let mut p = Presupuesto::new("t", "OBRA", "Obra");
+    p.nuevo_capitulo("OBRA", "C01", "Cap").unwrap();
+    p.nueva_partida("C01", "P1", "m", "Partida").unwrap();
+    p.nuevo_recurso("MO", "h", "Oficial", Naturaleza::ManoObra, dec!(20))
+        .unwrap();
+    p.nuevo_recurso("MT", "m", "Tubo", Naturaleza::Material, dec!(3.10))
+        .unwrap();
+    p.nuevo_recurso("AUX1", "ud", "Subpartida", Naturaleza::Partida, dec!(999))
+        .unwrap();
+    p.nuevo_recurso("AUX2", "ud", "Sub-subpartida", Naturaleza::Partida, dec!(0))
+        .unwrap();
+    p.anadir_linea("P1", "AUX1", dec!(1)).unwrap();
+    p.anadir_linea("P1", "MO", dec!(0.1)).unwrap();
+    p.anadir_linea("AUX1", "AUX2", dec!(2)).unwrap();
+    p.anadir_linea("AUX1", "MT", dec!(1)).unwrap();
+    p.anadir_linea("AUX2", "MO", dec!(0.5)).unwrap();
+    p.fijar_rendimiento("C01", "P1", dec!(10)).unwrap();
+    assert_eq!(p.precio("AUX2").unwrap(), dec!(10.00));
+    assert_eq!(p.precio("AUX1").unwrap(), dec!(23.10));
+    assert_eq!(p.precio("P1").unwrap(), dec!(25.10));
+    assert_eq!(p.pem().unwrap(), dec!(251.00));
+    assert_eq!(p.ruta("AUX2"), ["OBRA", "C01", "P1", "AUX1", "AUX2"]);
+    // Ciclo indirecto: AUX2 no puede contener a P1
+    assert!(
+        p.anadir_linea("AUX2", "P1", dec!(1))
+            .unwrap_err()
+            .to_string()
+            .contains("circular")
+    );
+    assert!(p.nuevo_recurso("X", "", "x", Naturaleza::Capitulo, dec!(0)).is_err());
+}

@@ -90,9 +90,13 @@ Permite crear un presupuesto desde cero (**Nuevo**) o editar uno importado:
   o un subcapítulo; clic derecho en cualquier línea para subirla, bajarla o
   quitarla (lo que quede sin usar se borra).
 - **Partida**: código, unidad, resumen y texto; descompuesto con «+ Añadir
-  línea…» (un concepto existente, con buscador, o un recurso nuevo: mano de
-  obra, material, maquinaria, subcontrata, otros o porcentaje) y botones
-  ^ v x por línea; hoja de medición (uds × largo × ancho × alto o fórmula).
+  línea…» (un concepto existente, con buscador, o uno nuevo: subpartida,
+  mano de obra, material, maquinaria, subcontrata, otros o porcentaje) y
+  botones ^ v x por línea; hoja de medición (uds × largo × ancho × alto o
+  fórmula).
+- **Subpartidas a cualquier nivel**, como los auxiliares de Presto: se pulsa
+  el código de una subpartida para entrar en ella, «<< Volver» para subir, y
+  arriba se ve la ruta (OBRA > C01 > P0001 > AUX1).
 - Recálculo inmediato del PEM, recursos, ofertas de subcontrata y resumen.
 
 El motor impide referencias circulares, recursos colgados de capítulos,

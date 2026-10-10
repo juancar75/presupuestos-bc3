@@ -64,7 +64,9 @@ impl Presupuesto {
     }
 
     /// Crea un recurso básico (mano de obra, maquinaria, material, subcontrata,
-    /// otros) o un concepto porcentual. No lo cuelga de ningún sitio.
+    /// otros), un concepto porcentual o una partida auxiliar vacía (que luego
+    /// se descompone, como un precio auxiliar de Presto). No lo cuelga de
+    /// ningún sitio. En las partidas el precio se ignora: sale de su descompuesto.
     pub fn nuevo_recurso(
         &mut self,
         codigo: &str,
@@ -73,20 +75,38 @@ impl Presupuesto {
         naturaleza: Naturaleza,
         precio: Decimal,
     ) -> Result<(), ErrorMotor> {
-        if !naturaleza.es_basico() && naturaleza != Naturaleza::Porcentaje {
-            return Err(ErrorMotor::ValorInvalido(
-                "un recurso debe ser mano de obra, maquinaria, material, subcontrata, otros o porcentaje".into(),
-            ));
-        }
-        if precio < Decimal::ZERO && naturaleza != Naturaleza::Porcentaje {
-            return Err(ErrorMotor::ValorInvalido("el precio no puede ser negativo".into()));
-        }
-        let c = if naturaleza == Naturaleza::Porcentaje {
-            Concepto::porcentaje(codigo, resumen)
-        } else {
-            Concepto::basico(codigo, unidad, resumen, naturaleza, precio)
+        let c = match naturaleza {
+            Naturaleza::Capitulo => {
+                return Err(ErrorMotor::ValorInvalido(
+                    "un capítulo no puede formar parte de una partida".into(),
+                ));
+            }
+            Naturaleza::Porcentaje => Concepto::porcentaje(codigo, resumen),
+            Naturaleza::Partida => Concepto::partida(codigo, unidad, resumen, Vec::new()),
+            n => {
+                if precio < Decimal::ZERO {
+                    return Err(ErrorMotor::ValorInvalido("el precio no puede ser negativo".into()));
+                }
+                Concepto::basico(codigo, unidad, resumen, n, precio)
+            }
         };
         self.insertar_nuevo(c)
+    }
+
+    /// Cadena de padres desde la raíz hasta `codigo` (primer padre de cada
+    /// nivel), p. ej. `["OBRA", "C01", "P0001", "AUX1"]`. Sirve de «migas de pan».
+    pub fn ruta(&self, codigo: &str) -> Vec<String> {
+        let mut r = vec![codigo.to_owned()];
+        let mut actual = codigo.to_owned();
+        while let Some(p) = self.padres(&actual).into_iter().next() {
+            if r.contains(&p) || r.len() > 64 {
+                break;
+            }
+            r.push(p.clone());
+            actual = p;
+        }
+        r.reverse();
+        r
     }
 
     /// Añade al final de `padre` una línea con un concepto ya existente.
