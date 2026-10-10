@@ -733,17 +733,16 @@ impl Lector {
             c.naturaleza = Naturaleza::Capitulo;
         }
 
-        let nombre = conceptos
-            .get(&raiz)
-            .map(|c| c.resumen.clone())
+        // Nombre: rótulo del ~V; si está vacío (Presto 8.8), resumen de la raíz.
+        let nombre = Some(self.cabecera.rotulo.clone())
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| {
-                if self.cabecera.rotulo.is_empty() {
-                    "Presupuesto importado".into()
-                } else {
-                    self.cabecera.rotulo.clone()
-                }
-            });
+            .or_else(|| {
+                conceptos
+                    .get(&raiz)
+                    .map(|c| c.resumen.clone())
+                    .filter(|s| !s.is_empty())
+            })
+            .unwrap_or_else(|| "Presupuesto importado".into());
         let mut p = Presupuesto {
             nombre,
             decimales,

@@ -6,8 +6,8 @@ verificable, control de costes y subcontratación, informes configurables e
 integración **MCP**.
 
 > **Estado: prototipo (v0.1.0-alpha.1).** Motor económico, persistencia
-> SQLite, interfaz básica e importación BC3 funcionando; exportación BC3,
-> informes y MCP en desarrollo.
+> SQLite, interfaz básica, importación y exportación BC3 e informe Excel
+> funcionando; validación con Presto 8.8, informes PDF y MCP en desarrollo.
 > No usar todavía para presupuestos reales.
 
 ## Qué hace hoy
@@ -50,6 +50,14 @@ Lee el BC3 aunque tenga defectos, lista cada incidencia con su línea y
 recalcula todos los precios para señalar los que **no cuadran** con lo que
 declara el fichero. También desde la interfaz: botón «Importar BC3…».
 Criterios de interpretación en [`docs/bc3/matriz-registros.md`](docs/bc3/matriz-registros.md).
+
+## Exportar a BC3
+
+```console
+cargo run -p ppto-cli -- importar presupuesto.bc3 --bc3 copia.bc3
+```
+
+Escribe FIEBDC-3/2002 en ANSI, como Presto 8.8. También con «Exportar BC3…».
 
 ## Informe Excel
 

@@ -267,6 +267,33 @@ impl Aplicacion {
         None
     }
 
+    fn exportar_bc3(&mut self) {
+        let nombre = format!(
+            "{}.bc3",
+            self.p
+                .nombre
+                .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
+        );
+        let Some(ruta) = rfd::FileDialog::new()
+            .add_filter("FIEBDC-3 (BC3)", &["bc3"])
+            .set_file_name(nombre)
+            .save_file()
+        else {
+            return;
+        };
+        let o = ppto_bc3::OpcionesExportacion {
+            gastos_generales: Some(self.gg),
+            beneficio_industrial: Some(self.bi),
+            iva: Some(self.iva),
+            fecha: None,
+        };
+        match ppto_bc3::exportar_fichero(&self.p, &o, &ruta) {
+            Ok(avisos) if avisos.is_empty() => self.info(format!("BC3 exportado en {}", ruta.display())),
+            Ok(avisos) => self.info(format!("BC3 exportado en {} — {}", ruta.display(), avisos.join("; "))),
+            Err(e) => self.error(format!("No se pudo exportar: {e}")),
+        }
+    }
+
     fn exportar_excel(&mut self) {
         let nombre = format!(
             "{}.xlsx",
@@ -583,6 +610,13 @@ impl Aplicacion {
                 .clicked()
             {
                 self.dialogo_importar();
+            }
+            if ui
+                .button("📤 Exportar BC3…")
+                .on_hover_text("FIEBDC-3/2002 en ANSI, como lo exporta Presto 8.8")
+                .clicked()
+            {
+                self.exportar_bc3();
             }
             if ui
                 .button("📊 Excel…")

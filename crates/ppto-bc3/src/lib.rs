@@ -15,8 +15,10 @@
 //!
 //! Correspondencia de registros y decisiones abiertas: `docs/bc3/matriz-registros.md`.
 
+mod escritor;
 mod lector;
 
+pub use escritor::{Exportacion, OpcionesExportacion, exportar, exportar_fichero};
 pub use lector::{importar, importar_fichero};
 
 use ppto_core::{Decimal, Presupuesto};

@@ -5,7 +5,8 @@
 //!   ppto demo                 Imprime el caso sintético de suelo radiante.
 //!   ppto demo --db <fichero>  Además lo guarda en SQLite como revisión R1.
 //!   ppto demo --excel <f.xlsx> Además genera el informe Excel.
-//!   ppto importar <f.bc3> [--db <f.sqlite>] [--excel <f.xlsx>] [--todo]
+//!   ppto demo --bc3 <f.bc3>   Además exporta el ejemplo a BC3.
+//!   ppto importar <f.bc3> [--db <f.sqlite>] [--excel <f.xlsx>] [--bc3 <salida.bc3>] [--todo]
 //!                             Importa un BC3, informa de incidencias y de los
 //!                             precios que no cuadran; opcionalmente lo guarda.
 
@@ -22,10 +23,16 @@ fn main() -> ExitCode {
         Some("demo") => {
             let db = args.iter().position(|a| a == "--db").and_then(|i| args.get(i + 1));
             let xlsx = args.iter().position(|a| a == "--excel").and_then(|i| args.get(i + 1));
-            match demo(db.map(String::as_str)).and_then(|()| match xlsx {
-                Some(x) => excel(&suelo_radiante(), &ppto_informes::OpcionesInforme::default(), x),
-                None => Ok(()),
-            }) {
+            let bc3 = args.iter().position(|a| a == "--bc3").and_then(|i| args.get(i + 1));
+            match demo(db.map(String::as_str))
+                .and_then(|()| match xlsx {
+                    Some(x) => excel(&suelo_radiante(), &ppto_informes::OpcionesInforme::default(), x),
+                    None => Ok(()),
+                })
+                .and_then(|()| match bc3 {
+                    Some(b) => exportar_bc3(&suelo_radiante(), &ppto_bc3::OpcionesExportacion::default(), b),
+                    None => Ok(()),
+                }) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
                     eprintln!("error: {e}");
@@ -37,7 +44,14 @@ fn main() -> ExitCode {
             let db = args.iter().position(|a| a == "--db").and_then(|i| args.get(i + 1));
             let todo = args.iter().any(|a| a == "--todo");
             let xlsx = args.iter().position(|a| a == "--excel").and_then(|i| args.get(i + 1));
-            match importar(&args[1], db.map(String::as_str), xlsx.map(String::as_str), todo) {
+            let bc3 = args.iter().position(|a| a == "--bc3").and_then(|i| args.get(i + 1));
+            match importar(
+                &args[1],
+                db.map(String::as_str),
+                xlsx.map(String::as_str),
+                bc3.map(String::as_str),
+                todo,
+            ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
                     eprintln!("error: {e}");
@@ -47,7 +61,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "uso:\n  ppto demo [--db <fichero.sqlite>] [--excel <fichero.xlsx>]\n  ppto importar <fichero.bc3> [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--todo]"
+                "uso:\n  ppto demo [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <fichero.bc3>]\n  ppto importar <fichero.bc3> [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <salida.bc3>] [--todo]"
             );
             ExitCode::from(2)
         }
@@ -60,7 +74,26 @@ fn excel(p: &Presupuesto, o: &ppto_informes::OpcionesInforme, ruta: &str) -> Res
     Ok(())
 }
 
-fn importar(ruta: &str, db: Option<&str>, xlsx: Option<&str>, todo: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn exportar_bc3(
+    p: &Presupuesto,
+    o: &ppto_bc3::OpcionesExportacion,
+    ruta: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let avisos = ppto_bc3::exportar_fichero(p, o, ruta)?;
+    println!("BC3 exportado: {ruta}");
+    for a in avisos {
+        println!("  [aviso] {a}");
+    }
+    Ok(())
+}
+
+fn importar(
+    ruta: &str,
+    db: Option<&str>,
+    xlsx: Option<&str>,
+    bc3: Option<&str>,
+    todo: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let imp = ppto_bc3::importar_fichero(ruta)?;
     let p = &imp.presupuesto;
     let c = &imp.cabecera;
@@ -150,6 +183,16 @@ fn importar(ruta: &str, db: Option<&str>, xlsx: Option<&str>, todo: bool) -> Res
             iva: k.iva.unwrap_or(d.iva),
         };
         excel(p, &o, x)?;
+    }
+    if let Some(b) = bc3 {
+        let k = &imp.porcentajes;
+        let o = ppto_bc3::OpcionesExportacion {
+            gastos_generales: k.gastos_generales,
+            beneficio_industrial: k.beneficio_industrial,
+            iva: k.iva,
+            fecha: None,
+        };
+        exportar_bc3(p, &o, b)?;
     }
     Ok(())
 }

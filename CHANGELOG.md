@@ -6,6 +6,10 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- Exportador BC3 (P-011) en el formato de Presto 8.8 (FIEBDC-3/2002, ANSI,
+  CRLF) con pruebas de ida y vuelta; `--bc3 salida.bc3` en `demo` e
+  `importar` y botón «Exportar BC3…».
+- Texto descriptivo (`~T`) visible y editable; incluido en el Excel.
 - `ppto-informes`: libro Excel con Resumen, Presupuesto (agrupado por
   capítulos), Descompuestos, Mediciones, Recursos y Horas por oficio,
   preparado para imprimir en A4. `ppto demo|importar … --excel f.xlsx` y

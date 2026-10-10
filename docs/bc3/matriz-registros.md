@@ -1,6 +1,6 @@
 # Matriz de registros FIEBDC-3 (P-004)
 
-> Estado: **importador v0.2 implementado** (`crates/ppto-bc3`). Las
+> Estado: **importador y exportador v0.2 implementados** (`crates/ppto-bc3`). Las
 > interpretaciones marcadas «a validar» funcionan con los ficheros sintéticos
 > pero deben contrastarse con el texto oficial de la especificación
 > (fiebdc.es) y con exportaciones reales de Presto 8.8 (P-012).
@@ -9,13 +9,13 @@
 
 | Registro | Contenido | Importar | Exportar | Modelo interno | Notas |
 |---|---|:-:|:-:|---|---|
-| `~V` | Propietario, versión, programa, rótulo, juego de caracteres | ✅ | P-011 | `Cabecera` | El juego de caracteres decide la decodificación |
-| `~K` | Decimales, CI/GG/BI/baja/IVA, divisa | ◐ | P-011 | `Porcentajes` | Se leen CI/GG/BI/baja/IVA. **Los decimales no se aplican todavía** (se usan los del proyecto). Un decimal negativo significa «como máximo» |
-| `~C` | Código, unidad, resumen, precio, fecha, tipo | ✅ | P-011 | `Concepto` | Solo el primer código sinónimo y el primer precio |
-| `~D` | Descomposición: hijo, factor, rendimiento | ✅ | P-011 | `LineaDescomposicion` | Factor vacío = 1 |
+| `~V` | Propietario, versión, programa, rótulo, juego de caracteres | ✅ | ✅ | `Cabecera` | El juego de caracteres decide la decodificación |
+| `~K` | Decimales, CI/GG/BI/baja/IVA, divisa | ◐ | ✅ | `Porcentajes` | Se leen CI/GG/BI/baja/IVA. **Los decimales no se aplican todavía** (se usan los del proyecto). Un decimal negativo significa «como máximo» |
+| `~C` | Código, unidad, resumen, precio, fecha, tipo | ✅ | ✅ | `Concepto` | Solo el primer código sinónimo y el primer precio |
+| `~D` | Descomposición: hijo, factor, rendimiento | ✅ | ✅ | `LineaDescomposicion` | Factor vacío = 1 |
 | `~Y` | Añadir a una descomposición | ✅ | — | se fusiona | |
-| `~T` | Texto largo | ✅ | P-011 | `Concepto::texto` | |
-| `~M` | Mediciones | ✅ | P-011 | `Medicion` | Tipos 1, 2 y 3 (fórmula en el comentario) |
+| `~T` | Texto largo | ✅ | ✅ | `Concepto::texto` | |
+| `~M` | Mediciones | ✅ | ✅ | `Medicion` | Tipos 1, 2 y 3 (fórmula en el comentario) |
 | `~N` | Añadir mediciones | ✅ | — | se fusiona | |
 | `~L ~Q ~J` | Pliegos | ○ | ○ | — | Se cuentan y se informa |
 | `~P` | Descripción paramétrica | ○ | ○ | — | |
@@ -58,6 +58,29 @@ cuadran, PEM idéntico.
 
 Pendiente con un presupuesto real mayor: porcentajes (`%`), costes
 indirectos ≠ 0, auxiliares, mediciones con líneas y textos.
+
+## Exportador (P-011)
+
+Escribe el formato de Presto 8.8: `FIEBDC-3/2002`, ANSI (Windows-1252), CRLF.
+
+| Registro | Qué se escribe |
+|---|---|
+| `~V` | `presupuestos-bc3`, versión del programa, rótulo = nombre del presupuesto, `ANSI` |
+| `~K` | Decimales del proyecto en el formato antiguo (`\2\2\3\2\2\2\2\EUR\` por defecto, igual que Presto) y `CI` (+ `GG\BI\0\IVA` si se indican) |
+| `~C` | Raíz `##`, capítulos `#`; tipo 1/2/3 para mano de obra, maquinaria y material, 0 para el resto. Precio: recursos su precio; unidades de obra su **precio con indirectos**; auxiliares su coste; capítulos su total |
+| `~D` | Hijos sin `#`; porcentajes en **fracción** (2 % → `0.02`) |
+| `~T` | Texto largo con saltos CRLF |
+| `~M` | `padre#\hijo`, total y líneas (tipo, comentario, uds, long, anch, alt; tipo 3 = fórmula) |
+
+Saneado: `|`, `\` y `~` dentro de textos se sustituyen (`/`, `/`, `-`); los
+caracteres sin equivalente en Windows-1252 se escriben como `?`. Ambos casos
+se avisan. Las subcontratas salen con tipo 0 (FIEBDC-3/2002 no tiene tipo
+propio) y también se avisa.
+
+Pruebas de ida y vuelta (`tests/exportar.rs`): exportar → importar conserva
+estructura, naturalezas, textos, mediciones, precios e importes al céntimo, y
+exportar dos veces produce los mismos bytes. **Pendiente (P-012): abrir en
+Presto 8.8 un BC3 exportado por el programa.**
 
 ## Comprobación de precios («precios que no cuadran»)
 
