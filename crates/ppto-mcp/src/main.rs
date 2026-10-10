@@ -11,10 +11,10 @@ use std::io::{BufRead, Write};
 
 fn main() {
     let mut estado = ppto_mcp::Estado::default();
-    if let Some(ruta) = std::env::args().nth(1) {
-        if let Err(e) = estado.abrir(&ruta) {
-            eprintln!("ppto-mcp: {e}");
-        }
+    if let Some(ruta) = std::env::args().nth(1)
+        && let Err(e) = estado.abrir(&ruta)
+    {
+        eprintln!("ppto-mcp: {e}");
     }
     let entrada = std::io::stdin().lock();
     let mut salida = std::io::stdout().lock();
@@ -23,10 +23,10 @@ fn main() {
         if linea.trim().is_empty() {
             continue;
         }
-        if let Some(respuesta) = ppto_mcp::procesar_linea(&mut estado, &linea) {
-            if writeln!(salida, "{respuesta}").and_then(|()| salida.flush()).is_err() {
-                break;
-            }
+        if let Some(respuesta) = ppto_mcp::procesar_linea(&mut estado, &linea)
+            && writeln!(salida, "{respuesta}").and_then(|()| salida.flush()).is_err()
+        {
+            break;
         }
     }
 }

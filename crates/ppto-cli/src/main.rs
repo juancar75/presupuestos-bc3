@@ -6,7 +6,8 @@
 //!   ppto demo --db <fichero>  Además lo guarda en SQLite como revisión R1.
 //!   ppto demo --excel <f.xlsx> Además genera el informe Excel.
 //!   ppto demo --bc3 <f.bc3>   Además exporta el ejemplo a BC3.
-//!   ppto importar <f.bc3> [--db <f.sqlite>] [--excel <f.xlsx>] [--bc3 <salida.bc3>] [--todo]
+//!   ppto demo --pdf <f.pdf>   Además genera el presupuesto en PDF.
+//!   ppto importar <f.bc3> [--db <f.sqlite>] [--excel <f.xlsx>] [--bc3 <salida.bc3>] [--pdf <f.pdf>] [--todo]
 //!                             Importa un BC3, informa de incidencias y de los
 //!                             precios que no cuadran; opcionalmente lo guarda.
 
@@ -32,6 +33,10 @@ fn main() -> ExitCode {
                 .and_then(|()| match bc3 {
                     Some(b) => exportar_bc3(&suelo_radiante(), &ppto_bc3::OpcionesExportacion::default(), b),
                     None => Ok(()),
+                })
+                .and_then(|()| match opcion(&args, "--pdf") {
+                    Some(f) => guardar_pdf(&suelo_radiante(), f),
+                    None => Ok(()),
                 }) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
@@ -50,6 +55,7 @@ fn main() -> ExitCode {
                 db.map(String::as_str),
                 xlsx.map(String::as_str),
                 bc3.map(String::as_str),
+                opcion(&args, "--pdf"),
                 todo,
             ) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -61,11 +67,31 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "uso:\n  ppto demo [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <fichero.bc3>]\n  ppto importar <fichero.bc3> [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <salida.bc3>] [--todo]"
+                "uso:\n  ppto demo [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <fichero.bc3>] [--pdf <fichero.pdf>]\n  ppto importar <fichero.bc3> [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <salida.bc3>] [--pdf <fichero.pdf>] [--todo]"
             );
             ExitCode::from(2)
         }
     }
+}
+
+fn opcion<'a>(args: &'a [String], nombre: &str) -> Option<&'a str> {
+    args.iter()
+        .position(|a| a == nombre)
+        .and_then(|i| args.get(i + 1))
+        .map(String::as_str)
+}
+
+/// PDF con los datos básicos; la portada completa (logo, cliente, firma) se
+/// configura en la interfaz.
+fn guardar_pdf(p: &Presupuesto, ruta: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let o = ppto_pdf::OpcionesPdf {
+        gastos_generales: venta::GG_HABITUAL,
+        beneficio_industrial: venta::BI_HABITUAL,
+        ..Default::default()
+    };
+    ppto_pdf::guardar_pdf(p, &o, ruta)?;
+    println!("Presupuesto PDF: {ruta}");
+    Ok(())
 }
 
 fn excel(p: &Presupuesto, o: &ppto_informes::OpcionesInforme, ruta: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -92,6 +118,7 @@ fn importar(
     db: Option<&str>,
     xlsx: Option<&str>,
     bc3: Option<&str>,
+    pdf: Option<&str>,
     todo: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let imp = ppto_bc3::importar_fichero(ruta)?;
@@ -193,6 +220,9 @@ fn importar(
             fecha: None,
         };
         exportar_bc3(p, &o, b)?;
+    }
+    if let Some(f) = pdf {
+        guardar_pdf(p, f)?;
     }
     Ok(())
 }

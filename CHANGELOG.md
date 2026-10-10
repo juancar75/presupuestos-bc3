@@ -5,6 +5,18 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — PDF (P-016)
+- `ppto-pdf`: presupuesto en PDF con Typst incluido (ADR-0007): portada con
+  logo, fecha y revisión; capítulos y subcapítulos; textos justificados con
+  partición silábica en castellano; mediciones; resumen con GG, BI, IVA, total
+  en letra y firma; hoja de observaciones. Plantilla editable.
+- `ppto_core::formato::en_letra` (importe en letra) y `fecha_larga`/`fecha_hoy`.
+- Interfaz: botón «PDF…» con ventana de opciones que recuerda empresa, firma,
+  logo y observaciones. CLI: `--pdf`.
+
+### Cambiado
+- Versión mínima de Rust: 1.92 (requisito de Typst).
+
 ### Añadido — edición (P-014)
 - `ppto-core::edicion`: `nuevo_capitulo`, `nueva_partida`, `nuevo_recurso`,
   `anadir_linea`, `quitar_linea`, `quitar_y_purgar`, `mover_linea`,
