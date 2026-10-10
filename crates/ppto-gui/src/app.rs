@@ -35,6 +35,10 @@ enum Accion {
     Medicion(String, String, Medicion),
     Resumen(String, String),
     QuitarOferta(usize),
+    Ir(String),
+    Ci(Decimal),
+    Texto(String, String),
+    OpcionesCi(ppto_core::presupuesto::OpcionesCi),
 }
 
 /// Resultados del motor para el estado actual del presupuesto.
@@ -42,6 +46,7 @@ enum Accion {
 struct Calculo {
     error: Option<String>,
     pem: Decimal,
+    coste_directo: Decimal,
     lineas: HashMap<String, Vec<LineaValorada>>,
     precios: HashMap<String, Decimal>,
     cantidades: BTreeMap<String, Decimal>,
@@ -56,13 +61,11 @@ impl Calculo {
             return c;
         }
         let r: Result<(), ppto_core::ErrorMotor> = (|| {
-            for codigo in p.conceptos.keys() {
-                c.precios.insert(codigo.clone(), p.precio(codigo)?);
-                if !p.conceptos[codigo].descomposicion.is_empty() {
-                    c.lineas.insert(codigo.clone(), p.lineas_valoradas(codigo)?);
-                }
-            }
-            c.pem = p.pem()?;
+            let v = p.valorar()?;
+            c.precios = v.precios;
+            c.lineas = v.lineas;
+            c.pem = v.pem;
+            c.coste_directo = v.coste_directo;
             c.cantidades = p.cantidades_partidas()?;
             c.explosion = Some(p.explosion_recursos()?);
             Ok(())
@@ -123,6 +126,8 @@ pub struct Aplicacion {
     margen: Decimal,
     ofertas: Vec<PaqueteTrabajo>,
     form: FormOferta,
+    informe: Option<ppto_bc3::Importacion>,
+    ver_informe: bool,
 }
 
 impl Aplicacion {
@@ -150,6 +155,8 @@ impl Aplicacion {
             margen: dec!(30),
             ofertas: ofertas_montaje_suelo_radiante().to_vec(),
             form: FormOferta::default(),
+            informe: None,
+            ver_informe: false,
         };
         app.recalcular();
         // Pestaña inicial (útil para capturas y pruebas): PPTO_GUI_PESTANA=recursos|subcontratar|resumen
@@ -160,7 +167,12 @@ impl Aplicacion {
             _ => Pestana::Partida,
         };
         if let Some(ruta) = inicial {
-            app.abrir(ruta);
+            let es_bc3 = ruta.extension().is_some_and(|e| e.eq_ignore_ascii_case("bc3"));
+            if es_bc3 {
+                app.importar_bc3(ruta)
+            } else {
+                app.abrir(ruta)
+            }
         }
         app
     }
@@ -237,6 +249,210 @@ impl Aplicacion {
             Ok(_) => self.error("El fichero no contiene ningún presupuesto."),
             Err(e) => self.error(format!("No se pudo abrir: {e}")),
         }
+    }
+
+    /// Primera partida del árbol (en profundidad), para no dejar la vista vacía.
+    fn primera_partida(&self, capitulo: &str) -> Option<(String, String)> {
+        for l in &self.p.conceptos.get(capitulo)?.descomposicion {
+            match self.p.conceptos.get(&l.hijo).map(|c| c.naturaleza) {
+                Some(Naturaleza::Capitulo) => {
+                    if let Some(r) = self.primera_partida(&l.hijo) {
+                        return Some(r);
+                    }
+                }
+                Some(_) => return Some((capitulo.to_owned(), l.hijo.clone())),
+                None => {}
+            }
+        }
+        None
+    }
+
+    fn exportar_bc3(&mut self) {
+        let nombre = format!(
+            "{}.bc3",
+            self.p
+                .nombre
+                .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
+        );
+        let Some(ruta) = rfd::FileDialog::new()
+            .add_filter("FIEBDC-3 (BC3)", &["bc3"])
+            .set_file_name(nombre)
+            .save_file()
+        else {
+            return;
+        };
+        let o = ppto_bc3::OpcionesExportacion {
+            gastos_generales: Some(self.gg),
+            beneficio_industrial: Some(self.bi),
+            iva: Some(self.iva),
+            fecha: None,
+        };
+        match ppto_bc3::exportar_fichero(&self.p, &o, &ruta) {
+            Ok(avisos) if avisos.is_empty() => self.info(format!("BC3 exportado en {}", ruta.display())),
+            Ok(avisos) => self.info(format!("BC3 exportado en {} — {}", ruta.display(), avisos.join("; "))),
+            Err(e) => self.error(format!("No se pudo exportar: {e}")),
+        }
+    }
+
+    fn exportar_excel(&mut self) {
+        let nombre = format!(
+            "{}.xlsx",
+            self.p
+                .nombre
+                .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
+        );
+        let Some(ruta) = rfd::FileDialog::new()
+            .add_filter("Excel", &["xlsx"])
+            .set_file_name(nombre)
+            .save_file()
+        else {
+            return;
+        };
+        let o = ppto_informes::OpcionesInforme {
+            gastos_generales: self.gg,
+            beneficio_industrial: self.bi,
+            iva: self.iva,
+        };
+        match ppto_informes::guardar_excel(&self.p, &o, &ruta) {
+            Ok(()) => self.info(format!("Informe Excel guardado en {}", ruta.display())),
+            Err(e) => self.error(format!("No se pudo generar el Excel: {e}")),
+        }
+    }
+
+    fn dialogo_importar(&mut self) {
+        if let Some(ruta) = rfd::FileDialog::new()
+            .add_filter("FIEBDC-3 (BC3)", &["bc3", "BC3"])
+            .pick_file()
+        {
+            self.importar_bc3(ruta);
+        }
+    }
+
+    fn importar_bc3(&mut self, ruta: PathBuf) {
+        match ppto_bc3::importar_fichero(&ruta) {
+            Ok(imp) => {
+                self.p = imp.presupuesto.clone();
+                let k = &imp.porcentajes;
+                self.gg = k.gastos_generales.unwrap_or(self.gg);
+                self.bi = k.beneficio_industrial.unwrap_or(self.bi);
+                self.iva = k.iva.unwrap_or(self.iva);
+                self.fichero = None;
+                self.presupuesto_id = None;
+                self.revisiones.clear();
+                self.revision_actual = None;
+                self.cambios = true;
+                self.sel = None;
+                self.ofertas.clear();
+                self.avisos.clear();
+                self.recalcular();
+                self.sel = self.primera_partida(&self.p.raiz.clone());
+                let nombre = ruta
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                self.info(format!(
+                    "Importado {nombre}: {} conceptos, {} errores, {} avisos, {} precios que no cuadran. Guárdalo para conservarlo.",
+                    self.p.conceptos.len(),
+                    imp.errores(),
+                    imp.avisos(),
+                    imp.discrepancias.len()
+                ));
+                self.ver_informe = imp.errores() + imp.avisos() + imp.discrepancias.len() > 0;
+                self.informe = Some(imp);
+            }
+            Err(e) => self.error(format!("No se pudo importar: {e}")),
+        }
+    }
+
+    fn ventana_informe(&mut self, ctx: &egui::Context, acciones: &mut Vec<Accion>) {
+        let Some(imp) = &self.informe else { return };
+        let mut abierta = self.ver_informe;
+        egui::Window::new("Informe de importación BC3")
+            .open(&mut abierta)
+            .default_size([760.0, 520.0])
+            .show(ctx, |ui| {
+                let c = &imp.cabecera;
+                ui.label(format!(
+                    "{} · {} · {}",
+                    c.programa, c.version_formato, c.juego_caracteres
+                ));
+                let regs: Vec<String> = imp.registros.iter().map(|(k, v)| format!("~{k} {v}")).collect();
+                ui.label(RichText::new(regs.join("   ")).weak());
+                match imp.pem_declarado {
+                    Some(d) if d == self.calc.pem => {
+                        ui.label(
+                            RichText::new(format!("PEM {} € — coincide con el BC3", eur(d)))
+                                .color(Color32::from_rgb(70, 170, 90)),
+                        );
+                    }
+                    Some(d) => {
+                        ui.label(
+                            RichText::new(format!(
+                                "PEM calculado {} € · declarado {} € · diferencia {} €",
+                                eur(self.calc.pem),
+                                eur(d),
+                                eur(self.calc.pem - d)
+                            ))
+                            .color(Color32::from_rgb(220, 150, 40)),
+                        );
+                    }
+                    None => {}
+                }
+                ui.separator();
+                ui.label(
+                    RichText::new(format!(
+                        "Precios que no cuadran con el BC3: {}",
+                        imp.discrepancias.len()
+                    ))
+                    .strong(),
+                );
+                egui::ScrollArea::vertical()
+                    .id_salt("disc")
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        egui::Grid::new("discrepancias")
+                            .striped(true)
+                            .num_columns(5)
+                            .show(ui, |ui| {
+                                for t in ["Código", "Resumen", "Declarado", "Calculado", "Diferencia"] {
+                                    ui.label(RichText::new(t).weak());
+                                }
+                                ui.end_row();
+                                for d in imp.discrepancias.iter().take(500) {
+                                    let r = ui.add(egui::Button::new(&d.codigo).frame(false));
+                                    if r.clicked() {
+                                        acciones.push(Accion::Ir(d.codigo.clone()));
+                                    }
+                                    ui.label(corto(&d.resumen, 40));
+                                    ui.label(eur(d.declarado));
+                                    ui.label(eur(d.calculado));
+                                    ui.label(eur(d.diferencia()));
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                ui.separator();
+                ui.label(
+                    RichText::new(format!(
+                        "Incidencias: {} errores, {} avisos, {} en total",
+                        imp.errores(),
+                        imp.avisos(),
+                        imp.incidencias.len()
+                    ))
+                    .strong(),
+                );
+                egui::ScrollArea::vertical().id_salt("inc").show(ui, |ui| {
+                    for i in &imp.incidencias {
+                        let color = match i.gravedad {
+                            ppto_bc3::Gravedad::Error => Color32::from_rgb(220, 80, 60),
+                            ppto_bc3::Gravedad::Aviso => Color32::from_rgb(220, 150, 40),
+                            ppto_bc3::Gravedad::Info => Color32::GRAY,
+                        };
+                        ui.label(RichText::new(i.to_string().replace('→', "->")).color(color));
+                    }
+                });
+            });
+        self.ver_informe = abierta;
     }
 
     fn cambiar_revision(&mut self, id: i64) {
@@ -316,6 +532,38 @@ impl Aplicacion {
                     self.avisos.clear();
                     continue;
                 }
+                Accion::Texto(codigo, texto) => {
+                    if let Some(c) = self.p.conceptos.get_mut(&codigo) {
+                        c.texto = (!texto.trim().is_empty()).then_some(texto);
+                    }
+                    self.cambios = true;
+                    continue;
+                }
+                Accion::Ci(v) => {
+                    if v < Decimal::ZERO {
+                        self.error("Los costes indirectos no pueden ser negativos.");
+                        continue;
+                    }
+                    self.p.costes_indirectos = v;
+                    Ok(())
+                }
+                Accion::OpcionesCi(o) => {
+                    self.p.opciones_ci = o;
+                    Ok(())
+                }
+                Accion::Ir(codigo) => {
+                    let padre = self
+                        .p
+                        .conceptos
+                        .values()
+                        .find(|c| c.descomposicion.iter().any(|l| l.hijo == codigo))
+                        .map(|c| c.codigo.clone());
+                    if let Some(padre) = padre {
+                        self.sel = Some((padre, codigo));
+                        self.pestana = Pestana::Partida;
+                    }
+                    continue;
+                }
                 Accion::QuitarOferta(i) => {
                     if i < self.ofertas.len() {
                         self.ofertas.remove(i);
@@ -355,6 +603,30 @@ impl Aplicacion {
             }
             if ui.button("📂 Abrir…").clicked() {
                 self.dialogo_abrir();
+            }
+            if ui
+                .button("📥 Importar BC3…")
+                .on_hover_text("Leer un presupuesto FIEBDC-3 (p. ej. exportado de Presto)")
+                .clicked()
+            {
+                self.dialogo_importar();
+            }
+            if ui
+                .button("📤 Exportar BC3…")
+                .on_hover_text("FIEBDC-3/2002 en ANSI, como lo exporta Presto 8.8")
+                .clicked()
+            {
+                self.exportar_bc3();
+            }
+            if ui
+                .button("📊 Excel…")
+                .on_hover_text("Resumen, presupuesto, descompuestos, mediciones, recursos y horas por oficio")
+                .clicked()
+            {
+                self.exportar_excel();
+            }
+            if self.informe.is_some() && ui.button("Informe de importación").clicked() {
+                self.ver_informe = true;
             }
             let txt_guardar = if self.fichero.is_some() {
                 "💾 Guardar revisión"
@@ -399,7 +671,7 @@ impl Aplicacion {
                 }
             }
             if self.cambios {
-                ui.label(RichText::new("● cambios sin guardar").color(Color32::from_rgb(220, 150, 40)));
+                ui.label(RichText::new("* cambios sin guardar").color(Color32::from_rgb(220, 150, 40)));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(RichText::new(format!("{} €", eur(self.calc.pem))).size(20.0).strong());
@@ -425,7 +697,7 @@ impl Aplicacion {
             if c.naturaleza == Naturaleza::Capitulo {
                 egui::CollapsingHeader::new(RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong())
                     .id_salt(("cap", capitulo, &l.hijo))
-                    .default_open(true)
+                    .default_open(self.calc.lineas.get(&l.hijo).is_none_or(|v| v.len() <= 40))
                     .show(ui, |ui| {
                         ui.label(RichText::new(format!("{} €", eur(l.importe))).weak());
                         self.rama(ui, &l.hijo, acciones);
@@ -482,6 +754,18 @@ impl Aplicacion {
             }
         });
         if let Some(l) = &linea_cap {
+            let coste = self.calc.precios.get(&hijo).copied().unwrap_or_default();
+            if coste != l.precio {
+                ui.label(
+                    RichText::new(format!(
+                        "Coste directo {} €/{}  +  {} % costes indirectos",
+                        eur(coste),
+                        c.unidad,
+                        num(self.p.costes_indirectos, 2)
+                    ))
+                    .weak(),
+                );
+            }
             ui.label(
                 RichText::new(format!(
                     "Cantidad {} {}   ·   Precio {} €/{}   ·   Importe {} €",
@@ -497,6 +781,22 @@ impl Aplicacion {
         ui.add_space(6.0);
 
         egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::CollapsingHeader::new(RichText::new("Texto descriptivo").strong())
+                .id_salt(("texto", &hijo))
+                .default_open(true)
+                .show(ui, |ui| {
+                    let mut texto = c.texto.clone().unwrap_or_default();
+                    let r = ui.add(
+                        egui::TextEdit::multiline(&mut texto)
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(3)
+                            .hint_text("Descripción completa de la partida (texto largo)"),
+                    );
+                    if r.changed() {
+                        acciones.push(Accion::Texto(c.codigo.clone(), texto));
+                    }
+                });
+            ui.add_space(6.0);
             ui.label(RichText::new("Precio descompuesto").strong());
             if let Some(lineas) = self.calc.lineas.get(&hijo).cloned() {
                 egui::Grid::new("descompuesto")
@@ -775,7 +1075,11 @@ impl Aplicacion {
                 ui.add_space(8.0);
             }
             ui.separator();
-            ui.label(format!("Total explosión: {} €     PEM: {} €", eur(e.total), eur(e.pem)));
+            ui.label(format!(
+                "Total explosión: {} €     PEM: {} €",
+                eur(e.total),
+                eur(e.coste_directo)
+            ));
             let txt = format!("Descuadre de redondeo: {} €", eur(e.descuadre_redondeo));
             ui.label(RichText::new(txt).weak()).on_hover_text(
                 "El PEM suma importes de línea redondeados; la explosión multiplica cantidades totales. \
@@ -988,7 +1292,7 @@ impl Aplicacion {
                             ui.label(eur(r.coste_retirado));
                             ui.label(eur(r.coste_contratado));
                             ui.label(format!("{} €/{ud}", eur(eq)));
-                            ui.label(eur(r.pem_escenario));
+                            ui.label(eur(r.coste_escenario));
                             let color = if r.ahorro >= Decimal::ZERO {
                                 Color32::from_rgb(70, 170, 90)
                             } else {
@@ -1018,8 +1322,57 @@ impl Aplicacion {
         });
     }
 
-    fn pestana_resumen(&mut self, ui: &mut Ui) {
+    fn pestana_resumen(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
         let pem = self.calc.pem;
+        let cd = self.calc.coste_directo;
+        ui.label(RichText::new("Costes indirectos").strong());
+        ui.horizontal(|ui| {
+            ui.label("Costes indirectos %");
+            if let Some(n) = self.edicion.decimal(ui, "pct|ci", self.p.costes_indirectos, 2, 60.0) {
+                acciones.push(Accion::Ci(n));
+            }
+            let mut o = self.p.opciones_ci;
+            ui.checkbox(&mut o.redondear_coste_antes, "Redondear coste antes de aplicarlos");
+            ui.checkbox(&mut o.aplicar_a_sin_descomponer, "Aplicar a partidas sin descomponer");
+            ui.checkbox(
+                &mut o.redondear_auxiliares,
+                "Redondear partidas que actúan como auxiliares",
+            );
+            if o != self.p.opciones_ci {
+                acciones.push(Accion::OpcionesCi(o));
+            }
+        });
+        egui::Grid::new("ci")
+            .striped(true)
+            .num_columns(2)
+            .min_col_width(220.0)
+            .show(ui, |ui| {
+                ui.label("Coste directo");
+                ui.label(format!("{} €", eur(cd)));
+                ui.end_row();
+                ui.label(format!(
+                    "Costes indirectos ({} % por partida)",
+                    num(self.p.costes_indirectos, 2)
+                ));
+                ui.label(format!("{} €", eur(pem - cd)));
+                ui.end_row();
+                ui.label(RichText::new("PEM").strong());
+                ui.label(RichText::new(format!("{} €", eur(pem))).strong());
+                ui.end_row();
+            });
+        if !self.p.costes_indirectos.is_zero() && !cd.is_zero() {
+            let margen = (pem - cd) / pem * Decimal::ONE_HUNDRED;
+            ui.label(
+                RichText::new(format!(
+                    "Sobre el PEM, los indirectos son un {} % (margen sobre venta). Aplicados al total darían {} €; \
+                     la diferencia es el redondeo por partida.",
+                    num(margen, 2),
+                    eur(venta::con_costes_indirectos(cd, self.p.costes_indirectos, 2))
+                ))
+                .weak(),
+            );
+        }
+        ui.add_space(12.0);
         ui.label(RichText::new("Resumen del presupuesto").strong());
         egui::Grid::new("resumen_pct").num_columns(3).show(ui, |ui| {
             for (nombre, clave) in [
@@ -1076,7 +1429,7 @@ impl Aplicacion {
             });
 
         ui.add_space(14.0);
-        ui.label(RichText::new("Precio de venta a partir del coste (PEM)").strong());
+        ui.label(RichText::new("Precio de venta a partir del PEM").strong());
         ui.horizontal(|ui| {
             ui.label("Margen sobre venta %");
             if let Some(n) = self.edicion.decimal(ui, "pct|margen", self.margen, 2, 60.0) {
@@ -1137,6 +1490,7 @@ impl eframe::App for Aplicacion {
         egui::Panel::bottom("estado").show(ui, |ui| {
             ui.horizontal(|ui| match (&self.calc.error, &self.mensaje) {
                 (Some(e), _) => {
+                    let e = e.replace('→', "->");
                     ui.label(RichText::new(format!("⚠ {e}")).color(Color32::from_rgb(220, 80, 60)));
                 }
                 (None, Some((m, true))) => {
@@ -1170,9 +1524,11 @@ impl eframe::App for Aplicacion {
                 Pestana::Partida => self.pestana_partida(ui, &mut acciones),
                 Pestana::Recursos => self.pestana_recursos(ui, &mut acciones),
                 Pestana::Subcontratar => self.pestana_subcontratar(ui, &mut acciones),
-                Pestana::Resumen => self.pestana_resumen(ui),
+                Pestana::Resumen => self.pestana_resumen(ui, &mut acciones),
             }
         });
+        let ctx = ui.ctx().clone();
+        self.ventana_informe(&ctx, &mut acciones);
         if !acciones.is_empty() {
             self.aplicar(acciones);
         }

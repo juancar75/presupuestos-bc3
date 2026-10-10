@@ -4,6 +4,11 @@
 //! Uso:
 //!   ppto demo                 Imprime el caso sintético de suelo radiante.
 //!   ppto demo --db <fichero>  Además lo guarda en SQLite como revisión R1.
+//!   ppto demo --excel <f.xlsx> Además genera el informe Excel.
+//!   ppto demo --bc3 <f.bc3>   Además exporta el ejemplo a BC3.
+//!   ppto importar <f.bc3> [--db <f.sqlite>] [--excel <f.xlsx>] [--bc3 <salida.bc3>] [--todo]
+//!                             Importa un BC3, informa de incidencias y de los
+//!                             precios que no cuadran; opcionalmente lo guarda.
 
 use ppto_core::concepto::Naturaleza;
 use ppto_core::ejemplos::{ofertas_montaje_suelo_radiante, suelo_radiante};
@@ -17,7 +22,36 @@ fn main() -> ExitCode {
     match args.first().map(String::as_str) {
         Some("demo") => {
             let db = args.iter().position(|a| a == "--db").and_then(|i| args.get(i + 1));
-            match demo(db.map(String::as_str)) {
+            let xlsx = args.iter().position(|a| a == "--excel").and_then(|i| args.get(i + 1));
+            let bc3 = args.iter().position(|a| a == "--bc3").and_then(|i| args.get(i + 1));
+            match demo(db.map(String::as_str))
+                .and_then(|()| match xlsx {
+                    Some(x) => excel(&suelo_radiante(), &ppto_informes::OpcionesInforme::default(), x),
+                    None => Ok(()),
+                })
+                .and_then(|()| match bc3 {
+                    Some(b) => exportar_bc3(&suelo_radiante(), &ppto_bc3::OpcionesExportacion::default(), b),
+                    None => Ok(()),
+                }) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Some("importar") if args.len() >= 2 => {
+            let db = args.iter().position(|a| a == "--db").and_then(|i| args.get(i + 1));
+            let todo = args.iter().any(|a| a == "--todo");
+            let xlsx = args.iter().position(|a| a == "--excel").and_then(|i| args.get(i + 1));
+            let bc3 = args.iter().position(|a| a == "--bc3").and_then(|i| args.get(i + 1));
+            match importar(
+                &args[1],
+                db.map(String::as_str),
+                xlsx.map(String::as_str),
+                bc3.map(String::as_str),
+                todo,
+            ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
                     eprintln!("error: {e}");
@@ -26,10 +60,141 @@ fn main() -> ExitCode {
             }
         }
         _ => {
-            eprintln!("uso: ppto demo [--db <fichero.sqlite>]");
+            eprintln!(
+                "uso:\n  ppto demo [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <fichero.bc3>]\n  ppto importar <fichero.bc3> [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <salida.bc3>] [--todo]"
+            );
             ExitCode::from(2)
         }
     }
+}
+
+fn excel(p: &Presupuesto, o: &ppto_informes::OpcionesInforme, ruta: &str) -> Result<(), Box<dyn std::error::Error>> {
+    ppto_informes::guardar_excel(p, o, ruta)?;
+    println!("Informe Excel: {ruta}");
+    Ok(())
+}
+
+fn exportar_bc3(
+    p: &Presupuesto,
+    o: &ppto_bc3::OpcionesExportacion,
+    ruta: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let avisos = ppto_bc3::exportar_fichero(p, o, ruta)?;
+    println!("BC3 exportado: {ruta}");
+    for a in avisos {
+        println!("  [aviso] {a}");
+    }
+    Ok(())
+}
+
+fn importar(
+    ruta: &str,
+    db: Option<&str>,
+    xlsx: Option<&str>,
+    bc3: Option<&str>,
+    todo: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let imp = ppto_bc3::importar_fichero(ruta)?;
+    let p = &imp.presupuesto;
+    let c = &imp.cabecera;
+    println!("{ruta}");
+    println!(
+        "  Programa: {}  ·  Formato: {}  ·  Caracteres: {}",
+        c.programa, c.version_formato, c.juego_caracteres
+    );
+    let regs: Vec<String> = imp.registros.iter().map(|(k, v)| format!("~{k} {v}")).collect();
+    println!("  Registros: {}", regs.join("  "));
+    println!(
+        "  Conceptos: {}  ·  Mediciones: {}",
+        p.conceptos.len(),
+        p.mediciones.len()
+    );
+    let k = &imp.porcentajes;
+    let pc = |v: Option<Decimal>| v.map(|x| format!("{} %", num(x, 2))).unwrap_or_else(|| "—".into());
+    println!(
+        "  ~K: CI {}  GG {}  BI {}  baja {}  IVA {}",
+        pc(k.costes_indirectos),
+        pc(k.gastos_generales),
+        pc(k.beneficio_industrial),
+        pc(k.baja),
+        pc(k.iva)
+    );
+
+    let limite = if todo { usize::MAX } else { 25 };
+    println!(
+        "\nINCIDENCIAS: {} errores, {} avisos, {} en total",
+        imp.errores(),
+        imp.avisos(),
+        imp.incidencias.len()
+    );
+    for i in imp.incidencias.iter().take(limite) {
+        println!("  {i}");
+    }
+    if imp.incidencias.len() > limite {
+        println!("  … {} más (use --todo)", imp.incidencias.len() - limite);
+    }
+
+    println!("\nPRECIOS QUE NO CUADRAN CON EL BC3: {}", imp.discrepancias.len());
+    for d in imp.discrepancias.iter().take(limite) {
+        println!(
+            "  {:<14} declarado {:>12}  calculado {:>12}  diferencia {:>10}  {}",
+            d.codigo,
+            eur(d.declarado),
+            eur(d.calculado),
+            eur(d.diferencia()),
+            d.resumen.chars().take(40).collect::<String>()
+        );
+    }
+    if imp.discrepancias.len() > limite {
+        println!("  … {} más (use --todo)", imp.discrepancias.len() - limite);
+    }
+
+    let pem = p.pem()?;
+    if !p.costes_indirectos.is_zero() {
+        println!(
+            "\nCoste directo {} €  +  {} % costes indirectos por partida",
+            eur(p.coste_directo()?),
+            num(p.costes_indirectos, 2)
+        );
+    }
+    match imp.pem_declarado {
+        Some(d) if d == pem => println!("\nPEM {} € (coincide con el BC3)", eur(pem)),
+        Some(d) => println!(
+            "\nPEM calculado {} €  ·  declarado en el BC3 {} €  ·  diferencia {} €",
+            eur(pem),
+            eur(d),
+            eur(pem - d)
+        ),
+        None => println!("\nPEM {} €", eur(pem)),
+    }
+
+    if let Some(ruta_db) = db {
+        let mut a = ppto_db::Almacen::abrir(ruta_db)?;
+        let id = a.crear_presupuesto(&p.nombre)?;
+        let rev = a.guardar_revision(id, "R1", "importación BC3", p)?;
+        println!("Guardado en {ruta_db} (presupuesto {id}, revisión {rev}).");
+    }
+    if let Some(x) = xlsx {
+        let k = &imp.porcentajes;
+        let d = ppto_informes::OpcionesInforme::default();
+        let o = ppto_informes::OpcionesInforme {
+            gastos_generales: k.gastos_generales.unwrap_or(d.gastos_generales),
+            beneficio_industrial: k.beneficio_industrial.unwrap_or(d.beneficio_industrial),
+            iva: k.iva.unwrap_or(d.iva),
+        };
+        excel(p, &o, x)?;
+    }
+    if let Some(b) = bc3 {
+        let k = &imp.porcentajes;
+        let o = ppto_bc3::OpcionesExportacion {
+            gastos_generales: k.gastos_generales,
+            beneficio_industrial: k.beneficio_industrial,
+            iva: k.iva,
+            fecha: None,
+        };
+        exportar_bc3(p, &o, b)?;
+    }
+    Ok(())
 }
 
 fn demo(db: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
@@ -90,7 +255,7 @@ fn demo(db: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
             paq.descripcion,
             eur(r.coste_contratado),
             eur(eq),
-            eur(r.pem_escenario),
+            eur(r.coste_escenario),
             eur(r.ahorro),
             num(h, 1)
         );

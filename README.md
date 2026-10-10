@@ -6,7 +6,9 @@ verificable, control de costes y subcontratación, informes configurables e
 integración **MCP**.
 
 > **Estado: prototipo (v0.1.0-alpha.1).** Motor económico, persistencia
-> SQLite e interfaz básica funcionando; BC3, informes y MCP en desarrollo.
+> SQLite, interfaz básica, importación y exportación BC3 e informe Excel
+> funcionando, y servidor MCP de consulta; validación con Presto 8.8,
+> informes PDF y cambios vía MCP en desarrollo.
 > No usar todavía para presupuestos reales.
 
 ## Qué hace hoy
@@ -39,6 +41,41 @@ ESCENARIOS DE SUBCONTRATACIÓN DEL MONTAJE
 Cada cifra está calculada a mano en
 [`docs/casos-validacion/suelo-radiante.md`](docs/casos-validacion/suelo-radiante.md).
 
+## Importar un BC3
+
+```console
+cargo run -p ppto-cli -- importar presupuesto.bc3 --db presupuesto.sqlite
+```
+
+Lee el BC3 aunque tenga defectos, lista cada incidencia con su línea y
+recalcula todos los precios para señalar los que **no cuadran** con lo que
+declara el fichero. También desde la interfaz: botón «Importar BC3…».
+Criterios de interpretación en [`docs/bc3/matriz-registros.md`](docs/bc3/matriz-registros.md).
+
+## Exportar a BC3
+
+```console
+cargo run -p ppto-cli -- importar presupuesto.bc3 --bc3 copia.bc3
+```
+
+Escribe FIEBDC-3/2002 en ANSI, como Presto 8.8. También con «Exportar BC3…».
+
+## Informe Excel
+
+```console
+cargo run -p ppto-cli -- importar presupuesto.bc3 --excel presupuesto.xlsx
+```
+
+Seis hojas: resumen por capítulos (coste directo, indirectos, PEM, GG, BI,
+IVA), presupuesto, descompuestos, mediciones, recursos y horas por oficio.
+También con el botón «Excel…» de la interfaz.
+
+## Claude Desktop (MCP)
+
+`cargo build --release -p ppto-mcp` y añadir `target\release\ppto-mcp.exe` a
+la configuración de Claude Desktop. Permite preguntar por el presupuesto y
+simular cambios y subcontratas sin modificarlo. Ver [`docs/mcp.md`](docs/mcp.md).
+
 ## Interfaz de escritorio (prototipo)
 
 ```console
@@ -48,7 +85,7 @@ cargo run --release -p ppto-gui
 En Windows basta con hacer doble clic en `scripts\windows\abrir-interfaz.bat`.
 Permite editar mediciones, rendimientos y precios del ejemplo (o de un
 `.sqlite` guardado) y ver al momento el PEM, los recursos, la comparación de
-ofertas de subcontrata y el resumen. Todavía no importa BC3.
+ofertas de subcontrata y el resumen.
 
 ## Hoja de ruta
 

@@ -1,67 +1,138 @@
 # Matriz de registros FIEBDC-3 (P-004)
 
-> Estado: **borrador inicial**. Cada fila debe contrastarse con el texto
-> oficial de la especificación (fiebdc.es) y con ficheros exportados por
-> Presto 8.8. Lo marcado «a confirmar» procede de conocimiento previo y no
-> está todavía verificado contra la norma.
+> Estado: **importador y exportador v0.2 implementados** (`crates/ppto-bc3`). Las
+> interpretaciones marcadas «a validar» funcionan con los ficheros sintéticos
+> pero deben contrastarse con el texto oficial de la especificación
+> (fiebdc.es) y con exportaciones reales de Presto 8.8 (P-012).
 
-## Alcance por fases
+## Estado por registro
 
-| Registro | Contenido | v0.2 importar | v0.2 exportar | Presto 8.8 | Modelo interno |
+| Registro | Contenido | Importar | Exportar | Modelo interno | Notas |
 |---|---|:-:|:-:|---|---|
-| `~V` | Propietario, versión del formato, programa, cabecera, juego de caracteres | ● | ● | a confirmar | metadatos de revisión |
-| `~K` | Decimales, CI/GG/BI/baja/IVA, divisa | ● | ● | a confirmar | `Decimales` + resumen de venta |
-| `~C` | Código, unidad, resumen, precio(s), fecha(s), tipo | ● | ● | a confirmar | `Concepto` |
-| `~D` | Descomposición: hijo, factor, rendimiento | ● | ● | a confirmar | `LineaDescomposicion` |
-| `~Y` | Añadir a una descomposición existente | ● | — | a confirmar | se fusiona en `~D` |
-| `~T` | Texto largo del concepto | ● | ● | a confirmar | `Concepto::texto` |
-| `~M` | Mediciones: posición, total, líneas (tipo, comentario, uds, long, anch, alt) | ● | ● | a confirmar | `Medicion` |
-| `~N` | Añadir mediciones | ● | — | a confirmar | se fusiona en `~M` |
-| `~P` | Descripción paramétrica | ○ | ○ | a confirmar | v0.3 |
-| `~L` | Pliegos de condiciones | ○ | ○ | a confirmar | v0.3 |
-| `~Q`, `~J` | Pliegos (variantes) | ○ | ○ | a confirmar | v0.3 |
-| `~W` | Ámbitos geográficos | ○ | ○ | a confirmar | v0.3 |
-| `~G` | Información gráfica | ○ | ○ | a confirmar | adjunto |
-| `~E` | Entidades (fabricantes, proveedores) | ○ | ○ | a confirmar | proveedores (P-019) |
-| `~O` | Relación comercial | ○ | ○ | a confirmar | proveedores (P-019) |
-| `~X` | Información técnica | ○ | ○ | a confirmar | v0.3 |
-| `~A` | Claves de tesauro | ○ | ○ | a confirmar | búsqueda |
-| `~B` | Cambio de código | ● | — | a confirmar | renombrado en importación |
-| `~F` | Documentos adjuntos | ○ | ○ | a confirmar | adjunto |
-| `~R` | Residuos (versiones recientes) | ○ | ○ | a confirmar | v0.3 |
+| `~V` | Propietario, versión, programa, rótulo, juego de caracteres | ✅ | ✅ | `Cabecera` | El juego de caracteres decide la decodificación |
+| `~K` | Decimales, CI/GG/BI/baja/IVA, divisa | ◐ | ✅ | `Porcentajes` | Se leen CI/GG/BI/baja/IVA. **Los decimales no se aplican todavía** (se usan los del proyecto). Un decimal negativo significa «como máximo» |
+| `~C` | Código, unidad, resumen, precio, fecha, tipo | ✅ | ✅ | `Concepto` | Solo el primer código sinónimo y el primer precio |
+| `~D` | Descomposición: hijo, factor, rendimiento | ✅ | ✅ | `LineaDescomposicion` | Factor vacío = 1 |
+| `~Y` | Añadir a una descomposición | ✅ | — | se fusiona | |
+| `~T` | Texto largo | ✅ | ✅ | `Concepto::texto` | |
+| `~M` | Mediciones | ✅ | ✅ | `Medicion` | Tipos 1, 2 y 3 (fórmula en el comentario) |
+| `~N` | Añadir mediciones | ✅ | — | se fusiona | |
+| `~L ~Q ~J` | Pliegos | ○ | ○ | — | Se cuentan y se informa |
+| `~P` | Descripción paramétrica | ○ | ○ | — | |
+| `~W ~G ~E ~O ~X ~A ~F ~R` | Ámbitos, gráficos, entidades, comercial, técnica, tesauro, adjuntos, residuos | ○ | ○ | — | |
+| `~B` | Cambio de código | ○ | — | — | Pendiente |
 
-● fase M2 · ○ conservar sin interpretar (ida y vuelta literal) cuando sea posible.
+✅ implementado · ◐ parcial · ○ no se importa (se informa con una incidencia «info»).
 
-## Cuestiones a resolver con la norma y con Presto 8.8
+## Decisiones de interpretación del importador
 
-1. Correspondencia campo a campo de `~K` con `Decimales` (hay ámbitos
-   distintos para medición, rendimiento, importe de línea y precio).
-2. Conceptos porcentuales: convención del carácter `%` en el código, máscara
-   de aplicación y si el porcentaje viaja como 2 o como 0,02.
-3. Tipo de concepto para subcontratas (no existe tipo propio en todas las
-   versiones): ¿tipo 0 + convención de código, o campo de la versión 2024?
-4. Fórmulas en `~M`: variables admitidas y semántica de campos vacíos.
-5. Codificación: ANSI/cp1252 frente a UTF-8 según `~V`; Presto 8.8 exporta en
-   cp1252 (a confirmar con fichero real).
-6. Longitudes máximas: código ≤ 20 caracteres en la norma; Presto 8.8 admite
-   menos en algunos campos (a confirmar); resumen ≤ 64 caracteres según
-   experiencia previa.
-7. Separador decimal y precisión de números en el fichero.
-8. Raíz `##` y capítulos `#`: reglas de reconstrucción del árbol.
-9. Varios precios por concepto (`~C` con varias fechas/ámbitos).
+| Tema | Decisión v0.2 | Estado |
+|---|---|---|
+| Codificación | `ANSI` o vacío → Windows-1252; `UTF-8` → UTF-8; `850`/`437` → Windows-1252 con aviso. Sin `~V` y con bytes UTF-8 válidos → UTF-8 | a validar con Presto 8.8 |
+| Códigos | Se quitan espacios y `#` finales. `##` = raíz, `#` = capítulo | conforme a la norma |
+| Naturaleza | Capítulo si `#`; porcentaje si el código contiene `%` o `&`; partida si tiene descomposición; si no, tipo `1` mano de obra, `2` maquinaria, `3` material, otro → «otros» | a validar |
+| Porcentajes | Código con `%` (no acumulable) o `&` (acumulable). Rendimiento en **fracción** (`0.03` = 3 %). Máscara = prefijo del código antes del `%`/`&`: se aplica a las líneas anteriores cuyo código empieza por ella (vacía = todas). En precios compuestos `%` y `&` se calculan igual. Aviso si resulta > 100 % (exportador que escribe puntos) | conforme a FIEBDC-3; contrastar con Presto 8.8 |
+| Rendimiento vacío | En capítulos se toma el total de `~M`; si no hay, 1 (con aviso fuera de capítulos) | a validar |
+| Medición frente a `~D` | Se conserva la cantidad del `~D` (lo que exportó el programa) y se avisa si las líneas de `~M` suman otra cosa | decisión de diseño |
+| Concepto usado y no definido | Se crea con precio 0 y se informa como error | decisión de diseño |
+| Concepto repetido | Prevalece la última definición; aviso | a validar |
+| Sin raíz `##` | Si hay un único capítulo suelto se toma como raíz; si no, se crea `RAIZ` con todos | decisión de diseño |
+| Referencias circulares | Se elimina la última relación del ciclo y se informa como error | decisión de diseño |
+| Números | Punto decimal; se acepta coma si no hay punto; notación científica admitida | conforme |
+
+## Lo observado en exportaciones reales de Presto 8.8
+
+Primer fichero real contrastado (09-10-2026, presupuesto pequeño de prueba;
+no se sube al repositorio, se reproduce su estructura en
+`tests/datos/presto88-minimo.bc3`). Resultado: 0 errores, 0 precios que no
+cuadran, PEM idéntico.
+
+| Aspecto | Presto 8.8 |
+|---|---|
+| `~V` | `SOFT S.A.|FIEBDC-3/2002|Presto 8.8||ANSI|` — versión sin fecha, rótulo vacío, **ANSI** |
+| Fin de línea | CRLF |
+| `~K` | `|\2\2\3\2\2\2\2\EUR\|0|` — decimales en formato antiguo (DN vacío, DD 2, DS 2, DR 3, DI 2, DP 2, DC 2, DM 2, divisa EUR) y **solo CI** en el segundo campo |
+| `~C` | Precio y fecha `DDMMAA` en todos; tipo `0` en capítulos y partidas, `1` mano de obra, `3` material; unidad vacía si no se rellenó |
+| `~E` | Presente aunque esté vacío |
+| `~M` | **Se escribe aunque la partida no tenga líneas**: solo posición y total (`~M|01#\E01|1\1\|1||`). El importador no crea hoja de medición en ese caso |
+
+### Segunda obra real (10-10-2026): climatización, 208 conceptos, CI 45 %
+
+No se sube al repositorio. 5 capítulos, 52 partidas, 60 textos `~T`,
+porcentajes de descuento (`%PANASONIC −0.65`, `%KOOLAIR −0.48`…), accesorios
+(`%ACC… 0.05–0.5`), grúa (`%GRUA 0.1`) y gastos (`%GI 0.03`). Hallazgos:
+
+| Aspecto | Presto 8.8 |
+|---|---|
+| `~C` de partidas | **Coste SIN costes indirectos** (p. ej. 5.810,39), no el precio con CI |
+| `~C` de capítulos y raíz | Total **CON** CI: Σ cantidad × redondeo(coste × 1,45) |
+| Porcentajes | `~C` del `%` lleva el porcentaje en puntos (−48), `~D` la fracción (−0.48); la máscara vacía aplica a todas las líneas anteriores, incluidos otros `%` |
+| Materiales descompuestos | Tipo 3 con `~D` es habitual (tuberías, PVC): ahora es *info*, no aviso |
+
+Contraste: con los precios de partida que declara Presto, el programa
+reproduce **al céntimo** los 5 capítulos y el PEM (157.310,88 €) y el coste
+directo (108.489,57 €), lo que valida la aplicación de CI por partida.
+Recalculando las partidas desde su descomposición cuadran **52 de 52** y el
+PEM coincide exacto, tras aplicar dos criterios de Presto confirmados con
+captura de pantalla:
+
+1. **Porcentajes**: cantidad = redondeo(base / 100, decimales de rendimiento)
+   × puntos (`%KOOLAIR`: base 11,34 → 0,113 × −48 = −5,42, no −5,44).
+2. **Factor × rendimiento** sin redondear (0,08333 × 6 = 0,49998).
+
+La copia recibida por la subida web llegó recodificada a UTF-8 con «�» en lugar
+de las tildes: el importador lo detecta y avisa.
+
+## Exportador (P-011)
+
+Escribe el formato de Presto 8.8: `FIEBDC-3/2002`, ANSI (Windows-1252), CRLF.
+
+| Registro | Qué se escribe |
+|---|---|
+| `~V` | `presupuestos-bc3`, versión del programa, rótulo = nombre del presupuesto, `ANSI` |
+| `~K` | Decimales del proyecto en el formato antiguo (`\2\2\3\2\2\2\2\EUR\` por defecto, igual que Presto) y `CI` (+ `GG\BI\0\IVA` si se indican) |
+| `~C` | Raíz `##`, capítulos `#`; tipo 1/2/3 para mano de obra, maquinaria y material, 0 para el resto. Precio: recursos su precio; unidades de obra y auxiliares su **coste sin indirectos**; capítulos y raíz su total con indirectos (como Presto 8.8) |
+| `~D` | Hijos sin `#`; porcentajes en **fracción** (2 % → `0.02`) |
+| `~T` | Texto largo con saltos CRLF |
+| `~M` | `padre#\hijo`, total y líneas (tipo, comentario, uds, long, anch, alt; tipo 3 = fórmula) |
+
+Saneado: `|`, `\` y `~` dentro de textos se sustituyen (`/`, `/`, `-`); los
+caracteres sin equivalente en Windows-1252 se escriben como `?`. Ambos casos
+se avisan. Las subcontratas salen con tipo 0 (FIEBDC-3/2002 no tiene tipo
+propio) y también se avisa.
+
+Pruebas de ida y vuelta (`tests/exportar.rs`): exportar → importar conserva
+estructura, naturalezas, textos, mediciones, precios e importes al céntimo, y
+exportar dos veces produce los mismos bytes. **Validado en Presto 8.8 (10-10-2026)**: el BC3 del ejemplo, importado en
+Presto, da C01 = PEM 7.005,15 €, SR.M2 29,89 €/m² (210 m²), SR.COL8 242,75 €,
+textos con «×» correctos y el desglose MO/material/otros esperado
+(2.563,05 / 4.318,20 / 123,90).
+
+## Comprobación de precios («precios que no cuadran»)
+
+Tras importar se recalcula todo con `ppto-core` y se compara el precio de
+cada concepto con descomposición (y el total de cada capítulo) con el precio
+declarado en su `~C`, redondeado a los decimales del proyecto. Las diferencias
+se listan de mayor a menor. Sirve para:
+
+1. detectar errores del presupuesto de origen;
+2. detectar diferencias de criterio (redondeos, porcentajes, decimales de `~K`)
+   con el programa que generó el BC3. **Es la prueba principal de P-012**: con
+   un BC3 de Presto 8.8 correcto, la lista debe quedar vacía.
 
 ## Banco de pruebas
 
-Ficheros en `tests/bc3/` (M2), **todos sintéticos o con autorización escrita**:
+Ficheros en `crates/ppto-bc3/tests/datos/`, **todos sintéticos**:
 
-| Fichero | Objetivo |
-|---|---|
-| `minimo.bc3` | `~V ~K ~C ~D` con un capítulo y una partida |
-| `suelo-radiante.bc3` | Caso de validación completo con mediciones y `%` |
-| `auxiliares.bc3` | Precios auxiliares anidados en 3 niveles |
-| `ciclo.bc3` | Referencia circular (debe rechazarse con informe) |
-| `cp1252-acentos.bc3` | Ñ, tildes, «ª», «º», «€» |
-| `presto88-export-*.bc3` | Exportaciones reales de Presto 8.8 de los anteriores |
+| Fichero | Objetivo | Estado |
+|---|---|---|
+| `suelo-radiante.bc3` | Caso de validación completo en cp1252 con `~K`, `%`, `~T`, `~M` y `~L`: PEM 7.005,15 sin discrepancias | ✅ |
+| `con-errores.bc3` | Un error de cada tipo, con su línea; el presupuesto se sigue valorando | ✅ |
+| `utf8.bc3` | Juego de caracteres UTF-8 con ñ, ü, «», € | ✅ |
+| (generado en la prueba) | 4.000 partidas, 491 KB: importación y recálculo en < 0,1 s (release) | ✅ |
+| (generado en la prueba) | Truncado en cada byte y bytes alterados: nunca bloquea | ✅ |
+| `presto88-minimo.bc3` | Estructura exacta de una exportación real de Presto 8.8 | ✅ |
+| Presupuesto real mayor de Presto 8.8 | Porcentajes, CI, auxiliares, mediciones | **pendiente: P-012** |
 
-Criterio de aceptación de ida y vuelta: importar → exportar → importar debe
-dar el mismo `Presupuesto` y el mismo PEM al céntimo.
+Criterio de aceptación de ida y vuelta (P-011): importar → exportar → importar
+debe dar el mismo `Presupuesto` y el mismo PEM al céntimo.

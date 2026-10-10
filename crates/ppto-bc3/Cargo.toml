@@ -1,6 +1,6 @@
 [package]
-name = "ppto-cli"
-description = "Línea de órdenes de demostración y verificación del motor económico"
+name = "ppto-bc3"
+description = "Intercambio FIEBDC-3 (BC3): lectura tolerante con informe de incidencias"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,17 +8,14 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
-[[bin]]
-name = "ppto"
-path = "src/main.rs"
-
 [dependencies]
 ppto-core.workspace = true
-ppto-db.workspace = true
-ppto-bc3.workspace = true
-ppto-informes.workspace = true
+encoding_rs = "0.8"
+
+[dev-dependencies]
 rust_decimal.workspace = true
 rust_decimal_macros.workspace = true
+encoding_rs = "0.8"
 
 [lints]
 workspace = true

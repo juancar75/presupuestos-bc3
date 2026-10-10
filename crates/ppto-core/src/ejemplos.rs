@@ -95,6 +95,23 @@ pub fn suelo_radiante() -> Presupuesto {
     .expect("código único");
     p.insertar(Concepto::capitulo("C01", "Calefacción por suelo radiante"))
         .expect("código único");
+    for (codigo, texto) in [
+        (
+            "SR.M2",
+            "Sistema de calefacción por suelo radiante formado por panel aislante de poliestireno \
+             expandido con tetones de 30 mm, tubo de polietileno reticulado PE-RT 16×2 mm con \
+             barrera de oxígeno con paso medio de 15 cm y banda perimetral de espuma. Incluso \
+             replanteo, fijación, prueba de estanqueidad y limpieza. Medida la superficie útil \
+             calefactada.",
+        ),
+        (
+            "SR.COL8",
+            "Colector de 8 vías con caudalímetros, detentores, purgadores y llaves de corte, \
+             instalado en armario y conexionado a los circuitos. Totalmente probado.",
+        ),
+    ] {
+        p.conceptos.get_mut(codigo).expect("existe").texto = Some(texto.into());
+    }
     p.colgar("OBRA", "C01", None).expect("existe");
 
     let n = |c: &str, u, l, a| LineaMedicion::normal(c, Some(u), Some(l), Some(a), None);
