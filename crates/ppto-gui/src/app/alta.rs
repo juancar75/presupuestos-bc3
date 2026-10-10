@@ -42,6 +42,10 @@ impl Aplicacion {
     /// Abre la ventana de alta con un código libre ya propuesto.
     pub(super) fn abrir_alta(&mut self, tipo: TipoAlta) {
         let (codigo, unidad) = match &tipo {
+            // Subcapítulos numerados bajo su padre, como en Presto: C01.01, C01.02…
+            TipoAlta::Capitulo { padre } if padre != &self.p.raiz => {
+                (self.p.codigo_libre(&format!("{padre}."), 2), String::new())
+            }
             TipoAlta::Capitulo { .. } => (self.p.codigo_libre("C", 2), String::new()),
             TipoAlta::Partida { .. } => (self.p.codigo_libre("P", 4), "ud".into()),
             TipoAlta::Linea { .. } => (self.p.codigo_libre("R", 4), "h".into()),
@@ -65,7 +69,8 @@ impl Aplicacion {
             return;
         };
         let titulo = match &a.tipo {
-            TipoAlta::Capitulo { padre } => format!("Nuevo capítulo en {padre}"),
+            TipoAlta::Capitulo { padre } if padre == &self.p.raiz => "Nuevo capítulo".to_owned(),
+            TipoAlta::Capitulo { padre } => format!("Nuevo subcapítulo en {padre}"),
             TipoAlta::Partida { capitulo } => format!("Nueva partida en {capitulo}"),
             TipoAlta::Linea { padre } => format!("Añadir línea a {padre}"),
         };
@@ -80,7 +85,12 @@ impl Aplicacion {
                 TipoAlta::Capitulo { padre } => {
                     campo(ui, "Código", &mut a.codigo, 120.0);
                     campo(ui, "Resumen", &mut a.resumen, 380.0);
-                    if ui.button("Crear capítulo").clicked() {
+                    let txt = if padre == self.p.raiz {
+                        "Crear capítulo"
+                    } else {
+                        "Crear subcapítulo"
+                    };
+                    if ui.button(txt).clicked() {
                         acciones.push(Accion::NuevoCapitulo {
                             padre,
                             codigo: a.codigo.clone(),

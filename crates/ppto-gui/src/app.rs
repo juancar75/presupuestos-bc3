@@ -637,10 +637,16 @@ impl Aplicacion {
                     continue;
                 }
                 Accion::Unidad(c, u) => self.p.fijar_unidad(&c, &u),
-                Accion::NuevoCapitulo { padre, codigo, resumen } => self
-                    .p
-                    .nuevo_capitulo(&padre, &codigo, &resumen)
-                    .map(|()| self.info(format!("Capítulo {codigo} creado."))),
+                Accion::NuevoCapitulo { padre, codigo, resumen } => {
+                    self.p.nuevo_capitulo(&padre, &codigo, &resumen).map(|()| {
+                        let t = if padre == self.p.raiz {
+                            "Capítulo"
+                        } else {
+                            "Subcapítulo"
+                        };
+                        self.info(format!("{t} {codigo} creado en {padre}."));
+                    })
+                }
                 Accion::NuevaPartida {
                     capitulo,
                     codigo,
@@ -842,7 +848,7 @@ impl Aplicacion {
                         ui.label(RichText::new(format!("{} €", eur(l.importe))).weak());
                         self.rama(ui, &l.hijo, acciones);
                         if self.calc.lineas.get(&l.hijo).is_none_or(Vec::is_empty) {
-                            ui.label(RichText::new("(vacío: clic derecho en el capítulo)").weak().small());
+                            ui.label(RichText::new("(vacío: clic derecho encima para añadir)").weak().small());
                         }
                     });
                 // Soltar una partida sobre el capítulo: al final de él
@@ -2054,6 +2060,18 @@ mod pruebas {
             "la selección sigue a la partida"
         );
         assert_eq!(app.calc.lineas["C02"][0].importe, dec!(6276.90));
+        pintar(&mut app);
+    }
+
+    #[test]
+    fn subcapitulos_con_codigo_bajo_su_padre() {
+        let mut app = Aplicacion::sin_ventana();
+        app.aplicar(vec![Accion::Alta(TipoAlta::Capitulo {
+            padre: app.p.raiz.clone(),
+        })]);
+        assert_eq!(app.alta.as_ref().unwrap().codigo, "C02");
+        app.aplicar(vec![Accion::Alta(TipoAlta::Capitulo { padre: "C01".into() })]);
+        assert_eq!(app.alta.as_ref().unwrap().codigo, "C01.01");
         pintar(&mut app);
     }
 }
