@@ -56,8 +56,30 @@ cuadran, PEM idéntico.
 | `~E` | Presente aunque esté vacío |
 | `~M` | **Se escribe aunque la partida no tenga líneas**: solo posición y total (`~M|01#\E01|1\1\|1||`). El importador no crea hoja de medición en ese caso |
 
-Pendiente con un presupuesto real mayor: porcentajes (`%`), costes
-indirectos ≠ 0, auxiliares, mediciones con líneas y textos.
+### Segunda obra real (10-10-2026): climatización, 208 conceptos, CI 45 %
+
+No se sube al repositorio. 5 capítulos, 52 partidas, 60 textos `~T`,
+porcentajes de descuento (`%PANASONIC −0.65`, `%KOOLAIR −0.48`…), accesorios
+(`%ACC… 0.05–0.5`), grúa (`%GRUA 0.1`) y gastos (`%GI 0.03`). Hallazgos:
+
+| Aspecto | Presto 8.8 |
+|---|---|
+| `~C` de partidas | **Coste SIN costes indirectos** (p. ej. 5.810,39), no el precio con CI |
+| `~C` de capítulos y raíz | Total **CON** CI: Σ cantidad × redondeo(coste × 1,45) |
+| Porcentajes | `~C` del `%` lleva el porcentaje en puntos (−48), `~D` la fracción (−0.48); la máscara vacía aplica a todas las líneas anteriores, incluidos otros `%` |
+| Materiales descompuestos | Tipo 3 con `~D` es habitual (tuberías, PVC): ahora es *info*, no aviso |
+
+Contraste: con los precios de partida que declara Presto, el programa
+reproduce **al céntimo** los 5 capítulos y el PEM (157.310,88 €) y el coste
+directo (108.489,57 €), lo que valida la aplicación de CI por partida.
+Recalculando las partidas desde su descomposición, 34 de 52 cuadran y 18
+difieren 0,01–0,03 € (PEM −1,70 €, 0,001 %). Todas las que difieren tienen
+líneas `%`; la causa (redondeo interno de Presto en los porcentajes o
+decimales internos del precio) está **pendiente de contrastar** mirando la
+descomposición de una de ellas en Presto.
+
+La copia recibida por la subida web llegó recodificada a UTF-8 con «�» en lugar
+de las tildes: el importador lo detecta y avisa.
 
 ## Exportador (P-011)
 
@@ -67,7 +89,7 @@ Escribe el formato de Presto 8.8: `FIEBDC-3/2002`, ANSI (Windows-1252), CRLF.
 |---|---|
 | `~V` | `presupuestos-bc3`, versión del programa, rótulo = nombre del presupuesto, `ANSI` |
 | `~K` | Decimales del proyecto en el formato antiguo (`\2\2\3\2\2\2\2\EUR\` por defecto, igual que Presto) y `CI` (+ `GG\BI\0\IVA` si se indican) |
-| `~C` | Raíz `##`, capítulos `#`; tipo 1/2/3 para mano de obra, maquinaria y material, 0 para el resto. Precio: recursos su precio; unidades de obra su **precio con indirectos**; auxiliares su coste; capítulos su total |
+| `~C` | Raíz `##`, capítulos `#`; tipo 1/2/3 para mano de obra, maquinaria y material, 0 para el resto. Precio: recursos su precio; unidades de obra y auxiliares su **coste sin indirectos**; capítulos y raíz su total con indirectos (como Presto 8.8) |
 | `~D` | Hijos sin `#`; porcentajes en **fracción** (2 % → `0.02`) |
 | `~T` | Texto largo con saltos CRLF |
 | `~M` | `padre#\hijo`, total y líneas (tipo, comentario, uds, long, anch, alt; tipo 3 = fórmula) |

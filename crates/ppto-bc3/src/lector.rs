@@ -108,6 +108,17 @@ impl Lector {
                 );
                 String::from_utf8_lossy(bytes).into_owned()
             }
+            // Un texto ANSI con tildes casi nunca es UTF-8 válido: si lo es, el
+            // fichero se ha recodificado por el camino (copias, subidas web...).
+            "ANSI" | "1252" | "WINDOWS-1252" | "CP1252" if !ascii && std::str::from_utf8(bytes).is_ok() => {
+                self.anotar(
+                    Gravedad::Aviso,
+                    0,
+                    "",
+                    format!("el fichero declara {declarado} pero está en UTF-8; se ha leído como UTF-8"),
+                );
+                String::from_utf8_lossy(bytes).into_owned()
+            }
             "" | "ANSI" | "1252" | "WINDOWS-1252" | "CP1252" => win1252(bytes),
             "850" | "437" => {
                 self.anotar(
@@ -128,6 +139,18 @@ impl Lector {
                 win1252(bytes)
             }
         };
+        let perdidos = texto.matches('\u{fffd}').count();
+        if perdidos > 0 {
+            self.anotar(
+                Gravedad::Aviso,
+                0,
+                "",
+                format!(
+                    "{perdidos} carácter(es) «�»: las tildes o eñes se perdieron antes de importar \
+                     (fichero recodificado); exporte de nuevo desde el programa de origen"
+                ),
+            );
+        }
         texto.replace('\u{1a}', "")
     }
 
@@ -491,8 +514,9 @@ impl Lector {
                 },
             );
         }
+        // Presto permite materiales (tipo 3) descompuestos: es información, no un fallo.
         for a in avisos {
-            self.anotar(Gravedad::Aviso, 0, "C", a);
+            self.anotar(Gravedad::Info, 0, "C", a);
         }
         for codigo in self.textos.keys().cloned().collect::<Vec<_>>() {
             self.anotar(
@@ -811,15 +835,6 @@ impl Lector {
         let mut pem_declarado = None;
         match p.valorar() {
             Ok(v) => {
-                // Precio con costes indirectos de cada concepto colgado de un capítulo
-                let venta: HashMap<&str, Decimal> = p
-                    .conceptos
-                    .values()
-                    .filter(|c| c.naturaleza == Naturaleza::Capitulo)
-                    .filter_map(|c| v.lineas.get(&c.codigo))
-                    .flatten()
-                    .map(|l| (l.hijo.as_str(), l.precio))
-                    .collect();
                 for (codigo, c) in &p.conceptos {
                     if c.descomposicion.is_empty() || c.naturaleza == Naturaleza::Porcentaje {
                         continue;
@@ -836,10 +851,9 @@ impl Lector {
                     if codigo == &raiz {
                         pem_declarado = Some(declarado);
                     }
-                    let calculado = match venta.get(codigo.as_str()) {
-                        Some(pv) if c.naturaleza != Naturaleza::Capitulo => *pv,
-                        _ => v.precios.get(codigo).copied().unwrap_or_default(),
-                    };
+                    // Presto 8.8 (obra real con CI 45 %) declara en ~C el coste de la
+                    // partida SIN costes indirectos; los capítulos y la raíz, con ellos.
+                    let calculado = v.precios.get(codigo).copied().unwrap_or_default();
                     if calculado != declarado {
                         discrepancias.push(Discrepancia {
                             codigo: codigo.clone(),

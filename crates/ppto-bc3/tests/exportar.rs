@@ -101,8 +101,8 @@ fn formato_como_presto_8_8() {
     assert!(texto.contains("~K|\\2\\2\\3\\2\\2\\2\\2\\EUR\\|3\\13\\6\\0\\21|\r\n"));
     assert!(texto.contains("~C|OBRA##||Vivienda tipo (sintético)|"));
     assert!(texto.contains("~C|C01#||Calefacción por suelo radiante|"));
-    // Unidad de obra con precio de venta (29,89 × 1,03 = 30,7867 → 30,79) y fecha
-    assert!(texto.contains("~C|SR.M2|m2|Suelo radiante con panel de tetones y tubo PE-RT 16×2|30.79|101026|0|"));
+    // Unidad de obra con su coste sin indirectos (como Presto 8.8) y fecha
+    assert!(texto.contains("~C|SR.M2|m2|Suelo radiante con panel de tetones y tubo PE-RT 16×2|29.89|101026|0|"));
     assert!(texto.contains("~C|MO.OF1F|h|Oficial 1ª instalador de calefacción|24.5|101026|1|"));
     // Porcentaje en fracción
     assert!(texto.contains("%MA\\1\\0.02\\"));

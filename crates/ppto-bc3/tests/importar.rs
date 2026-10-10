@@ -233,15 +233,15 @@ fn bc3_grande_de_cuatro_mil_partidas() {
 
 #[test]
 fn costes_indirectos_del_k_se_aplican_por_partida() {
-    // Mismo suelo radiante con CI 45 % en ~K y precios de venta declarados como en Presto:
-    // SR.M2 43,34 · SR.COL8 351,99 · C01 = PEM 10.157,37 (coste directo 7.005,15)
+    // Mismo suelo radiante con CI 45 % en ~K, declarado como lo exporta Presto 8.8
+    // (comprobado con una obra real): las partidas con su coste SIN indirectos
+    // (SR.M2 29,89 · SR.COL8 242,75) y capítulo y raíz con el total CON ellos,
+    // aplicados por partida: 43,34 × 210 + 351,99 × 3 = PEM 10.157,37.
     let original = std::fs::read(datos("suelo-radiante.bc3")).unwrap();
     let texto = encoding_rs::WINDOWS_1252.decode(&original).0.into_owned();
     let texto = texto
         .replace(r"|0\13\6\0\21|", r"|45\13\6\0\21|")
-        .replace("|7005.15|", "|10157.37|")
-        .replace("16×2|29.89|", "16×2|43.34|")
-        .replace("conexionado|242.75|", "conexionado|351.99|");
+        .replace("|7005.15|", "|10157.37|");
     let bytes = encoding_rs::WINDOWS_1252.encode(&texto).0.into_owned();
     let imp = importar(&bytes).unwrap();
     let p = &imp.presupuesto;
@@ -271,4 +271,17 @@ fn estructura_real_de_presto_8_8() {
         imp.presupuesto.concepto("O01").unwrap().naturaleza,
         ppto_core::concepto::Naturaleza::ManoObra
     );
+}
+
+#[test]
+fn ansi_declarado_pero_recodificado() {
+    // Fichero que declara ANSI pero llegó en UTF-8 (p. ej. tras una subida web):
+    // se lee como UTF-8; si trae «�», las tildes ya se perdieron y se avisa.
+    let bien = "~V||FIEBDC-3/2002|Presto 8.8||ANSI|\r\n~C|R##||Climatización|0||0|\r\n";
+    let imp = importar(bien.as_bytes()).unwrap();
+    assert_eq!(imp.presupuesto.concepto("R").unwrap().resumen, "Climatización");
+    assert_eq!(imp.avisos(), 1, "{:#?}", imp.incidencias);
+    let mal = bien.replace('ó', "\u{fffd}");
+    let imp = importar(mal.as_bytes()).unwrap();
+    assert!(imp.incidencias.iter().any(|i| i.mensaje.contains("se perdieron")));
 }

@@ -91,18 +91,10 @@ impl Escritor {
             d.dimensiones, d.medicion, d.rendimiento, d.importe_linea, d.precio, d.importe, d.importe, k2
         ));
 
-        // Precio declarado de cada concepto: el de venta (con indirectos) si cuelga
-        // de un capítulo, el coste si es auxiliar o recurso; total si es capítulo.
-        let mut declarado = v.precios.clone();
-        for (padre, lineas) in &v.lineas {
-            if p.conceptos[padre].naturaleza == Naturaleza::Capitulo {
-                for l in lineas {
-                    if p.conceptos[&l.hijo].naturaleza != Naturaleza::Capitulo {
-                        declarado.insert(l.hijo.clone(), l.precio);
-                    }
-                }
-            }
-        }
+        // Precio declarado de cada concepto, como Presto 8.8 (obra real con CI 45 %):
+        // partidas y auxiliares con su coste SIN indirectos; capítulos y raíz con
+        // el total CON indirectos (aplicados por partida y redondeados).
+        let declarado = &v.precios;
 
         // ~C ~D ~T: raíz primero, luego capítulos y el resto, en orden estable
         let mut orden: Vec<&Concepto> = p.conceptos.values().collect();
