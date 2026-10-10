@@ -103,8 +103,10 @@ propio) y también se avisa.
 
 Pruebas de ida y vuelta (`tests/exportar.rs`): exportar → importar conserva
 estructura, naturalezas, textos, mediciones, precios e importes al céntimo, y
-exportar dos veces produce los mismos bytes. **Pendiente (P-012): abrir en
-Presto 8.8 un BC3 exportado por el programa.**
+exportar dos veces produce los mismos bytes. **Validado en Presto 8.8 (10-10-2026)**: el BC3 del ejemplo, importado en
+Presto, da C01 = PEM 7.005,15 €, SR.M2 29,89 €/m² (210 m²), SR.COL8 242,75 €,
+textos con «×» correctos y el desglose MO/material/otros esperado
+(2.563,05 / 4.318,20 / 123,90).
 
 ## Comprobación de precios («precios que no cuadran»)
 
