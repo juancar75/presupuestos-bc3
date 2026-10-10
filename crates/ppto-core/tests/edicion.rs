@@ -125,3 +125,42 @@ fn subpartidas_a_varios_niveles_como_presto() {
     );
     assert!(p.nuevo_recurso("X", "", "x", Naturaleza::Capitulo, dec!(0)).is_err());
 }
+
+#[test]
+fn trasladar_partidas_entre_capitulos_como_arrastrar() {
+    // Suelo radiante: C01 con SR.M2 (210 m², con medición) y SR.COL8 (3 ud).
+    let mut p = suelo_radiante();
+    p.nuevo_capitulo(&p.raiz.clone(), "C02", "Colectores").unwrap();
+    // SR.M2 a C02: conserva cantidad y hoja de medición; el PEM no cambia
+    p.trasladar_linea("C01", "SR.M2", "C02", None).unwrap();
+    assert_eq!(p.pem().unwrap(), dec!(7005.15));
+    assert!(p.mediciones.contains_key(&("C02".into(), "SR.M2".into())));
+    assert!(!p.mediciones.contains_key(&("C01".into(), "SR.M2".into())));
+    assert_eq!(p.lineas_valoradas("C02").unwrap()[0].importe, dec!(6276.90));
+    // Volver a C01 delante de SR.COL8
+    p.trasladar_linea("C02", "SR.M2", "C01", Some("SR.COL8")).unwrap();
+    let orden: Vec<_> = p
+        .concepto("C01")
+        .unwrap()
+        .descomposicion
+        .iter()
+        .map(|l| l.hijo.clone())
+        .collect();
+    assert_eq!(orden, ["SR.M2", "SR.COL8"]);
+    // Reordenar dentro del mismo capítulo
+    p.trasladar_linea("C01", "SR.COL8", "C01", Some("SR.M2")).unwrap();
+    assert_eq!(p.concepto("C01").unwrap().descomposicion[0].hijo, "SR.COL8");
+    // Capítulo dentro de otro capítulo (subcapítulo)
+    p.trasladar_linea(&p.raiz.clone(), "C02", "C01", None).unwrap();
+    assert_eq!(p.ruta("C02"), [p.raiz.clone(), "C01".into(), "C02".into()]);
+    // Prohibido: capítulo dentro de sí mismo, partida en una partida que ya la contiene...
+    let antes = p.clone();
+    assert!(p.trasladar_linea("C01", "C02", "C02", None).is_err());
+    assert!(
+        p.trasladar_linea(&p.raiz.clone(), "C01", "C02", None)
+            .unwrap_err()
+            .to_string()
+            .contains("circular")
+    );
+    assert_eq!(p, antes, "los intentos fallidos no tocan nada");
+}

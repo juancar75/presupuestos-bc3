@@ -154,6 +154,61 @@ impl Presupuesto {
         Ok(())
     }
 
+    /// Traslada la línea `hijo` de `origen` a `destino` (arrastrar y soltar),
+    /// conservando su cantidad y su hoja de medición. Si `antes_de` es un hijo
+    /// de `destino`, se coloca delante de él; si no, al final. Con
+    /// `origen == destino` solo reordena. Mismas reglas que [`Self::anadir_linea`];
+    /// si algo falla, el presupuesto queda como estaba.
+    pub fn trasladar_linea(
+        &mut self,
+        origen: &str,
+        hijo: &str,
+        destino: &str,
+        antes_de: Option<&str>,
+    ) -> Result<(), ErrorMotor> {
+        if antes_de == Some(hijo) {
+            return Ok(());
+        }
+        let copia = self.clone();
+        let r = self.trasladar_sin_deshacer(origen, hijo, destino, antes_de);
+        if r.is_err() {
+            *self = copia;
+        }
+        r
+    }
+
+    fn trasladar_sin_deshacer(
+        &mut self,
+        origen: &str,
+        hijo: &str,
+        destino: &str,
+        antes_de: Option<&str>,
+    ) -> Result<(), ErrorMotor> {
+        let d = &mut self.concepto_mut(origen)?.descomposicion;
+        let i = d
+            .iter()
+            .position(|l| l.hijo == hijo)
+            .ok_or_else(|| ErrorMotor::RecursoNoEnPartida {
+                partida: origen.to_owned(),
+                recurso: hijo.to_owned(),
+            })?;
+        let linea = d.remove(i);
+        if origen != destino {
+            // Comprobar reglas con una línea provisional y quitarla
+            self.anadir_linea(destino, hijo, Decimal::ONE)?;
+            self.concepto_mut(destino)?.descomposicion.pop();
+            if let Some(m) = self.mediciones.remove(&(origen.to_owned(), hijo.to_owned())) {
+                self.mediciones.insert((destino.to_owned(), hijo.to_owned()), m);
+            }
+        }
+        let d = &mut self.concepto_mut(destino)?.descomposicion;
+        let pos = antes_de
+            .and_then(|a| d.iter().position(|l| l.hijo == a))
+            .unwrap_or(d.len());
+        d.insert(pos, linea);
+        Ok(())
+    }
+
     /// Quita la línea `hijo` de `padre` (y su hoja de medición, si la tiene).
     /// El concepto hijo no se borra: puede seguir usándose en otros sitios.
     pub fn quitar_linea(&mut self, padre: &str, hijo: &str) -> Result<(), ErrorMotor> {

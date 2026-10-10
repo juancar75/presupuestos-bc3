@@ -68,6 +68,8 @@ enum Accion {
     /// Quitar línea (padre, hijo); `true` = borrar también lo que quede sin usar.
     QuitarLinea(String, String, bool),
     Mover(String, String, bool),
+    /// Arrastrar y soltar: (origen, hijo, destino, delante de).
+    Trasladar(String, String, String, Option<String>),
     Alta(TipoAlta),
 }
 
@@ -689,6 +691,17 @@ impl Aplicacion {
                     r
                 }
                 Accion::Mover(padre, hijo, arriba) => self.p.mover_linea(&padre, &hijo, arriba),
+                Accion::Trasladar(origen, hijo, destino, antes) => self
+                    .p
+                    .trasladar_linea(&origen, &hijo, &destino, antes.as_deref())
+                    .map(|()| {
+                        if self.sel.as_ref().is_some_and(|(sp, sh)| sp == &origen && sh == &hijo) {
+                            self.sel = Some((destino.clone(), hijo.clone()));
+                        }
+                        if origen != destino {
+                            self.info(format!("{hijo} movida de {origen} a {destino}."));
+                        }
+                    }),
                 Accion::Precio(c, v) => self.p.fijar_precio(&c, v),
                 Accion::Rendimiento(padre, hijo, v) => self.p.fijar_rendimiento(&padre, &hijo, v),
                 Accion::Medicion(padre, hijo, m) => self.p.actualizar_medicion(&padre, &hijo, m).map(|av| {
@@ -804,7 +817,11 @@ impl Aplicacion {
                     padre: self.p.raiz.clone(),
                 }));
             }
-            ui.label(RichText::new("Clic derecho: más opciones").weak().small());
+            ui.label(
+                RichText::new("Arrastre partidas para moverlas · clic derecho: más opciones")
+                    .weak()
+                    .small(),
+            );
         });
         egui::ScrollArea::vertical().show(ui, |ui| {
             self.rama(ui, &self.p.raiz, acciones);
@@ -828,6 +845,22 @@ impl Aplicacion {
                             ui.label(RichText::new("(vacío: clic derecho en el capítulo)").weak().small());
                         }
                     });
+                // Soltar una partida sobre el capítulo: al final de él
+                if let Some(a) = r.header_response.dnd_release_payload::<Arrastre>() {
+                    acciones.push(Accion::Trasladar(
+                        a.origen.clone(),
+                        a.hijo.clone(),
+                        l.hijo.clone(),
+                        None,
+                    ));
+                } else if r.header_response.dnd_hover_payload::<Arrastre>().is_some() {
+                    ui.painter().rect_stroke(
+                        r.header_response.rect,
+                        2.0,
+                        egui::Stroke::new(2.0, Color32::from_rgb(90, 150, 230)),
+                        egui::StrokeKind::Outside,
+                    );
+                }
                 r.header_response.context_menu(|ui| {
                     if ui.button("Nueva partida aquí").clicked() {
                         acciones.push(Accion::Alta(TipoAlta::Partida {
@@ -845,10 +878,36 @@ impl Aplicacion {
                 });
             } else {
                 let elegido = self.sel.as_ref() == Some(&(capitulo.to_owned(), l.hijo.clone()));
-                let r = ui.add(
-                    egui::Button::selectable(elegido, format!("{}  {}", c.codigo, corto(&c.resumen, 34)))
-                        .wrap_mode(egui::TextWrapMode::Truncate),
-                );
+                let carga = Arrastre {
+                    origen: capitulo.to_owned(),
+                    hijo: l.hijo.clone(),
+                };
+                let r = ui
+                    .dnd_drag_source(egui::Id::new(("arrastre", capitulo, &l.hijo)), carga, |ui| {
+                        ui.add(
+                            egui::Button::selectable(elegido, format!("{}  {}", c.codigo, corto(&c.resumen, 34)))
+                                .wrap_mode(egui::TextWrapMode::Truncate),
+                        )
+                    })
+                    .inner;
+                // Soltar otra partida encima: se coloca delante de esta
+                if let Some(a) = r.dnd_release_payload::<Arrastre>() {
+                    if a.hijo != l.hijo {
+                        acciones.push(Accion::Trasladar(
+                            a.origen.clone(),
+                            a.hijo.clone(),
+                            capitulo.to_owned(),
+                            Some(l.hijo.clone()),
+                        ));
+                    }
+                } else if r.dnd_hover_payload::<Arrastre>().is_some_and(|a| a.hijo != l.hijo) {
+                    let y = r.rect.top() - 2.0;
+                    ui.painter().hline(
+                        r.rect.x_range(),
+                        y,
+                        egui::Stroke::new(2.0, Color32::from_rgb(90, 150, 230)),
+                    );
+                }
                 ui.label(
                     RichText::new(format!(
                         "    {} {} × {} = {} €",
@@ -1759,6 +1818,12 @@ impl eframe::App for Aplicacion {
     }
 }
 
+/// Lo que se arrastra en el árbol: una línea (`hijo`) de un capítulo (`origen`).
+struct Arrastre {
+    origen: String,
+    hijo: String,
+}
+
 /// Opciones comunes a cualquier línea del árbol.
 fn menu_linea(ui: &mut Ui, padre: &str, hijo: &str, acciones: &mut Vec<Accion>) {
     if ui.button("Subir").clicked() {
@@ -1966,5 +2031,29 @@ mod pruebas {
         assert_eq!(app.calc.precios["AUX1"], dec!(23.10));
         assert_eq!(app.calc.pem, dec!(251.00));
         assert_eq!(app.p.ruta("AUX2"), ["OBRA", "C01", "P1", "AUX1", "AUX2"]);
+    }
+
+    #[test]
+    fn arrastrar_partida_a_otro_capitulo() {
+        let mut app = Aplicacion::sin_ventana();
+        app.aplicar(vec![Accion::NuevoCapitulo {
+            padre: app.p.raiz.clone(),
+            codigo: "C02".into(),
+            resumen: "Otro".into(),
+        }]);
+        app.aplicar(vec![Accion::Trasladar(
+            "C01".into(),
+            "SR.M2".into(),
+            "C02".into(),
+            None,
+        )]);
+        assert_eq!(app.calc.pem, dec!(7005.15));
+        assert_eq!(
+            app.sel,
+            Some(("C02".into(), "SR.M2".into())),
+            "la selección sigue a la partida"
+        );
+        assert_eq!(app.calc.lineas["C02"][0].importe, dec!(6276.90));
+        pintar(&mut app);
     }
 }

@@ -86,7 +86,9 @@ cargo run --release -p ppto-gui
 En Windows basta con hacer doble clic en `scripts\windows\abrir-interfaz.bat`.
 Permite crear un presupuesto desde cero (**Nuevo**) o editar uno importado:
 
-- **Árbol**: «+ Capítulo»; clic derecho en un capítulo para crear una partida
+- **Árbol**: **arrastrar y soltar** partidas sobre un capítulo (van al final)
+  o sobre otra partida (se colocan delante), en el mismo nivel o en otro;
+  conservan cantidad y medición. «+ Capítulo»; clic derecho en un capítulo para crear una partida
   o un subcapítulo; clic derecho en cualquier línea para subirla, bajarla o
   quitarla (lo que quede sin usar se borra).
 - **Partida**: código, unidad, resumen y texto; descompuesto con «+ Añadir

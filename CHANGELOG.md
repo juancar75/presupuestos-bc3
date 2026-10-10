@@ -16,6 +16,9 @@ versionado [semántico](https://semver.org/lang/es/).
 - Subpartidas (auxiliares descompuestos) a cualquier nivel: crear desde
   «Añadir línea…», entrar pulsando su código, «<< Volver» y ruta superior;
   `Presupuesto::ruta`.
+- Arrastrar y soltar partidas en el árbol entre capítulos y niveles
+  (`Presupuesto::trasladar_linea`: conserva cantidad y hoja de medición;
+  si no es válido, no cambia nada).
 
 ### Validado con Presto 8.8 (10-10-2026)
 - **Importación de una obra real** (climatización, 208 conceptos, CI 45 %,
