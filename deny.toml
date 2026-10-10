@@ -16,6 +16,8 @@ allow = [
     "GPL-3.0-or-later",
     # Boost: permisiva y compatible con GPL (clipboard-win, error-code; portapapeles en Windows)
     "BSL-1.0",
+    # Zero-Clause BSD: dominio público funcional (roman-numerals-rs, vía Typst)
+    "0BSD",
 ]
 confidence-threshold = 0.9
 unused-allowed-license = "allow"
