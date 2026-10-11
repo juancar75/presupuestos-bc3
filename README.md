@@ -71,6 +71,28 @@ Seis hojas: resumen por capítulos (coste directo, indirectos, PEM, GG, BI,
 IVA), presupuesto, descompuestos, mediciones, recursos y horas por oficio.
 También con el botón «Excel…» de la interfaz.
 
+## Presupuestos ciegos en Excel
+
+El listado «Presupuesto y mediciones» de Presto exportado a Excel (columnas
+Código, Nat, Ud, Resumen, Comentario, N, Longitud, Anchura, Altura, Parcial,
+CanPres, PrPres, ImpPres) con los precios a cero:
+
+1. **📋 Ciego → Abrir Excel ciego…** lo importa: capítulos y subcapítulos,
+   partidas con su texto y sus líneas de medición, tal como las calcula el
+   Excel (dimensión 0 = 1; parciales fijos de líneas con fórmula).
+2. Se valora: **precio directo** en la partida, descomponiéndola, o
+   **Traer precios de un BC3…** (base de precios, obra anterior o el mismo
+   ciego valorado en Presto: trae el descompuesto completo).
+3. **Devolver Excel valorado…** guarda **el mismo fichero del cliente** con
+   los precios en la columna PrPres. No se toca nada más (formato, fórmulas,
+   textos) y Excel recalcula al abrir. El total del programa coincide al
+   céntimo con el del Excel.
+
+```console
+cargo run -p ppto-cli -- ciego ciego.xlsx --precios base.bc3 --valorado ciego-valorado.xlsx
+cargo run -p ppto-cli -- ciego ciego.xlsx --bc3 ciego.bc3     # para valorarlo en Presto
+```
+
 ## Presupuesto en PDF
 
 Botón **PDF…** de la interfaz (o `--pdf presupuesto.pdf` en `ppto demo` e

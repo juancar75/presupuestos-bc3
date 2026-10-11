@@ -10,6 +10,12 @@
 //!   ppto importar <f.bc3> [--db <f.sqlite>] [--excel <f.xlsx>] [--bc3 <salida.bc3>] [--pdf <f.pdf>] [--todo]
 //!                             Importa un BC3, informa de incidencias y de los
 //!                             precios que no cuadran; opcionalmente lo guarda.
+//!   ppto ciego <ciego.xlsx> [--precios <base.bc3>] [--valorado <salida.xlsx>]
+//!              [--bc3 <salida.bc3>] [--db <f.sqlite>] [--pdf <f.pdf>]
+//!                             Presupuesto ciego de Presto en Excel: lo importa,
+//!                             le pone los precios de un BC3 y devuelve el mismo
+//!                             Excel con los precios (o lo exporta a BC3 para
+//!                             valorarlo en Presto).
 
 use ppto_core::concepto::Naturaleza;
 use ppto_core::ejemplos::{ofertas_montaje_suelo_radiante, suelo_radiante};
@@ -65,13 +71,86 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("ciego") if args.len() >= 2 => match ciego(&args[1], &args) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         _ => {
             eprintln!(
-                "uso:\n  ppto demo [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <fichero.bc3>] [--pdf <fichero.pdf>]\n  ppto importar <fichero.bc3> [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <salida.bc3>] [--pdf <fichero.pdf>] [--todo]"
+                "uso:\n  ppto demo [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <fichero.bc3>] [--pdf <fichero.pdf>]\n  ppto importar <fichero.bc3> [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <salida.bc3>] [--pdf <fichero.pdf>] [--todo]\n  ppto ciego <ciego.xlsx> [--precios <base.bc3>] [--valorado <salida.xlsx>] [--bc3 <salida.bc3>] [--db <fichero.sqlite>] [--pdf <fichero.pdf>]"
             );
             ExitCode::from(2)
         }
     }
+}
+
+fn ciego(ruta: &str, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let c = ppto_ciego::leer(ruta)?;
+    let mut p = c.presupuesto.clone();
+    let partidas = p
+        .conceptos
+        .values()
+        .filter(|x| x.naturaleza == Naturaleza::Partida)
+        .count();
+    println!("{ruta}");
+    println!(
+        "  Hoja «{}» · obra {} «{}»",
+        c.hoja,
+        p.raiz,
+        p.concepto(&p.raiz)?.resumen
+    );
+    println!(
+        "  {} capítulos · {} partidas ({} apariciones) · {} hojas de medición",
+        p.conceptos
+            .values()
+            .filter(|x| x.naturaleza == Naturaleza::Capitulo)
+            .count()
+            - 1,
+        partidas,
+        c.apariciones.len(),
+        p.mediciones.len()
+    );
+    for i in &c.incidencias {
+        println!("  [aviso] {i}");
+    }
+    if let Some(b) = opcion(args, "--precios") {
+        let base = ppto_bc3::importar_fichero(b)?.presupuesto;
+        let t = ppto_ciego::traer_precios(&mut p, &base);
+        println!(
+            "  Precios de {b}: {} partidas con precio, {} sin encontrar",
+            t.con_precio.len(),
+            t.no_encontradas.len()
+        );
+    }
+    println!("  PEM {} €", eur(p.pem()?));
+    if let Some(x) = opcion(args, "--valorado") {
+        let v = ppto_ciego::valorar(&std::fs::read(ruta)?, &c, &p)?;
+        std::fs::write(x, &v.bytes)?;
+        println!(
+            "Excel valorado: {x}  ({} precios escritos; total que mostrará Excel {} €)",
+            v.celdas_escritas,
+            eur(v.total_excel)
+        );
+        if !v.sin_precio.is_empty() {
+            println!("  Sin precio ({}): {}", v.sin_precio.len(), v.sin_precio.join(", "));
+        }
+    }
+    if let Some(b) = opcion(args, "--bc3") {
+        exportar_bc3(&p, &ppto_bc3::OpcionesExportacion::default(), b)?;
+    }
+    if let Some(d) = opcion(args, "--db") {
+        let mut a = ppto_db::Almacen::abrir(d)?;
+        let id = a.crear_presupuesto(&p.nombre)?;
+        a.guardar_revision(id, "R1", "importación de presupuesto ciego", &p)?;
+        println!("Guardado en {d} (R1)");
+    }
+    if let Some(f) = opcion(args, "--pdf") {
+        guardar_pdf(&p, f)?;
+    }
+    Ok(())
 }
 
 fn opcion<'a>(args: &'a [String], nombre: &str) -> Option<&'a str> {

@@ -189,10 +189,12 @@ impl Presupuesto {
         Ok(())
     }
 
-    /// Cambia el precio propio de un recurso básico.
+    /// Cambia el precio propio de un recurso básico o de una partida sin
+    /// descomponer (precio directo, como al valorar un presupuesto ciego).
     pub fn fijar_precio(&mut self, codigo: &str, precio: Decimal) -> Result<(), ErrorMotor> {
         let c = self.concepto_mut(codigo)?;
-        if !c.naturaleza.es_basico() {
+        let partida_directa = c.naturaleza == Naturaleza::Partida && c.descomposicion.is_empty();
+        if !c.naturaleza.es_basico() && !partida_directa {
             return Err(ErrorMotor::ValorInvalido(format!(
                 "«{codigo}» no es un recurso básico: su precio sale de su descomposición"
             )));
@@ -350,6 +352,8 @@ impl Presupuesto {
                 let s: Decimal = self.lineas_rec(codigo, cache)?.iter().map(|l| l.importe).sum();
                 redondear(s, d.importe)
             }
+            // Partida sin descomponer: precio propio, como en Presto
+            _ if c.descomposicion.is_empty() => redondear(c.precio, d.precio),
             _ => {
                 let s: Decimal = self.lineas_rec(codigo, cache)?.iter().map(|l| l.importe).sum();
                 redondear(s, d.precio)
@@ -365,7 +369,12 @@ impl Presupuesto {
         if let Some(p) = cache.get(&clave) {
             return Ok(*p);
         }
-        let p: Decimal = self.lineas_rec(codigo, cache)?.iter().map(|l| l.importe).sum();
+        let c = self.concepto(codigo)?;
+        let p: Decimal = if c.descomposicion.is_empty() {
+            c.precio
+        } else {
+            self.lineas_rec(codigo, cache)?.iter().map(|l| l.importe).sum()
+        };
         cache.insert(clave, p);
         Ok(p)
     }

@@ -3115,10 +3115,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppto-ciego"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "calamine",
+ "ppto-bc3",
+ "ppto-core",
+ "quick-xml 0.41.0",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "rust_xlsxwriter",
+ "thiserror 2.0.21",
+ "zip",
+]
+
+[[package]]
 name = "ppto-cli"
 version = "0.1.0-alpha.1"
 dependencies = [
  "ppto-bc3",
+ "ppto-ciego",
  "ppto-core",
  "ppto-db",
  "ppto-informes",
@@ -3155,6 +3171,7 @@ dependencies = [
  "eframe",
  "egui_extras",
  "ppto-bc3",
+ "ppto-ciego",
  "ppto-core",
  "ppto-db",
  "ppto-informes",

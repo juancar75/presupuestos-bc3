@@ -18,6 +18,7 @@ ppto-db.workspace = true
 ppto-bc3.workspace = true
 ppto-informes.workspace = true
 ppto-pdf.workspace = true
+ppto-ciego.workspace = true
 rust_decimal.workspace = true
 rust_decimal_macros.workspace = true
 

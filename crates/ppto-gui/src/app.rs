@@ -3,6 +3,7 @@
 //! recursos, subcontratación y resumen.
 
 mod alta;
+mod ciego;
 mod pdf;
 
 use crate::celdas::Edicion;
@@ -11,7 +12,7 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use ppto_core::concepto::Naturaleza;
 use ppto_core::ejemplos::{ofertas_montaje_suelo_radiante, suelo_radiante};
 use ppto_core::explosion::Explosion;
-use ppto_core::formato::{eur, num};
+use ppto_core::formato::{cant, eur, num};
 use ppto_core::medicion::{LineaMedicion, Medicion, TipoLinea};
 use ppto_core::presupuesto::LineaValorada;
 use ppto_core::subcontrata::{Asignacion, Contratacion, PaqueteTrabajo, ResultadoEscenario, simular};
@@ -163,6 +164,7 @@ pub struct Aplicacion {
     ver_informe: bool,
     alta: Option<Alta>,
     ventana_pdf: Option<pdf::VentanaPdf>,
+    ciego: Option<ciego::CiegoAbierto>,
 }
 
 impl Aplicacion {
@@ -215,6 +217,7 @@ impl Aplicacion {
             ver_informe: false,
             alta: None,
             ventana_pdf: None,
+            ciego: None,
         };
         app.recalcular();
         app
@@ -230,6 +233,7 @@ impl Aplicacion {
     }
 
     fn cargar_ejemplo(&mut self) {
+        self.ciego = None;
         self.p = suelo_radiante();
         self.fichero = None;
         self.presupuesto_id = None;
@@ -244,6 +248,7 @@ impl Aplicacion {
     }
 
     fn nuevo_presupuesto(&mut self) {
+        self.ciego = None;
         self.p = Presupuesto::new("Presupuesto nuevo", "OBRA", "Presupuesto nuevo");
         self.fichero = None;
         self.presupuesto_id = None;
@@ -278,6 +283,7 @@ impl Aplicacion {
     }
 
     fn abrir(&mut self, ruta: PathBuf) {
+        self.ciego = None;
         let r = (|| -> ppto_db::Resultado<_> {
             let a = Almacen::abrir(&ruta)?;
             let revs = a.listar_revisiones()?;
@@ -387,6 +393,7 @@ impl Aplicacion {
     }
 
     fn importar_bc3(&mut self, ruta: PathBuf) {
+        self.ciego = None;
         match ppto_bc3::importar_fichero(&ruta) {
             Ok(imp) => {
                 self.p = imp.presupuesto.clone();
@@ -748,6 +755,32 @@ impl Aplicacion {
             {
                 self.dialogo_importar();
             }
+            ui.menu_button("📋 Ciego", |ui| {
+                if ui
+                    .button("Abrir Excel ciego…")
+                    .on_hover_text("Listado «Presupuesto y mediciones» de Presto en Excel, con precios a cero")
+                    .clicked()
+                {
+                    ui.close();
+                    self.dialogo_ciego();
+                }
+                if ui
+                    .button("Traer precios de un BC3…")
+                    .on_hover_text("Base de precios, obra anterior o el mismo ciego valorado en Presto")
+                    .clicked()
+                {
+                    ui.close();
+                    self.traer_precios();
+                }
+                if ui
+                    .button("Devolver Excel valorado…")
+                    .on_hover_text("El mismo Excel del cliente con los precios en la columna PrPres")
+                    .clicked()
+                {
+                    ui.close();
+                    self.devolver_valorado();
+                }
+            });
             if ui
                 .button("📤 Exportar BC3…")
                 .on_hover_text("FIEBDC-3/2002 en ANSI, como lo exporta Presto 8.8")
@@ -1014,7 +1047,7 @@ impl Aplicacion {
             ui.label(
                 RichText::new(format!(
                     "Cantidad {} {}   ·   Precio {} €/{}   ·   Importe {} €",
-                    num(l.cantidad, dec.medicion),
+                    cant(l.cantidad, dec.medicion),
                     c.unidad,
                     eur(l.precio),
                     c.unidad,
@@ -1125,7 +1158,17 @@ impl Aplicacion {
                     acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
                 }
             } else if c.naturaleza == Naturaleza::Partida {
-                ui.label(RichText::new("Partida sin descomposición: precio 0,00.").weak());
+                ui.horizontal(|ui| {
+                    ui.label("Precio directo (sin descomponer):");
+                    if let Some(v) = self
+                        .edicion
+                        .decimal(ui, &format!("pd|{hijo}"), c.precio, dec.precio, ANCHO_NUM)
+                    {
+                        acciones.push(Accion::Precio(hijo.clone(), v));
+                    }
+                    ui.label(RichText::new(format!("€/{}", c.unidad)).weak());
+                });
+                ui.label(RichText::new("O descompóngala:").weak());
                 if ui.button("+ Añadir línea…").clicked() {
                     acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
                 }
@@ -1272,7 +1315,7 @@ impl Aplicacion {
                     }
                 }
                 let parcial = parciales.get(i).copied().unwrap_or_default();
-                let txt = RichText::new(num(parcial, dec.medicion));
+                let txt = RichText::new(cant(parcial, dec.medicion));
                 ui.label(if subtotal { txt.italics() } else { txt });
                 if ui.small_button("✖").on_hover_text("Quitar línea").clicked() {
                     quitar = Some(i);
@@ -1284,7 +1327,7 @@ impl Aplicacion {
             }
             ui.label(RichText::new("Total").strong());
             let total = res.as_ref().map(|r| r.total).unwrap_or_default();
-            ui.label(RichText::new(format!("{} {unidad}", num(total, dec.medicion))).strong());
+            ui.label(RichText::new(format!("{} {unidad}", cant(total, dec.medicion))).strong());
             ui.end_row();
         });
         if let Err(e) = &res {
@@ -2085,6 +2128,30 @@ mod pruebas {
         assert_eq!(app.alta.as_ref().unwrap().codigo, "C02");
         app.aplicar(vec![Accion::Alta(TipoAlta::Capitulo { padre: "C01".into() })]);
         assert_eq!(app.alta.as_ref().unwrap().codigo, "C01.01");
+        pintar(&mut app);
+    }
+
+    #[test]
+    fn precio_directo_de_partida_sin_descomponer() {
+        // Como al valorar un ciego: 12 m a 15,50 €/m = 186,00
+        let mut app = Aplicacion::sin_ventana();
+        app.nuevo_presupuesto();
+        app.aplicar(vec![
+            Accion::NuevoCapitulo {
+                padre: "OBRA".into(),
+                codigo: "C01".into(),
+                resumen: "Cap".into(),
+            },
+            Accion::NuevaPartida {
+                capitulo: "C01".into(),
+                codigo: "P1".into(),
+                unidad: "m".into(),
+                resumen: "Tubería".into(),
+            },
+            Accion::Rendimiento("C01".into(), "P1".into(), dec!(12)),
+            Accion::Precio("P1".into(), dec!(15.50)),
+        ]);
+        assert_eq!(app.calc.pem, dec!(186.00));
         pintar(&mut app);
     }
 }

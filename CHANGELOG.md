@@ -5,6 +5,19 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — presupuestos ciegos
+- `ppto-ciego`: importa el listado de Presto en Excel (.xlsx/.xls) y devuelve
+  el mismo .xlsx con los precios (solo se escriben las celdas PrPres;
+  `fullCalcOnLoad`). Mediciones a precisión completa para cuadrar al céntimo
+  con el Excel; parciales fijos; números y códigos guardados como texto;
+  partidas repetidas en varios capítulos. Validado con un ciego real de 507
+  partidas y 1.684 líneas de medición (no se sube).
+- `traer_precios` / `Presupuesto::traer_precio`: trae de otra obra o de un BC3
+  el descompuesto completo (o el precio directo) de cada partida sin precio.
+- Partidas sin descomponer con precio directo (como en Presto).
+- `ppto_core::formato::cant`: cantidades sin ceros sobrantes.
+- CLI `ppto ciego`; interfaz: menú «📋 Ciego» y precio directo en la partida.
+
 ### Añadido — PDF (P-016)
 - `ppto-pdf`: presupuesto en PDF con Typst incluido (ADR-0007): portada con
   logo, fecha y revisión; capítulos y subcapítulos; textos justificados con

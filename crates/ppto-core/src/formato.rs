@@ -24,6 +24,24 @@ pub fn num(v: Decimal, d: u32) -> String {
     out
 }
 
+/// Cantidad o medida: hasta `d` decimales, pero sin ceros sobrantes más
+/// allá del segundo (1.827,300000 → 1.827,30; 2,875 → 2,875). Sirve para
+/// presupuestos que guardan las mediciones con toda su precisión.
+pub fn cant(v: Decimal, d: u32) -> String {
+    let s = num(v, d);
+    if d <= 2 {
+        return s;
+    }
+    let Some((ent, dec)) = s.split_once(',') else {
+        return s;
+    };
+    let mut dec = dec.trim_end_matches('0').to_owned();
+    while dec.len() < 2 {
+        dec.push('0');
+    }
+    format!("{ent},{dec}")
+}
+
 /// Importe en euros con dos decimales (sin símbolo).
 pub fn eur(v: Decimal) -> String {
     num(v, 2)
@@ -209,6 +227,14 @@ fn decenas(n: u64, apocope: bool) -> String {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+
+    #[test]
+    fn cantidades_sin_ceros_sobrantes() {
+        assert_eq!(cant(dec!(1827.3), 6), "1.827,30");
+        assert_eq!(cant(dec!(2.875), 6), "2,875");
+        assert_eq!(cant(dec!(-6), 6), "-6,00");
+        assert_eq!(cant(dec!(1.256), 2), "1,26");
+    }
 
     #[test]
     fn importes_en_letra() {

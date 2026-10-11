@@ -7,7 +7,7 @@
 
 use eframe::egui::{self, Align, TextEdit};
 use ppto_core::Decimal;
-use ppto_core::formato::{leer, num};
+use ppto_core::formato::{cant, leer, num};
 
 #[derive(Default)]
 pub struct Edicion {
@@ -52,7 +52,7 @@ impl Edicion {
         dec: u32,
         ancho: f32,
     ) -> Option<Option<Decimal>> {
-        let mostrado = valor.map(|v| num(v, dec)).unwrap_or_default();
+        let mostrado = valor.map(|v| cant(v, dec)).unwrap_or_default();
         let t = self.celda(ui, clave, mostrado, ancho)?;
         let nuevo = if t.trim().is_empty() { None } else { Some(leer(&t)?) };
         (nuevo != valor).then_some(nuevo)

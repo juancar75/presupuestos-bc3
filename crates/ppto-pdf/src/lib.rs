@@ -11,7 +11,7 @@
 //! una plantilla propia ([`OpcionesPdf::plantilla`]). Los datos le llegan como
 //! `datos.json`, con los importes ya formateados (1.234,56) por el motor.
 
-use ppto_core::formato::{en_letra, eur, num};
+use ppto_core::formato::{cant, en_letra, eur, num};
 use ppto_core::presupuesto::LineaValorada;
 use ppto_core::{Decimal, ErrorMotor, Naturaleza, Presupuesto, TipoLinea, venta};
 use serde::{Deserialize, Serialize};
@@ -342,7 +342,7 @@ impl Ctx<'_> {
         let mut mediciones = Vec::new();
         if let Some(m) = p.mediciones.get(&(capitulo.to_owned(), l.hijo.clone())) {
             let r = m.calcular(&dec, &c.unidad)?;
-            let op = |x: Option<Decimal>| x.map(|v| num(v, dec.dimensiones)).unwrap_or_default();
+            let op = |x: Option<Decimal>| x.map(|v| cant(v, dec.dimensiones)).unwrap_or_default();
             for (lm, parcial) in m.lineas.iter().zip(&r.parciales) {
                 let subtotal = matches!(lm.tipo, TipoLinea::SubtotalParcial | TipoLinea::SubtotalAcumulado);
                 let comentario = match (&lm.formula, lm.comentario.is_empty()) {
@@ -355,7 +355,7 @@ impl Ctx<'_> {
                     "largo": op(lm.longitud),
                     "ancho": op(lm.anchura),
                     "alto": op(lm.altura),
-                    "parcial": num(*parcial, dec.medicion),
+                    "parcial": cant(*parcial, dec.medicion),
                     "subtotal": subtotal,
                 }));
             }
@@ -366,7 +366,7 @@ impl Ctx<'_> {
             "unidad": c.unidad,
             "resumen": c.resumen,
             "texto": c.texto.clone().unwrap_or_default(),
-            "cantidad": num(l.cantidad, dec.medicion),
+            "cantidad": cant(l.cantidad, dec.medicion),
             "precio": eur(l.precio),
             "importe": eur(l.importe),
             "mediciones": mediciones,
