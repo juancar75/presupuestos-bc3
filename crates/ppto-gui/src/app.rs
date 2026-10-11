@@ -171,6 +171,61 @@ pub struct Aplicacion {
     buscar: String,
     /// Llevar el árbol hasta la partida elegida en el próximo fotograma.
     desplazar_arbol: bool,
+    historial: Historial,
+}
+
+/// Deshacer / rehacer: copias completas del presupuesto antes de cada cambio.
+#[derive(Default)]
+struct Historial {
+    deshacer: Vec<(Presupuesto, String)>,
+    rehacer: Vec<(Presupuesto, String)>,
+    /// Escritura en curso (resumen, texto, unidad de un concepto): las
+    /// pulsaciones seguidas en el mismo campo se deshacen de una vez.
+    grupo: Option<String>,
+}
+
+const MAX_HISTORIAL: usize = 200;
+
+impl Historial {
+    fn limpiar(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Guarda el estado anterior a un cambio. Devuelve `true` si se ha guardado.
+    fn antes(&mut self, p: &Presupuesto, que: String, grupo: Option<String>) -> bool {
+        if grupo.is_some() && grupo == self.grupo {
+            return false;
+        }
+        self.grupo = grupo;
+        self.deshacer.push((p.clone(), que));
+        if self.deshacer.len() > MAX_HISTORIAL {
+            self.deshacer.remove(0);
+        }
+        self.rehacer.clear();
+        true
+    }
+}
+
+/// Descripción para «Deshacer …» y, en la escritura de textos, el grupo.
+fn describir(a: &Accion) -> Option<(String, Option<String>)> {
+    Some(match a {
+        Accion::Precio(c, _) => (format!("precio de {c}"), None),
+        Accion::Rendimiento(p, h, _) => (format!("cantidad de {h} en {p}"), None),
+        Accion::Medicion(_, h, _) => (format!("medición de {h}"), None),
+        Accion::Resumen(c, _) => (format!("resumen de {c}"), Some(format!("resumen|{c}"))),
+        Accion::Texto(c, _) => (format!("texto de {c}"), Some(format!("texto|{c}"))),
+        Accion::Unidad(c, _) => (format!("unidad de {c}"), Some(format!("unidad|{c}"))),
+        Accion::Ci(_) => ("costes indirectos".into(), None),
+        Accion::OpcionesCi(_) => ("opciones de costes indirectos".into(), None),
+        Accion::NuevoCapitulo { codigo, .. } => (format!("nuevo capítulo {codigo}"), None),
+        Accion::NuevaPartida { codigo, .. } => (format!("nueva partida {codigo}"), None),
+        Accion::NuevoRecurso { codigo, .. } => (format!("nuevo {codigo}"), None),
+        Accion::AnadirLinea(p, h, _) => (format!("añadir {h} a {p}"), None),
+        Accion::QuitarLinea(p, h, _) => (format!("quitar {h} de {p}"), None),
+        Accion::Mover(p, h, _) => (format!("mover {h} en {p}"), None),
+        Accion::Trasladar(o, h, d, _) => (format!("mover {h} de {o} a {d}"), None),
+        _ => return None,
+    })
 }
 
 impl Aplicacion {
@@ -226,6 +281,7 @@ impl Aplicacion {
             ciego: None,
             buscar: String::new(),
             desplazar_arbol: false,
+            historial: Historial::default(),
         };
         app.recalcular();
         app
@@ -242,6 +298,7 @@ impl Aplicacion {
 
     fn cargar_ejemplo(&mut self) {
         self.ciego = None;
+        self.historial.limpiar();
         self.p = suelo_radiante();
         self.fichero = None;
         self.presupuesto_id = None;
@@ -257,6 +314,7 @@ impl Aplicacion {
 
     fn nuevo_presupuesto(&mut self) {
         self.ciego = None;
+        self.historial.limpiar();
         self.p = Presupuesto::new("Presupuesto nuevo", "OBRA", "Presupuesto nuevo");
         self.fichero = None;
         self.presupuesto_id = None;
@@ -346,6 +404,7 @@ impl Aplicacion {
 
     fn abrir(&mut self, ruta: PathBuf) {
         self.ciego = None;
+        self.historial.limpiar();
         let r = (|| -> ppto_db::Resultado<_> {
             let a = Almacen::abrir(&ruta)?;
             let revs = a.listar_revisiones()?;
@@ -456,6 +515,7 @@ impl Aplicacion {
 
     fn importar_bc3(&mut self, ruta: PathBuf) {
         self.ciego = None;
+        self.historial.limpiar();
         match ppto_bc3::importar_fichero(&ruta) {
             Ok(imp) => {
                 self.p = imp.presupuesto.clone();
@@ -587,6 +647,7 @@ impl Aplicacion {
         match Almacen::abrir(&ruta).and_then(|a| a.cargar_revision(id)) {
             Ok(p) => {
                 self.p = p;
+                self.historial.limpiar();
                 self.revision_actual = Some(id);
                 self.cambios = false;
                 self.recalcular();
@@ -652,6 +713,18 @@ impl Aplicacion {
 
     fn aplicar(&mut self, acciones: Vec<Accion>) {
         for a in acciones {
+            let guardado = match describir(&a) {
+                Some((que, grupo)) => self.historial.antes(&self.p, que, grupo),
+                None => {
+                    if !matches!(
+                        a,
+                        Accion::Seleccionar(..) | Accion::Navegar(_) | Accion::SiguienteSinPrecio
+                    ) {
+                        self.historial.grupo = None;
+                    }
+                    false
+                }
+            };
             let r = match a {
                 Accion::Seleccionar(padre, hijo) => {
                     self.sel = Some((padre, hijo));
@@ -796,15 +869,71 @@ impl Aplicacion {
             };
             match r {
                 Ok(()) => self.marcar_cambio(),
-                Err(e) => self.error(e.to_string()),
+                Err(e) => {
+                    // El motor no cambia nada si falla: fuera la copia
+                    if guardado {
+                        self.historial.deshacer.pop();
+                        self.historial.grupo = None;
+                    }
+                    self.error(e.to_string());
+                }
             }
         }
+    }
+
+    fn deshacer(&mut self) {
+        if let Some((p, que)) = self.historial.deshacer.pop() {
+            let actual = std::mem::replace(&mut self.p, p);
+            self.historial.rehacer.push((actual, que.clone()));
+            self.tras_historial(format!("Deshecho: {que}."));
+        }
+    }
+
+    fn rehacer(&mut self) {
+        if let Some((p, que)) = self.historial.rehacer.pop() {
+            let actual = std::mem::replace(&mut self.p, p);
+            self.historial.deshacer.push((actual, que.clone()));
+            self.tras_historial(format!("Rehecho: {que}."));
+        }
+    }
+
+    fn tras_historial(&mut self, mensaje: String) {
+        self.historial.grupo = None;
+        self.edicion = Edicion::default();
+        if let Some((padre, hijo)) = &self.sel
+            && !self
+                .p
+                .conceptos
+                .get(padre)
+                .is_some_and(|c| c.descomposicion.iter().any(|l| &l.hijo == hijo))
+        {
+            self.sel = None;
+        }
+        self.marcar_cambio();
+        self.info(mensaje);
     }
 
     // --------------------------------------------------------------------- UI
 
     fn barra_superior(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
+            let des = self.historial.deshacer.last().map(|(_, q)| q.clone());
+            let reh = self.historial.rehacer.last().map(|(_, q)| q.clone());
+            if ui
+                .add_enabled(des.is_some(), egui::Button::new("Deshacer"))
+                .on_hover_text(des.map_or("Nada que deshacer".into(), |q| format!("Deshacer {q} (Ctrl+Z)")))
+                .clicked()
+            {
+                self.deshacer();
+            }
+            if ui
+                .add_enabled(reh.is_some(), egui::Button::new("Rehacer"))
+                .on_hover_text(reh.map_or("Nada que rehacer".into(), |q| format!("Rehacer {q} (Ctrl+Y)")))
+                .clicked()
+            {
+                self.rehacer();
+            }
+            ui.separator();
             if ui
                 .button("📄 Ejemplo")
                 .on_hover_text("Cargar el ejemplo sintético de suelo radiante")
@@ -1986,6 +2115,21 @@ impl eframe::App for Aplicacion {
         }
 
         let mut acciones = Vec::new();
+        // Ctrl+Z / Ctrl+Y (o Ctrl+Mayús+Z): deshacer / rehacer, salvo mientras
+        // se escribe en un campo (allí deshace el propio campo).
+        if !ui.ctx().egui_wants_keyboard_input() {
+            let (rehacer, deshacer) = ui.ctx().input_mut(|i| {
+                let r = i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Z)
+                    || i.consume_key(egui::Modifiers::CTRL, egui::Key::Y);
+                (r, i.consume_key(egui::Modifiers::CTRL, egui::Key::Z))
+            });
+            if deshacer {
+                self.deshacer();
+            }
+            if rehacer {
+                self.rehacer();
+            }
+        }
         // Ctrl+↓ / Ctrl+↑: partida siguiente / anterior; Ctrl+Mayús+↓: siguiente sin precio
         let (sin_precio, bajar, subir) = ui.ctx().input_mut(|i| {
             let sin_precio = i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::ArrowDown);
@@ -2504,5 +2648,43 @@ mod pruebas {
             !acc.iter().any(|a| matches!(a, Accion::Seleccionar(..))),
             "arrastrar no debe contar como clic"
         );
+    }
+
+    #[test]
+    fn deshacer_y_rehacer() {
+        // Ejemplo: PEM 7.005,15. Tubo 1,10 → 1,25: 7.229,85. Quitar SR.COL8: 6.501,60.
+        let mut app = Aplicacion::sin_ventana();
+        app.aplicar(vec![Accion::Precio("MT.TUBO16".into(), dec!(1.25))]);
+        assert_eq!(app.calc.pem, dec!(7229.85));
+        app.aplicar(vec![Accion::QuitarLinea("C01".into(), "SR.COL8".into(), true)]);
+        assert_eq!(app.calc.pem, dec!(6501.60));
+        app.deshacer();
+        assert_eq!(app.calc.pem, dec!(7229.85));
+        assert!(app.p.conceptos.contains_key("SR.COL8"), "vuelve con su descompuesto");
+        app.deshacer();
+        assert_eq!(app.calc.pem, dec!(7005.15));
+        app.deshacer(); // nada más que deshacer
+        assert_eq!(app.calc.pem, dec!(7005.15));
+        app.rehacer();
+        app.rehacer();
+        assert_eq!(app.calc.pem, dec!(6501.60));
+        // Un cambio nuevo borra lo que se podía rehacer
+        app.deshacer();
+        app.aplicar(vec![Accion::Ci(dec!(10))]);
+        assert!(app.historial.rehacer.is_empty());
+        // Escribir un resumen letra a letra se deshace de una vez
+        let antes = app.p.conceptos["SR.M2"].resumen.clone();
+        for t in ["S", "Su", "Sue"] {
+            app.aplicar(vec![Accion::Resumen("SR.M2".into(), t.into())]);
+        }
+        app.deshacer();
+        assert_eq!(app.p.conceptos["SR.M2"].resumen, antes);
+        // Un error no deja copia en el historial
+        let n = app.historial.deshacer.len();
+        app.aplicar(vec![Accion::AnadirLinea("C01".into(), "SR.M2".into(), dec!(1))]);
+        assert_eq!(app.historial.deshacer.len(), n);
+        // Abrir otro presupuesto empieza un historial nuevo
+        app.nuevo_presupuesto();
+        assert!(app.historial.deshacer.is_empty());
     }
 }

@@ -17,6 +17,9 @@ versionado [semántico](https://semver.org/lang/es/).
 - Partidas sin descomponer con precio directo (como en Presto).
 - `ppto_core::formato::cant`: cantidades sin ceros sobrantes.
 - CLI `ppto ciego`; interfaz: menú «📋 Ciego» y precio directo en la partida.
+- Interfaz: **Deshacer / Rehacer** (Ctrl+Z, Ctrl+Y) de todos los cambios del
+  presupuesto, hasta 200 pasos; navegación anterior/siguiente/sin precio
+  (Ctrl+↑/↓) y buscador de partidas.
 
 ### Añadido — PDF (P-016)
 - `ppto-pdf`: presupuesto en PDF con Typst incluido (ADR-0007): portada con

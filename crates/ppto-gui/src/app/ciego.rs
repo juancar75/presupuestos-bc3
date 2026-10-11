@@ -52,6 +52,7 @@ impl Aplicacion {
     /// Pone en pantalla un presupuesto nuevo (sin fichero ni revisiones).
     pub(super) fn cargar_presupuesto(&mut self, p: Presupuesto) {
         self.p = p;
+        self.historial.limpiar();
         self.fichero = None;
         self.presupuesto_id = None;
         self.revisiones.clear();
@@ -76,7 +77,12 @@ impl Aplicacion {
         };
         match ppto_bc3::importar_fichero(&r) {
             Ok(imp) => {
+                let antes = self.p.clone();
                 let t = ppto_ciego::traer_precios(&mut self.p, &imp.presupuesto);
+                if !t.con_precio.is_empty() {
+                    self.historial.deshacer.push((antes, "traer precios".into()));
+                    self.historial.rehacer.clear();
+                }
                 self.marcar_cambio();
                 let faltan = if t.no_encontradas.is_empty() {
                     String::new()
