@@ -17,10 +17,10 @@ fn abrir(bytes: Vec<u8>) -> Libro {
 fn numero(libro: &mut Libro, hoja: &str, clave_col: usize, clave: &str, col: usize) -> f64 {
     let r = libro.worksheet_range(hoja).unwrap();
     for fila in r.rows() {
-        if matches!(fila.get(clave_col), Some(Data::String(s)) if s == clave) {
-            if let Some(Data::Float(v)) = fila.get(col) {
-                return *v;
-            }
+        if matches!(fila.get(clave_col), Some(Data::String(s)) if s == clave)
+            && let Some(Data::Float(v)) = fila.get(col)
+        {
+            return *v;
         }
     }
     panic!("no se encontró «{clave}» en la hoja {hoja}");

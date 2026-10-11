@@ -71,6 +71,34 @@ Seis hojas: resumen por capítulos (coste directo, indirectos, PEM, GG, BI,
 IVA), presupuesto, descompuestos, mediciones, recursos y horas por oficio.
 También con el botón «Excel…» de la interfaz.
 
+## Presupuesto en PDF
+
+Botón **PDF…** de la interfaz (o `--pdf presupuesto.pdf` en `ppto demo` e
+`ppto importar`). Maquetado con Typst, incluido en el programa:
+
+- **Portada** con logo (PNG, JPG o SVG), tipo de documento, título, cliente,
+  referencia, **revisión**, **fecha** e importe total.
+- Capítulos y subcapítulos; cada partida con su texto **justificado y con
+  partición silábica en castellano**, líneas de medición, cantidad, precio e
+  importe.
+- **Resumen** por capítulos con %, PEM, GG, BI, IVA, total y total en letra,
+  lugar, fecha y firma.
+- Hoja final de **observaciones al presupuesto** (editables; se proponen las
+  habituales).
+
+**Perfiles de empresa.** Cada perfil guarda su logo (se sube un PNG, JPG o
+SVG y se conserva una copia), empresa, firma, observaciones y tipo de resumen.
+Vienen dos de serie, y se pueden duplicar, renombrar y borrar:
+
+| Perfil | Resumen | Observaciones |
+|---|---|---|
+| **Instaladora** («Oferta») | Base imponible, IVA y total (sin PEM, GG ni BI) | Validez, alcance, exclusiones, garantía, pago |
+| **Ingeniería** («Presupuesto») | PEM, 13 % GG, 6 % BI, IVA y total | Validez, mediciones, exclusiones, plazos, pago |
+
+Se guardan en `%APPDATA%\presupuestos-bc3\perfiles.json`. El diseño está en `crates/ppto-pdf/plantillas/presupuesto.typ`:
+«Guardar copia de la plantilla…» la deja en una carpeta para retocarla y
+«Usar plantilla…» la aplica.
+
 ## Claude Desktop (MCP)
 
 `cargo build --release -p ppto-mcp` y añadir `target\release\ppto-mcp.exe` a

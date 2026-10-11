@@ -1,11 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/ppto-core", "crates/ppto-db", "crates/ppto-cli", "crates/ppto-gui", "crates/ppto-bc3", "crates/ppto-informes", "crates/ppto-mcp"]
+members = ["crates/ppto-core", "crates/ppto-db", "crates/ppto-cli", "crates/ppto-gui", "crates/ppto-bc3", "crates/ppto-informes", "crates/ppto-mcp", "crates/ppto-pdf"]
 
 [workspace.package]
 version = "0.1.0-alpha.1"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.92"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/juancar75/presupuestos-bc3"
 authors = ["Juan Carlos Cortés Molinera y colaboradores"]
@@ -20,6 +20,7 @@ ppto-core = { path = "crates/ppto-core" }
 ppto-db = { path = "crates/ppto-db" }
 ppto-bc3 = { path = "crates/ppto-bc3" }
 ppto-informes = { path = "crates/ppto-informes" }
+ppto-pdf = { path = "crates/ppto-pdf" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

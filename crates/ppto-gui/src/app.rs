@@ -3,6 +3,7 @@
 //! recursos, subcontratación y resumen.
 
 mod alta;
+mod pdf;
 
 use crate::celdas::Edicion;
 use alta::{Alta, TipoAlta};
@@ -161,6 +162,7 @@ pub struct Aplicacion {
     informe: Option<ppto_bc3::Importacion>,
     ver_informe: bool,
     alta: Option<Alta>,
+    ventana_pdf: Option<pdf::VentanaPdf>,
 }
 
 impl Aplicacion {
@@ -212,6 +214,7 @@ impl Aplicacion {
             informe: None,
             ver_informe: false,
             alta: None,
+            ventana_pdf: None,
         };
         app.recalcular();
         app
@@ -758,6 +761,15 @@ impl Aplicacion {
                 .clicked()
             {
                 self.exportar_excel();
+            }
+            if ui
+                .button("📄 PDF…")
+                .on_hover_text(
+                    "Presupuesto para el cliente: portada con logo, partidas, mediciones, resumen y observaciones",
+                )
+                .clicked()
+            {
+                self.abrir_pdf();
             }
             if self.informe.is_some() && ui.button("Informe de importación").clicked() {
                 self.ver_informe = true;
@@ -1818,6 +1830,7 @@ impl eframe::App for Aplicacion {
         let ctx = ui.ctx().clone();
         self.ventana_informe(&ctx, &mut acciones);
         self.ventana_alta(&ctx, &mut acciones);
+        self.ventana_pdf(&ctx);
         if !acciones.is_empty() {
             self.aplicar(acciones);
         }
