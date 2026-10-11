@@ -165,8 +165,21 @@ impl Aplicacion {
                             .join(", ")
                     )
                 };
+                // El Excel del cliente no tiene filas de GG ni BI: si el perfil del
+                // PDF los desglosa, los totales de ambos documentos no coincidirán.
+                let perfil = super::pdf::ruta_perfiles()
+                    .map(|r| ppto_pdf::Perfiles::cargar(&r))
+                    .unwrap_or_default();
+                let aviso_gg = if perfil.activo().desglose_contrata {
+                    format!(
+                        " ATENCIÓN: el perfil del PDF «{}» suma GG y BI y el Excel no; para entregar ambos use un perfil sin desglose.",
+                        perfil.activo().nombre
+                    )
+                } else {
+                    String::new()
+                };
                 self.info(format!(
-                    "Excel valorado guardado en {}: {} precios; total que mostrará Excel {} €.{faltan}",
+                    "Excel valorado guardado en {}: {} precios; total que mostrará Excel {} € (igual que la base imponible del PDF).{faltan}{aviso_gg}",
                     destino.display(),
                     valorado.celdas_escritas,
                     eur(valorado.total_excel)

@@ -3121,10 +3121,12 @@ dependencies = [
  "calamine",
  "ppto-bc3",
  "ppto-core",
+ "ppto-pdf",
  "quick-xml 0.41.0",
  "rust_decimal",
  "rust_decimal_macros",
  "rust_xlsxwriter",
+ "serde_json",
  "thiserror 2.0.21",
  "zip",
 ]

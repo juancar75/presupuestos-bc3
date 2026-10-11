@@ -300,3 +300,69 @@ fn traer_precios_de_un_bc3_y_devolver_valorado() {
     assert_eq!(v.total_excel, dec!(994.83));
     assert_eq!(v.sin_precio, ["02.01"]);
 }
+
+#[test]
+fn excel_valorado_y_pdf_dicen_lo_mismo() {
+    // Con CI 10 %: P1 12,35 → 13,59; P2 85 → 93,50; 02.01 18,10 → 19,91.
+    // Cada partida debe salir con el mismo precio e importe en el Excel y en
+    // el PDF, y el total del Excel = base imponible del PDF (perfil sin GG/BI).
+    let original = ciego();
+    let c = ppto_ciego::leer_bytes(&original, "x").unwrap();
+    let mut p = c.presupuesto.clone();
+    p.fijar_precio("P1", dec!(12.35)).unwrap();
+    p.fijar_precio("P2", dec!(85)).unwrap();
+    p.fijar_precio("02.01", dec!(18.10)).unwrap();
+    p.costes_indirectos = dec!(10);
+    let v = ppto_ciego::valorar(&original, &c, &p).unwrap();
+
+    let mut o = ppto_pdf::OpcionesPdf::default();
+    ppto_pdf::Perfil::instaladora().aplicar(&mut o);
+    let d = ppto_pdf::datos(&p, &o, None).unwrap();
+    // Partidas del PDF (recorriendo capítulos y subcapítulos)
+    fn partidas(e: &serde_json::Value, cap: &str, out: &mut Vec<(String, String, String, String)>) {
+        for x in e["elementos"].as_array().into_iter().flatten() {
+            if x["tipo"] == "capitulo" {
+                partidas(x, x["codigo"].as_str().unwrap(), out);
+            } else {
+                out.push((
+                    cap.into(),
+                    x["codigo"].as_str().unwrap().into(),
+                    x["precio"].as_str().unwrap().into(),
+                    x["importe"].as_str().unwrap().into(),
+                ));
+            }
+        }
+    }
+    let mut pdf = Vec::new();
+    for cap in d["capitulos"].as_array().unwrap() {
+        partidas(cap, cap["codigo"].as_str().unwrap(), &mut pdf);
+    }
+    // Lo escrito en el Excel
+    let mut l = calamine::open_workbook_auto_from_rs(std::io::Cursor::new(v.bytes.clone())).unwrap();
+    let hoja = l.worksheet_range("Hoja1").unwrap();
+    let mut total = rust_decimal::Decimal::ZERO;
+    for a in &c.apariciones {
+        let precio_excel = match hoja.get_value((a.celda_precio.fila, a.celda_precio.columna)).unwrap() {
+            Data::Float(f) => format!("{f}").parse::<rust_decimal::Decimal>().unwrap(),
+            otro => panic!("{otro:?}"),
+        };
+        let importe_excel = (precio_excel * a.cantidad_excel)
+            .round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+        total += importe_excel;
+        let fila = pdf
+            .iter()
+            .find(|(cap, cod, _, _)| *cap == a.capitulo && *cod == a.partida)
+            .unwrap();
+        assert_eq!(fila.2, ppto_core::formato::eur(precio_excel), "precio de {}", a.partida);
+        assert_eq!(
+            fila.3,
+            ppto_core::formato::eur(importe_excel),
+            "importe de {}",
+            a.partida
+        );
+    }
+    assert_eq!(ppto_core::formato::eur(total), d["base"].as_str().unwrap());
+    assert_eq!(total, v.total_excel);
+    // 13,59 × 28,375 = 385,616 → 385,62; 93,50 × 7 = 654,50; 13,59 × 4 = 54,36; 19,91 × 50 = 995,50 → 2.089,98
+    assert_eq!(total, dec!(2089.98));
+}

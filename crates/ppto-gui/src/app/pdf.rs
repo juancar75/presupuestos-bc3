@@ -32,7 +32,7 @@ fn carpeta_config() -> Option<PathBuf> {
     Some(base.join("presupuestos-bc3"))
 }
 
-fn ruta_perfiles() -> Option<PathBuf> {
+pub(super) fn ruta_perfiles() -> Option<PathBuf> {
     carpeta_config().map(|c| c.join("perfiles.json"))
 }
 
