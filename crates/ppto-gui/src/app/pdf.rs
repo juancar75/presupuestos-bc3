@@ -24,7 +24,7 @@ pub(super) struct VentanaPdf {
 }
 
 /// Carpeta de configuración del programa.
-fn carpeta_config() -> Option<PathBuf> {
+pub(super) fn carpeta_config() -> Option<PathBuf> {
     let base = std::env::var_os("APPDATA")
         .or_else(|| std::env::var_os("XDG_CONFIG_HOME"))
         .map(PathBuf::from)

@@ -5,6 +5,17 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — tarifas de subcontratas
+- `ppto-tarifas`: lee la tarifa de una subcontrata en Excel (Referencia,
+  Descripción, Precio y, si la hay, Unidad; proveedor y año del título).
+  Sin columna de unidad, la deduce de la descripción («/ METRO», «(1H)»,
+  cable, tubo…) y marca las dudosas para revisar. Biblioteca de tarifas en
+  `tarifas.json` de la carpeta de configuración (nunca en el repositorio),
+  búsqueda en todas y alta como recurso de subcontrata `PROVEEDOR.REFERENCIA`.
+- Interfaz: «🧾 Tarifas…» (importar, revisar unidades y precios, guardar) y
+  «+ Añadir línea… → De tarifa de subcontrata».
+- CLI: `ppto tarifa <tarifa.xlsx>` lista los recursos con su unidad.
+
 ### Añadido — subcontrata a ratio
 - `ppto_core::ratio`: `Presupuesto::aplicar_ratio(PaqueteRatio)` aplica al
   presupuesto una subcontrata por unidad de contratación (p. ej. montaje VRF

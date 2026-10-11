@@ -26,6 +26,9 @@ pub(super) struct Alta {
     pub precio: String,
     pub buscar: String,
     pub elegido: Option<String>,
+    /// Línea: tomar el recurso de una tarifa de subcontrata.
+    pub de_tarifa: bool,
+    pub tarifa_elegida: Option<ppto_tarifas::Encontrada>,
 }
 
 const NATURALEZAS: [Naturaleza; 7] = [
@@ -61,6 +64,8 @@ impl Aplicacion {
             precio: "0".into(),
             buscar: String::new(),
             elegido: None,
+            de_tarifa: false,
+            tarifa_elegida: None,
         });
     }
 
@@ -132,11 +137,28 @@ impl Aplicacion {
             a.nuevo = false;
         } else {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut a.nuevo, false, "Concepto existente");
-                ui.selectable_value(&mut a.nuevo, true, "Concepto nuevo");
+                if ui
+                    .selectable_label(!a.nuevo && !a.de_tarifa, "Concepto existente")
+                    .clicked()
+                {
+                    (a.nuevo, a.de_tarifa) = (false, false);
+                }
+                if ui.selectable_label(a.nuevo && !a.de_tarifa, "Concepto nuevo").clicked() {
+                    (a.nuevo, a.de_tarifa) = (true, false);
+                }
+                if ui
+                    .selectable_label(a.de_tarifa, "De tarifa de subcontrata")
+                    .on_hover_text("Tarifas importadas en «🧾 Tarifas…»")
+                    .clicked()
+                {
+                    (a.nuevo, a.de_tarifa) = (false, true);
+                }
             });
         }
         ui.separator();
+        if a.de_tarifa && !en_capitulo {
+            return self.form_linea_tarifa(ui, a, padre, acciones);
+        }
         let usados: Vec<&str> = self.p.conceptos[padre]
             .descomposicion
             .iter()
@@ -246,6 +268,90 @@ impl Aplicacion {
             return true;
         }
         false
+    }
+}
+
+impl Aplicacion {
+    /// Línea con un recurso de una tarifa de subcontrata.
+    fn form_linea_tarifa(&self, ui: &mut egui::Ui, a: &mut Alta, padre: &str, acciones: &mut Vec<Accion>) -> bool {
+        if self.tarifas.tarifas.is_empty() {
+            ui.label("No hay tarifas: impórtelas en «🧾 Tarifas…».");
+            return false;
+        }
+        campo(ui, "Buscar", &mut a.buscar, 300.0);
+        let encontradas = self.tarifas.buscar(&a.buscar);
+        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+            for e in encontradas.into_iter().take(300) {
+                let Some((t, l)) = self.tarifas.linea(e) else {
+                    continue;
+                };
+                let txt = format!(
+                    "{}  ·  {}  ·  {}  ·  {} €",
+                    t.codigo(l),
+                    l.unidad,
+                    super::corto(&l.descripcion, 55),
+                    eur(l.precio)
+                );
+                let elegido = a.tarifa_elegida == Some(e);
+                if ui
+                    .add(egui::Button::selectable(elegido, txt))
+                    .on_hover_text(format!("{} · {}", t.nombre(), t.notas))
+                    .clicked()
+                {
+                    a.tarifa_elegida = Some(e);
+                }
+            }
+        });
+        ui.separator();
+        campo(ui, "Cantidad (rendimiento)", &mut a.cantidad, 90.0);
+        let cantidad = leer(&a.cantidad);
+        let elegida = a.tarifa_elegida.and_then(|e| self.tarifas.linea(e));
+        if let Some((t, l)) = elegida
+            && let Some(c) = self.p.conceptos.get(&t.codigo(l))
+            && c.precio != l.precio
+        {
+            ui.label(
+                RichText::new(format!(
+                    "{} ya está en el presupuesto a {} € (la tarifa dice {} €): se usa el del presupuesto.",
+                    c.codigo,
+                    eur(c.precio),
+                    eur(l.precio)
+                ))
+                .color(egui::Color32::from_rgb(220, 150, 40)),
+            );
+        }
+        let listo = cantidad.is_some() && elegida.is_some();
+        if ui.add_enabled(listo, egui::Button::new("Añadir línea")).clicked()
+            && let (Some(q), Some(e)) = (cantidad, a.tarifa_elegida)
+            && let Some(acc) = self.accion_tarifa(padre, e, q)
+        {
+            acciones.push(acc);
+            return true;
+        }
+        false
+    }
+}
+
+impl Aplicacion {
+    /// Acción para añadir a `padre` la línea `e` de una tarifa: si el recurso
+    /// ya está en el presupuesto se reutiliza; si no, se da de alta como
+    /// subcontrata.
+    pub(super) fn accion_tarifa(&self, padre: &str, e: ppto_tarifas::Encontrada, q: Decimal) -> Option<Accion> {
+        let (t, l) = self.tarifas.linea(e)?;
+        let codigo = t.codigo(l);
+        Some(if self.p.conceptos.contains_key(&codigo) {
+            Accion::AnadirLinea(padre.to_owned(), codigo, q)
+        } else {
+            Accion::NuevoRecurso {
+                codigo,
+                unidad: l.unidad.clone(),
+                resumen: l.descripcion.clone(),
+                naturaleza: Naturaleza::Subcontrata,
+                precio: l.precio,
+                en: padre.to_owned(),
+                cantidad: q,
+            }
+        })
     }
 }
 

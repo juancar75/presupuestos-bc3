@@ -6,6 +6,7 @@ mod alta;
 mod ciego;
 mod pdf;
 mod ratio;
+mod tarifas;
 
 use crate::celdas::Edicion;
 use alta::{Alta, TipoAlta};
@@ -175,6 +176,9 @@ pub struct Aplicacion {
     desplazar_arbol: bool,
     historial: Historial,
     ratio: ratio::FormRatio,
+    /// Tarifas de subcontratas del usuario (fuera del repositorio).
+    tarifas: ppto_tarifas::Biblioteca,
+    ventana_tarifas: Option<tarifas::VentanaTarifas>,
 }
 
 /// Deshacer / rehacer: copias completas del presupuesto antes de cada cambio.
@@ -238,6 +242,9 @@ impl Aplicacion {
         estilo.spacing.item_spacing = egui::vec2(8.0, 5.0);
         cc.egui_ctx.set_global_style(estilo);
         let mut app = Self::sin_ventana();
+        if let Some(r) = tarifas::ruta_tarifas() {
+            app.tarifas = ppto_tarifas::Biblioteca::cargar(&r);
+        }
         // Pestaña inicial (útil para capturas y pruebas): PPTO_GUI_PESTANA=recursos|subcontratar|resumen
         app.pestana = match std::env::var("PPTO_GUI_PESTANA").as_deref() {
             Ok("recursos") => Pestana::Recursos,
@@ -287,6 +294,8 @@ impl Aplicacion {
             desplazar_arbol: false,
             historial: Historial::default(),
             ratio: ratio::FormRatio::default(),
+            tarifas: ppto_tarifas::Biblioteca::default(),
+            ventana_tarifas: None,
         };
         app.recalcular();
         app
@@ -1012,6 +1021,15 @@ impl Aplicacion {
                 .clicked()
             {
                 self.exportar_excel();
+            }
+            if ui
+                .button("🧾 Tarifas…")
+                .on_hover_text(
+                    "Tarifas de subcontratas: importar de Excel, revisar unidades y usarlas en los descompuestos",
+                )
+                .clicked()
+            {
+                self.abrir_tarifas();
             }
             if ui
                 .button("📄 PDF…")
@@ -2224,6 +2242,7 @@ impl eframe::App for Aplicacion {
         self.ventana_informe(&ctx, &mut acciones);
         self.ventana_alta(&ctx, &mut acciones);
         self.ventana_pdf(&ctx);
+        self.ventana_tarifas(&ctx);
         if !acciones.is_empty() {
             self.aplicar(acciones);
         }
@@ -2749,5 +2768,53 @@ mod pruebas {
             });
             out.textures_delta.clear();
         }
+    }
+    #[test]
+    fn linea_de_tarifa_de_subcontrata() {
+        // Tarifa sintética: detector 11,50 €/ud
+        let mut app = Aplicacion::sin_ventana();
+        app.tarifas.anadir(ppto_tarifas::Tarifa {
+            proveedor: "Subco".into(),
+            vigencia: "2031".into(),
+            especialidad: "PCI".into(),
+            notas: String::new(),
+            lineas: vec![ppto_tarifas::LineaTarifa {
+                referencia: "X010".into(),
+                descripcion: "INSTALACION DETECTOR".into(),
+                unidad: "ud".into(),
+                precio: dec!(11.5),
+                revisar_unidad: false,
+            }],
+        });
+        let antes = app.calc.precios["SR.M2"];
+        app.aplicar(vec![Accion::Alta(TipoAlta::Linea { padre: "SR.M2".into() })]);
+        let e = app.tarifas.buscar("detector")[0];
+        if let Some(a) = app.alta.as_mut() {
+            a.de_tarifa = true;
+            a.buscar = "detector".into();
+            a.tarifa_elegida = Some(e);
+        }
+        pintar(&mut app);
+        assert!(
+            app.alta.is_some(),
+            "la ventana sigue abierta hasta pulsar «Añadir línea»"
+        );
+        let acc = app.accion_tarifa("SR.M2", e, dec!(0.1)).unwrap();
+        assert!(matches!(
+            acc,
+            Accion::NuevoRecurso {
+                naturaleza: Naturaleza::Subcontrata,
+                ..
+            }
+        ));
+        app.aplicar(vec![acc]);
+        let c = app.p.concepto("SUBCO.X010").unwrap();
+        assert_eq!((c.naturaleza, c.precio), (Naturaleza::Subcontrata, dec!(11.5)));
+        assert!(app.calc.precios["SR.M2"] > antes);
+        // Ya existe: la segunda vez solo añade la línea (en otra partida)
+        assert!(matches!(
+            app.accion_tarifa("SR.COL8", e, dec!(1)),
+            Some(Accion::AnadirLinea(..))
+        ));
     }
 }

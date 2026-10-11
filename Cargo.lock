@@ -3141,6 +3141,7 @@ dependencies = [
  "ppto-db",
  "ppto-informes",
  "ppto-pdf",
+ "ppto-tarifas",
  "rust_decimal",
  "rust_decimal_macros",
 ]
@@ -3178,6 +3179,7 @@ dependencies = [
  "ppto-db",
  "ppto-informes",
  "ppto-pdf",
+ "ppto-tarifas",
  "rfd",
  "rust_decimal",
  "rust_decimal_macros",
@@ -3223,6 +3225,20 @@ dependencies = [
  "typst-assets",
  "typst-layout",
  "typst-pdf",
+]
+
+[[package]]
+name = "ppto-tarifas"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "calamine",
+ "ppto-core",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "rust_xlsxwriter",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
