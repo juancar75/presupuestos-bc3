@@ -5,6 +5,17 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — coeficiente de dificultad
+- `Presupuesto::aplicar_dificultad(ámbito, coeficiente)`: multiplica los
+  rendimientos de mano de obra propia de toda la obra, un capítulo o una
+  partida (y de sus auxiliares). No toca el precio de la hora, materiales,
+  maquinaria ni subcontratas; los % se recalculan. Partidas o auxiliares
+  compartidos con otros capítulos no se tocan y se informan. Informe de
+  horas y coste antes/después.
+- Interfaz: pestaña Recursos → «Coeficiente de dificultad», con vista previa,
+  motivo y Deshacer. Se anota en la auditoría de la revisión al guardar
+  (`Almacen::anotar`).
+
 ### Añadido — modo claro / oscuro
 - Interfaz: botón «☀ Claro» / «🌙 Oscuro» en la barra; la elección se guarda
   en `tema.txt` de la carpeta de configuración (sin elección, sigue al

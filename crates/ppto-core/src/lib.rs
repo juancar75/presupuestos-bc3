@@ -18,6 +18,7 @@
 
 pub mod concepto;
 pub mod decimales;
+pub mod dificultad;
 pub mod edicion;
 pub mod ejemplos;
 pub mod error;

@@ -344,6 +344,15 @@ impl Almacen {
     }
 
     /// Revisiones guardadas en el fichero, de la más antigua a la más reciente.
+    /// Anota en la auditoría de la revisión un cambio hecho antes de guardarla
+    /// (p. ej. «dificultad ×1,20 en C03: obra en altura»).
+    pub fn anotar(&mut self, rev: i64, usuario: &str, operacion: &str, detalle: &str) -> Resultado<()> {
+        let tx = self.con.transaction()?;
+        auditar(&tx, rev, usuario, operacion, detalle)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn listar_revisiones(&self) -> Resultado<Vec<InfoRevision>> {
         let mut st = self.con.prepare(
             "SELECT r.id, r.presupuesto_id, p.nombre, r.etiqueta, r.autor, r.creado_en, r.bloqueada
