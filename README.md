@@ -84,9 +84,25 @@ cargo run --release -p ppto-gui
 ```
 
 En Windows basta con hacer doble clic en `scripts\windows\abrir-interfaz.bat`.
-Permite editar mediciones, rendimientos y precios del ejemplo (o de un
-`.sqlite` guardado) y ver al momento el PEM, los recursos, la comparación de
-ofertas de subcontrata y el resumen.
+Permite crear un presupuesto desde cero (**Nuevo**) o editar uno importado:
+
+- **Árbol**: **arrastrar y soltar** partidas sobre un capítulo (van al final)
+  o sobre otra partida (se colocan delante), en el mismo nivel o en otro;
+  conservan cantidad y medición. «+ Capítulo»; clic derecho en un capítulo para crear una partida
+  o un subcapítulo; clic derecho en cualquier línea para subirla, bajarla o
+  quitarla (lo que quede sin usar se borra).
+- **Partida**: código, unidad, resumen y texto; descompuesto con «+ Añadir
+  línea…» (un concepto existente, con buscador, o uno nuevo: subpartida,
+  mano de obra, material, maquinaria, subcontrata, otros o porcentaje) y
+  botones ^ v x por línea; hoja de medición (uds × largo × ancho × alto o
+  fórmula).
+- **Subpartidas a cualquier nivel**, como los auxiliares de Presto: se pulsa
+  el código de una subpartida para entrar en ella, «<< Volver» para subir, y
+  arriba se ve la ruta (OBRA > C01 > P0001 > AUX1).
+- Recálculo inmediato del PEM, recursos, ofertas de subcontrata y resumen.
+
+El motor impide referencias circulares, recursos colgados de capítulos,
+códigos repetidos o con caracteres reservados de BC3 (`| \ ~ #`).
 
 ## Hoja de ruta
 

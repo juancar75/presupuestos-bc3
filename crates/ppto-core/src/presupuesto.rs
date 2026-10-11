@@ -125,7 +125,7 @@ impl Presupuesto {
             .ok_or_else(|| ErrorMotor::ConceptoInexistente(codigo.to_owned()))
     }
 
-    fn concepto_mut(&mut self, codigo: &str) -> Result<&mut Concepto, ErrorMotor> {
+    pub(crate) fn concepto_mut(&mut self, codigo: &str) -> Result<&mut Concepto, ErrorMotor> {
         self.conceptos
             .get_mut(codigo)
             .ok_or_else(|| ErrorMotor::ConceptoInexistente(codigo.to_owned()))

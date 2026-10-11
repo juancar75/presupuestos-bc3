@@ -5,6 +5,21 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — edición (P-014)
+- `ppto-core::edicion`: `nuevo_capitulo`, `nueva_partida`, `nuevo_recurso`,
+  `anadir_linea`, `quitar_linea`, `quitar_y_purgar`, `mover_linea`,
+  `borrar_concepto`, `padres`, `fijar_unidad`, `codigo_libre`. Cada operación
+  deja el presupuesto válido o no lo toca.
+- Interfaz: botón «Nuevo», «+ Capítulo», menú contextual en el árbol, ventana
+  «Añadir línea…» con buscador o recurso nuevo, ^ v x en el descompuesto y
+  unidad editable.
+- Subpartidas (auxiliares descompuestos) a cualquier nivel: crear desde
+  «Añadir línea…», entrar pulsando su código, «<< Volver» y ruta superior;
+  `Presupuesto::ruta`.
+- Arrastrar y soltar partidas en el árbol entre capítulos y niveles
+  (`Presupuesto::trasladar_linea`: conserva cantidad y hoja de medición;
+  si no es válido, no cambia nada).
+
 ### Validado con Presto 8.8 (10-10-2026)
 - **Importación de una obra real** (climatización, 208 conceptos, CI 45 %,
   descuentos y porcentajes): 52/52 partidas, 5 capítulos y PEM 157.310,88 €
