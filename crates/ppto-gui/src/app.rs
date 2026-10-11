@@ -1053,14 +1053,17 @@ impl Aplicacion {
                     origen: capitulo.to_owned(),
                     hijo: l.hijo.clone(),
                 };
-                let r = ui
-                    .dnd_drag_source(egui::Id::new(("arrastre", capitulo, &l.hijo)), carga, |ui| {
-                        ui.add(
-                            egui::Button::selectable(elegido, format!("{}  {}", c.codigo, corto(&c.resumen, 34)))
-                                .wrap_mode(egui::TextWrapMode::Truncate),
-                        )
-                    })
-                    .inner;
+                // Un solo botón para clic (abrir la partida) y arrastre (moverla):
+                // envolverlo en dnd_drag_source anula el clic.
+                let r = ui.add(
+                    egui::Button::selectable(elegido, format!("{}  {}", c.codigo, corto(&c.resumen, 34)))
+                        .wrap_mode(egui::TextWrapMode::Truncate)
+                        .sense(egui::Sense::click_and_drag()),
+                );
+                r.dnd_set_drag_payload(carga);
+                if r.dragged() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                }
                 if elegido && self.desplazar_arbol {
                     r.scroll_to_me(Some(egui::Align::Center));
                 }
@@ -2368,5 +2371,138 @@ mod pruebas {
         pintar(&mut app);
         app.buscar = "colector".into();
         pintar(&mut app);
+    }
+
+    /// Clic real con el ratón en una partida del árbol (regresión: el
+    /// arrastre no debe anular el clic).
+    #[test]
+    fn clic_en_partida_del_arbol() {
+        use eframe::egui::{Event, PointerButton, Pos2};
+        let mut elegidas = std::collections::BTreeSet::new();
+        for y in (60..420).step_by(6) {
+            let mut app = Aplicacion::sin_ventana();
+            app.sel = None;
+            let ctx = Context::default();
+            let mut acciones = Vec::new();
+            let pos = Pos2::new(90.0, y as f32);
+            let boton = |pressed| Event::PointerButton {
+                pos,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            };
+            for e in [
+                vec![],
+                vec![Event::PointerMoved(pos)],
+                vec![boton(true)],
+                vec![boton(false)],
+                vec![],
+            ] {
+                let entrada = RawInput {
+                    events: e,
+                    screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 800.0))),
+                    ..Default::default()
+                };
+                let mut out = ctx.run_ui(entrada, |ui| {
+                    egui::Panel::left("a")
+                        .default_size(330.0)
+                        .show(ui, |ui| app.arbol(ui, &mut acciones));
+                });
+                out.textures_delta.clear();
+            }
+            for a in acciones {
+                if let Accion::Seleccionar(_, h) = a {
+                    elegidas.insert(h);
+                }
+            }
+        }
+        assert_eq!(elegidas.into_iter().collect::<Vec<_>>(), ["SR.COL8", "SR.M2"]);
+    }
+
+    /// Arrastrar con el ratón SR.COL8 encima de SR.M2 la coloca delante.
+    #[test]
+    fn arrastre_con_raton() {
+        use eframe::egui::{Event, PointerButton, Pos2};
+        // Posiciones de las dos partidas (clic de prueba en cada y)
+        let mut pos_de = std::collections::BTreeMap::new();
+        for y in (60..420).step_by(6) {
+            let mut app = Aplicacion::sin_ventana();
+            let ctx = Context::default();
+            let mut acc = Vec::new();
+            let p = Pos2::new(90.0, y as f32);
+            let b = |pressed| Event::PointerButton {
+                pos: p,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            };
+            for e in [vec![], vec![Event::PointerMoved(p)], vec![b(true)], vec![b(false)]] {
+                let entrada = RawInput {
+                    events: e,
+                    screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 800.0))),
+                    ..Default::default()
+                };
+                let mut out = ctx.run_ui(entrada, |ui| {
+                    egui::Panel::left("a")
+                        .default_size(330.0)
+                        .show(ui, |ui| app.arbol(ui, &mut acc));
+                });
+                out.textures_delta.clear();
+            }
+            for a in acc {
+                if let Accion::Seleccionar(_, h) = a {
+                    pos_de.entry(h).or_insert(y as f32);
+                }
+            }
+        }
+        let (desde, hasta) = (pos_de["SR.COL8"], pos_de["SR.M2"]);
+        let mut app = Aplicacion::sin_ventana();
+        let ctx = Context::default();
+        let mut acc = Vec::new();
+        let p0 = Pos2::new(90.0, desde);
+        let mut eventos = vec![
+            vec![],
+            vec![Event::PointerMoved(p0)],
+            vec![Event::PointerButton {
+                pos: p0,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            }],
+        ];
+        for k in 1..=10 {
+            eventos.push(vec![Event::PointerMoved(Pos2::new(
+                90.0,
+                desde + (hasta - desde) * k as f32 / 10.0,
+            ))]);
+        }
+        let p1 = Pos2::new(90.0, hasta);
+        eventos.push(vec![Event::PointerButton {
+            pos: p1,
+            button: PointerButton::Primary,
+            pressed: false,
+            modifiers: Default::default(),
+        }]);
+        for e in eventos {
+            let entrada = RawInput {
+                events: e,
+                screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 800.0))),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(entrada, |ui| {
+                egui::Panel::left("a")
+                    .default_size(330.0)
+                    .show(ui, |ui| app.arbol(ui, &mut acc));
+            });
+            out.textures_delta.clear();
+        }
+        assert!(
+            acc.iter().any(|a| matches!(a, Accion::Trasladar(o, h, d, Some(antes)) if o == "C01" && h == "SR.COL8" && d == "C01" && antes == "SR.M2")),
+            "no hubo traslado"
+        );
+        assert!(
+            !acc.iter().any(|a| matches!(a, Accion::Seleccionar(..))),
+            "arrastrar no debe contar como clic"
+        );
     }
 }
