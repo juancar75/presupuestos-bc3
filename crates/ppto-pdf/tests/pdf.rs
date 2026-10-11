@@ -97,3 +97,56 @@ fn errores_claros() {
     );
     let _ = std::fs::remove_file(dir);
 }
+
+#[test]
+fn perfil_instaladora_sin_pem_gg_ni_bi() {
+    // Instaladora: PEM 7.005,15 es la base; IVA 21 % = 1.471,08; total 8.476,23
+    let mut o = opciones();
+    ppto_pdf::Perfil::instaladora().aplicar(&mut o);
+    let d = datos(&suelo_radiante(), &o, None).unwrap();
+    assert_eq!(d["mostrar_pem"], false);
+    assert!(d["recargos"].as_array().unwrap().is_empty());
+    assert_eq!(d["etiqueta_base"], "Base imponible");
+    assert_eq!(d["base"], "7.005,15");
+    assert_eq!(d["iva"]["importe"], "1.471,08");
+    assert_eq!(d["total"], "8.476,23");
+    assert_eq!(d["tipo_documento"], "Oferta");
+    assert!(d["observaciones"][1].as_str().unwrap().contains("puesta en marcha"));
+    // Aunque el perfil tuviera GG/BI, sin desglose no se aplican
+    o.gastos_generales = dec!(13);
+    assert_eq!(datos(&suelo_radiante(), &o, None).unwrap()["total"], "8.476,23");
+    assert!(pdf(&suelo_radiante(), &o).unwrap().starts_with(b"%PDF-"));
+
+    // Ingeniería: PEM + 13 % + 6 % + IVA = 10.086,72
+    ppto_pdf::Perfil::ingenieria().aplicar(&mut o);
+    let d = datos(&suelo_radiante(), &o, None).unwrap();
+    assert_eq!(
+        (d["mostrar_pem"].as_bool(), d["total"].as_str()),
+        (Some(true), Some("10.086,72"))
+    );
+}
+
+#[test]
+fn perfiles_se_guardan_y_el_logo_se_copia() {
+    let dir = std::env::temp_dir().join(format!("ppto-perfiles-{}", std::process::id()));
+    let ruta = dir.join("perfiles.json");
+    let mut p = ppto_pdf::Perfiles::cargar(&ruta);
+    assert_eq!(p.lista.len(), 2, "de serie: instaladora e ingeniería");
+    p.activo_mut().empresa = "Instalaciones Ejemplo, S.L.".into();
+    p.duplicar();
+    p.activo_mut().nombre = "Segunda empresa".into();
+    let origen = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/datos/logo-sintetico.svg"));
+    let copia = p.importar_logo(origen, &dir).unwrap();
+    assert!(copia.starts_with(dir.join("logos")) && copia.exists());
+    assert!(p.importar_logo(std::path::Path::new("logo.bmp"), &dir).is_err());
+    p.guardar(&ruta).unwrap();
+    let q = ppto_pdf::Perfiles::cargar(&ruta);
+    assert_eq!(q, p);
+    assert_eq!(q.activo().nombre, "Segunda empresa");
+    assert_eq!(q.lista[0].empresa, "Instalaciones Ejemplo, S.L.");
+    let mut r = q.clone();
+    r.borrar_activo();
+    r.borrar_activo();
+    assert_eq!(r.lista.len(), 1, "siempre queda uno");
+    let _ = std::fs::remove_dir_all(dir);
+}

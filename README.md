@@ -86,8 +86,16 @@ Botón **PDF…** de la interfaz (o `--pdf presupuesto.pdf` en `ppto demo` e
 - Hoja final de **observaciones al presupuesto** (editables; se proponen las
   habituales).
 
-La empresa, la firma, el logo y las observaciones se recuerdan para la
-próxima vez. El diseño está en `crates/ppto-pdf/plantillas/presupuesto.typ`:
+**Perfiles de empresa.** Cada perfil guarda su logo (se sube un PNG, JPG o
+SVG y se conserva una copia), empresa, firma, observaciones y tipo de resumen.
+Vienen dos de serie, y se pueden duplicar, renombrar y borrar:
+
+| Perfil | Resumen | Observaciones |
+|---|---|---|
+| **Instaladora** («Oferta») | Base imponible, IVA y total (sin PEM, GG ni BI) | Validez, alcance, exclusiones, garantía, pago |
+| **Ingeniería** («Presupuesto») | PEM, 13 % GG, 6 % BI, IVA y total | Validez, mediciones, exclusiones, plazos, pago |
+
+Se guardan en `%APPDATA%\presupuestos-bc3\perfiles.json`. El diseño está en `crates/ppto-pdf/plantillas/presupuesto.typ`:
 «Guardar copia de la plantilla…» la deja en una carpeta para retocarla y
 «Usar plantilla…» la aplica.
 

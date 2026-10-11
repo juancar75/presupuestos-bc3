@@ -133,7 +133,7 @@
 
 // ------------------------------------------------------------- resumen
 #pagebreak(weak: true)
-#text(size: 14pt, weight: "bold", fill: acento)[RESUMEN DEL PRESUPUESTO]
+#text(size: 14pt, weight: "bold", fill: acento)[RESUMEN ECONÓMICO]
 #v(-0.4em)
 #line(length: 100%, stroke: 0.8pt + acento)
 #v(0.5em)
@@ -157,16 +157,18 @@
   stroke: none,
   inset: (x: 4pt, y: 3.5pt),
   align: (left, right),
-  [*Presupuesto de ejecución material*], [*#d.pem €*],
-  ..d.recargos.map(r => (r.concepto, r.importe)).flatten(),
-  table.hline(stroke: 0.4pt + gris),
+  ..if d.mostrar_pem {
+    ([*Presupuesto de ejecución material*], [*#d.pem €*])
+    d.recargos.map(r => (r.concepto, r.importe)).flatten()
+    (table.hline(stroke: 0.4pt + gris),)
+  },
   [*#d.etiqueta_base*], [*#d.base €*],
   ..if d.iva != none { ([#d.iva.concepto], [#d.iva.importe]) },
   table.hline(stroke: 1pt + acento),
-  text(weight: "bold", fill: acento)[TOTAL PRESUPUESTO], text(weight: "bold", fill: acento)[#d.total €],
+  text(weight: "bold", fill: acento)[TOTAL], text(weight: "bold", fill: acento)[#d.total €],
 )))
 #v(1.2em)
-#par[Asciende el presente presupuesto a la expresada cantidad de *#upper(d.total_letra)* (#d.total €)#if d.iva != none [, IVA incluido].]
+#par[Asciende el importe total a la expresada cantidad de *#upper(d.total_letra)* (#d.total €)#if d.iva != none [, IVA incluido].]
 
 #if d.autor != "" or d.lugar_fecha != "" [
   #v(2.5em)
@@ -182,7 +184,7 @@
 // ------------------------------------------------------- observaciones
 #if d.observaciones.len() > 0 [
   #pagebreak()
-  #text(size: 14pt, weight: "bold", fill: acento)[OBSERVACIONES AL PRESUPUESTO]
+  #text(size: 14pt, weight: "bold", fill: acento)[OBSERVACIONES]
   #v(-0.4em)
   #line(length: 100%, stroke: 0.8pt + acento)
   #v(0.6em)

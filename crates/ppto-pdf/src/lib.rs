@@ -19,6 +19,9 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use typst_as_lib::TypstEngine;
+
+pub mod perfiles;
+pub use perfiles::{Perfil, Perfiles};
 use typst_layout::PagedDocument;
 
 /// Plantilla incluida en el programa.
@@ -77,6 +80,10 @@ pub struct OpcionesPdf {
     pub iva: Decimal,
     pub mostrar_mediciones: bool,
     pub mostrar_textos: bool,
+    /// `true`: resumen con PEM, gastos generales y beneficio industrial
+    /// (ingeniería, obra pública). `false`: suma de capítulos, IVA y total,
+    /// sin PEM, GG ni BI (instaladora: el margen ya va en los precios).
+    pub desglose_contrata: bool,
     /// Plantilla Typst propia; `None` usa [`PLANTILLA`].
     pub plantilla: Option<PathBuf>,
 }
@@ -103,6 +110,7 @@ impl Default for OpcionesPdf {
             iva: venta::IVA_GENERAL,
             mostrar_mediciones: true,
             mostrar_textos: true,
+            desglose_contrata: true,
             plantilla: None,
         }
     }
@@ -231,17 +239,23 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
         }));
     }
 
-    let r = venta::resumen(v.pem, o.gastos_generales, o.beneficio_industrial, o.iva, dec.importe);
+    // Sin desglose (instaladora) no se aplican ni se imprimen GG ni BI
+    let (gg, bi) = if o.desglose_contrata {
+        (o.gastos_generales, o.beneficio_industrial)
+    } else {
+        (Decimal::ZERO, Decimal::ZERO)
+    };
+    let r = venta::resumen(v.pem, gg, bi, o.iva, dec.importe);
     let mut recargos = Vec::new();
-    if !o.gastos_generales.is_zero() {
+    if !gg.is_zero() {
         recargos.push(json!({
-            "concepto": format!("{} % Gastos generales", num(o.gastos_generales, 2)),
+            "concepto": format!("{} % Gastos generales", num(gg, 2)),
             "importe": eur(r.gastos_generales),
         }));
     }
-    if !o.beneficio_industrial.is_zero() {
+    if !bi.is_zero() {
         recargos.push(json!({
-            "concepto": format!("{} % Beneficio industrial", num(o.beneficio_industrial, 2)),
+            "concepto": format!("{} % Beneficio industrial", num(bi, 2)),
             "importe": eur(r.beneficio_industrial),
         }));
     }
@@ -277,6 +291,7 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
         "capitulos": capitulos,
         "resumen": resumen,
         "pem": eur(r.pem),
+        "mostrar_pem": o.desglose_contrata,
         "recargos": recargos,
         "etiqueta_base": etiqueta_base,
         "base": eur(r.base),
