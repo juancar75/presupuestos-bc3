@@ -73,6 +73,9 @@ enum Accion {
     /// Arrastrar y soltar: (origen, hijo, destino, delante de).
     Trasladar(String, String, String, Option<String>),
     Alta(TipoAlta),
+    /// Ir a la partida anterior (-1) o siguiente (+1) del presupuesto.
+    Navegar(i32),
+    SiguienteSinPrecio,
 }
 
 /// Resultados del motor para el estado actual del presupuesto.
@@ -165,6 +168,9 @@ pub struct Aplicacion {
     alta: Option<Alta>,
     ventana_pdf: Option<pdf::VentanaPdf>,
     ciego: Option<ciego::CiegoAbierto>,
+    buscar: String,
+    /// Llevar el árbol hasta la partida elegida en el próximo fotograma.
+    desplazar_arbol: bool,
 }
 
 impl Aplicacion {
@@ -218,6 +224,8 @@ impl Aplicacion {
             alta: None,
             ventana_pdf: None,
             ciego: None,
+            buscar: String::new(),
+            desplazar_arbol: false,
         };
         app.recalcular();
         app
@@ -261,6 +269,60 @@ impl Aplicacion {
         self.informe = None;
         self.recalcular();
         self.info("Presupuesto vacío: cree un capítulo con «+ Capítulo» en el árbol.");
+    }
+
+    /// Partidas en el orden del presupuesto (capítulo, partida), recorriendo
+    /// capítulos y subcapítulos.
+    fn orden_partidas(&self) -> Vec<(String, String)> {
+        fn rec(app: &Aplicacion, cap: &str, out: &mut Vec<(String, String)>) {
+            for l in app.calc.lineas.get(cap).into_iter().flatten() {
+                if app
+                    .p
+                    .conceptos
+                    .get(&l.hijo)
+                    .is_some_and(|c| c.naturaleza == Naturaleza::Capitulo)
+                {
+                    rec(app, &l.hijo, out);
+                } else {
+                    out.push((cap.to_owned(), l.hijo.clone()));
+                }
+            }
+        }
+        let mut out = Vec::new();
+        rec(self, &self.p.raiz, &mut out);
+        out
+    }
+
+    /// Mueve la selección `d` partidas; con `sin_precio`, a la siguiente sin precio.
+    fn navegar(&mut self, d: i32, sin_precio: bool) {
+        let orden = self.orden_partidas();
+        if orden.is_empty() {
+            return;
+        }
+        let actual = self.sel.as_ref().and_then(|s| orden.iter().position(|x| x == s));
+        let n = orden.len();
+        let destino = if sin_precio {
+            let inicio = actual.map_or(0, |i| i + 1);
+            (0..n)
+                .map(|k| (inicio + k) % n)
+                .find(|&i| self.calc.precios.get(&orden[i].1).is_none_or(|p| p.is_zero()))
+        } else {
+            Some(match actual {
+                None => 0,
+                Some(i) => {
+                    (i64::try_from(i).unwrap_or(0) + i64::from(d)).clamp(0, i64::try_from(n - 1).unwrap_or(0)) as usize
+                }
+            })
+        };
+        match destino {
+            Some(i) => {
+                self.sel = Some(orden[i].clone());
+                self.pestana = Pestana::Partida;
+                self.avisos.clear();
+                self.desplazar_arbol = true;
+            }
+            None => self.info("Todas las partidas tienen precio."),
+        }
     }
 
     fn info(&mut self, t: impl Into<String>) {
@@ -642,6 +704,14 @@ impl Aplicacion {
                     self.cambios = true;
                     continue;
                 }
+                Accion::Navegar(d) => {
+                    self.navegar(d, false);
+                    continue;
+                }
+                Accion::SiguienteSinPrecio => {
+                    self.navegar(1, true);
+                    continue;
+                }
                 Accion::Alta(t) => {
                     self.abrir_alta(t);
                     continue;
@@ -859,7 +929,7 @@ impl Aplicacion {
         });
     }
 
-    fn arbol(&self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+    fn arbol(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
         ui.heading(&self.p.conceptos[&self.p.raiz].resumen);
         ui.separator();
         ui.horizontal(|ui| {
@@ -874,9 +944,54 @@ impl Aplicacion {
                     .small(),
             );
         });
+        ui.add(
+            egui::TextEdit::singleline(&mut self.buscar)
+                .hint_text("Buscar partida por código o texto…")
+                .desired_width(f32::INFINITY),
+        );
+        let buscar = self.buscar.trim().to_lowercase();
         egui::ScrollArea::vertical().show(ui, |ui| {
-            self.rama(ui, &self.p.raiz, acciones);
+            if buscar.is_empty() {
+                self.rama(ui, &self.p.raiz, acciones);
+            } else {
+                self.resultados(ui, &buscar, acciones);
+            }
         });
+        self.desplazar_arbol = false;
+    }
+
+    /// Lista plana de partidas que contienen el texto buscado.
+    fn resultados(&self, ui: &mut Ui, buscar: &str, acciones: &mut Vec<Accion>) {
+        let mut n = 0;
+        for (cap, hijo) in self.orden_partidas() {
+            let c = &self.p.conceptos[&hijo];
+            let texto = format!("{} {} {}", c.codigo, c.resumen, c.texto.as_deref().unwrap_or("")).to_lowercase();
+            if !texto.contains(buscar) {
+                continue;
+            }
+            n += 1;
+            let elegido = self.sel.as_ref() == Some(&(cap.clone(), hijo.clone()));
+            let precio = self.calc.precios.get(&hijo).copied().unwrap_or_default();
+            let r = ui.add(
+                egui::Button::selectable(elegido, format!("{}  {}", c.codigo, corto(&c.resumen, 34)))
+                    .wrap_mode(egui::TextWrapMode::Truncate),
+            );
+            ui.label(
+                RichText::new(format!("    en {cap} · {} €/{}", eur(precio), c.unidad))
+                    .weak()
+                    .small(),
+            );
+            if r.clicked() {
+                acciones.push(Accion::Seleccionar(cap, hijo));
+            }
+            if n >= 300 {
+                ui.label(RichText::new("… afine la búsqueda").weak());
+                break;
+            }
+        }
+        if n == 0 {
+            ui.label(RichText::new("Sin resultados").weak());
+        }
     }
 
     fn rama(&self, ui: &mut Ui, capitulo: &str, acciones: &mut Vec<Accion>) {
@@ -889,6 +1004,11 @@ impl Aplicacion {
                 let r = egui::CollapsingHeader::new(RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong())
                     .id_salt(("cap", capitulo, &l.hijo))
                     .default_open(self.calc.lineas.get(&l.hijo).is_none_or(|v| v.len() <= 40))
+                    .open(
+                        (self.desplazar_arbol
+                            && self.sel.as_ref().is_some_and(|(p, _)| self.p.ruta(p).contains(&l.hijo)))
+                        .then_some(true),
+                    )
                     .show(ui, |ui| {
                         ui.label(RichText::new(format!("{} €", eur(l.importe))).weak());
                         self.rama(ui, &l.hijo, acciones);
@@ -941,6 +1061,9 @@ impl Aplicacion {
                         )
                     })
                     .inner;
+                if elegido && self.desplazar_arbol {
+                    r.scroll_to_me(Some(egui::Align::Center));
+                }
                 // Soltar otra partida encima: se coloca delante de esta
                 if let Some(a) = r.dnd_release_payload::<Arrastre>() {
                     if a.hijo != l.hijo {
@@ -999,6 +1122,41 @@ impl Aplicacion {
             .conceptos
             .get(&padre)
             .is_some_and(|p| p.naturaleza == Naturaleza::Capitulo);
+        ui.horizontal(|ui| {
+            let orden = self.orden_partidas();
+            let pos = orden.iter().position(|x| x.0 == padre && x.1 == hijo);
+            if ui
+                .add_enabled(pos.is_some_and(|i| i > 0), egui::Button::new("< Anterior"))
+                .on_hover_text("Ctrl+↑")
+                .clicked()
+            {
+                acciones.push(Accion::Navegar(-1));
+            }
+            if ui
+                .add_enabled(
+                    pos.is_none_or(|i| i + 1 < orden.len()),
+                    egui::Button::new("Siguiente >"),
+                )
+                .on_hover_text("Ctrl+↓ (pulse Intro antes para confirmar el precio)")
+                .clicked()
+            {
+                acciones.push(Accion::Navegar(1));
+            }
+            if ui
+                .button("Siguiente sin precio >>")
+                .on_hover_text("Ctrl+Mayús+↓")
+                .clicked()
+            {
+                acciones.push(Accion::SiguienteSinPrecio);
+            }
+            if let Some(i) = pos {
+                let sin = orden
+                    .iter()
+                    .filter(|(_, h)| self.calc.precios.get(h).is_none_or(|p| p.is_zero()))
+                    .count();
+                ui.label(RichText::new(format!("{} de {} · {sin} sin precio", i + 1, orden.len())).weak());
+            }
+        });
         ui.horizontal(|ui| {
             if !padre_es_capitulo
                 && ui
@@ -1825,6 +1983,23 @@ impl eframe::App for Aplicacion {
         }
 
         let mut acciones = Vec::new();
+        // Ctrl+↓ / Ctrl+↑: partida siguiente / anterior; Ctrl+Mayús+↓: siguiente sin precio
+        let (sin_precio, bajar, subir) = ui.ctx().input_mut(|i| {
+            let sin_precio = i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::ArrowDown);
+            (
+                sin_precio,
+                i.consume_key(egui::Modifiers::CTRL, egui::Key::ArrowDown),
+                i.consume_key(egui::Modifiers::CTRL, egui::Key::ArrowUp),
+            )
+        });
+        if sin_precio {
+            acciones.push(Accion::SiguienteSinPrecio);
+        } else if bajar {
+            acciones.push(Accion::Navegar(1));
+        }
+        if subir {
+            acciones.push(Accion::Navegar(-1));
+        }
         egui::Panel::top("barra").show(ui, |ui| {
             ui.add_space(4.0);
             self.barra_superior(ui);
@@ -2152,6 +2327,46 @@ mod pruebas {
             Accion::Precio("P1".into(), dec!(15.50)),
         ]);
         assert_eq!(app.calc.pem, dec!(186.00));
+        pintar(&mut app);
+    }
+
+    #[test]
+    fn navegar_entre_partidas() {
+        // Ejemplo: SR.M2 y SR.COL8 en C01; se añade C02 con P9 sin precio
+        let mut app = Aplicacion::sin_ventana();
+        app.aplicar(vec![
+            Accion::NuevoCapitulo {
+                padre: app.p.raiz.clone(),
+                codigo: "C02".into(),
+                resumen: "Otro".into(),
+            },
+            Accion::NuevaPartida {
+                capitulo: "C02".into(),
+                codigo: "P9".into(),
+                unidad: "u".into(),
+                resumen: "Sin precio".into(),
+            },
+        ]);
+        assert_eq!(
+            app.orden_partidas(),
+            [
+                ("C01".to_owned(), "SR.M2".to_owned()),
+                ("C01".into(), "SR.COL8".into()),
+                ("C02".into(), "P9".into())
+            ]
+        );
+        app.aplicar(vec![Accion::Seleccionar("C01".into(), "SR.M2".into())]);
+        app.aplicar(vec![Accion::Navegar(1)]);
+        assert_eq!(app.sel, Some(("C01".into(), "SR.COL8".into())));
+        app.aplicar(vec![Accion::Navegar(5)]);
+        assert_eq!(app.sel, Some(("C02".into(), "P9".into())), "no se pasa del final");
+        app.aplicar(vec![Accion::Navegar(-1)]);
+        assert_eq!(app.sel, Some(("C01".into(), "SR.COL8".into())));
+        app.aplicar(vec![Accion::SiguienteSinPrecio]);
+        assert_eq!(app.sel, Some(("C02".into(), "P9".into())));
+        assert!(app.desplazar_arbol);
+        pintar(&mut app);
+        app.buscar = "colector".into();
         pintar(&mut app);
     }
 }
