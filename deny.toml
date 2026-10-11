@@ -33,6 +33,20 @@ multiple-versions = "warn"
 
 [advisories]
 yanked = "deny"
+# Avisos heredados de Typst (ppto-pdf). Revisados el 2026-10-11; revisar al
+# actualizar Typst. El PDF solo compila nuestra plantilla y datos propios.
+ignore = [
+    # quick-xml 0.38 vía hayagriva/citationberg: lectura de estilos de citas
+    # bibliográficas (CSL). La plantilla no usa bibliografía ni lee XML externo.
+    { id = "RUSTSEC-2026-0194", reason = "solo estilos CSL de bibliografía, no usados" },
+    { id = "RUSTSEC-2026-0195", reason = "solo estilos CSL de bibliografía, no usados" },
+    # Sin mantenimiento, sin fallo conocido: dependencias internas de Typst.
+    { id = "RUSTSEC-2025-0141", reason = "bincode vía syntect (resaltado de código de Typst)" },
+    { id = "RUSTSEC-2024-0436", reason = "paste (macro) vía biblatex de Typst" },
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz vía krilla/typst-pdf; Typst lo sustituirá" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser vía Typst" },
+    { id = "RUSTSEC-2024-0320", reason = "yaml-rust vía syntect de Typst" },
+]
 
 [sources]
 unknown-registry = "deny"
