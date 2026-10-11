@@ -220,3 +220,68 @@ fn binario_por_stdio() {
     drop(entrada);
     assert!(hijo.wait().unwrap().success());
 }
+
+#[test]
+fn propuestas_a_la_obra_activa() {
+    let dir = std::env::temp_dir().join(format!("mcp-propuestas-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut p = ppto_core::ejemplos::suelo_radiante();
+    p.nueva_partida("C01", "P.VAL", "ud", "Válvula de zona").unwrap();
+    let activa = dir.join("obra-activa.json");
+    ppto_propuestas::ObraActiva::guardar(&p, &activa).unwrap();
+    let mut e = Estado {
+        ruta_obra_activa: Some(activa),
+        ruta_bandeja: Some(dir.join("propuestas.json")),
+        ruta_tarifas: Some(dir.join("tarifas.json")),
+        ..Estado::default()
+    };
+    // Sin abrir la obra activa no se propone
+    llamar(&mut e, "abrir_ejemplo", json!({}));
+    let (t, err) = llamar(
+        &mut e,
+        "proponer",
+        json!({"partida":"P.VAL","precio":10,"confianza":"alta","justificacion":"x"}),
+    );
+    assert!(err && t.contains("abrir_obra_activa"), "{t}");
+
+    let (t, err) = llamar(&mut e, "abrir_obra_activa", json!({}));
+    assert!(!err && t.contains("1 sin precio"), "{t}");
+    let (t, _) = llamar(&mut e, "partidas_sin_precio", json!({}));
+    assert!(t.contains("P.VAL") && t.contains("Válvula de zona"), "{t}");
+    let (t, _) = llamar(&mut e, "buscar_tarifas", json!({"texto":"detector"}));
+    assert!(t.contains("no tiene tarifas"), "{t}");
+
+    // 0,5 h × 24,50 + válvula 30 + 2 % MA = 43,10
+    let (t, err) = llamar(
+        &mut e,
+        "proponer",
+        json!({
+            "partida": "P.VAL",
+            "lineas": [
+                {"codigo":"MO.OF1F","rendimiento":"0,5"},
+                {"codigo":"MT.VAL","rendimiento":1,"naturaleza":"material","unidad":"ud","resumen":"Válvula de zona","precio":30},
+                {"codigo":"%MA","rendimiento":2}
+            ],
+            "confianza": "media",
+            "justificacion": "Rendimiento habitual; precio de catálogo"
+        }),
+    );
+    assert!(
+        !err && t.contains("#1") && t.contains("43,10") && t.contains("MT.VAL"),
+        "{t}"
+    );
+    // El presupuesto del MCP no cambia
+    let (t, _) = llamar(&mut e, "partidas_sin_precio", json!({}));
+    assert!(t.contains("P.VAL"));
+    let (t, _) = llamar(&mut e, "ver_propuestas", json!({}));
+    assert!(t.contains("| 1 | P.VAL | pendiente | media |"), "{t}");
+    // Una propuesta imposible se rechaza sin guardarse
+    let (t, err) = llamar(
+        &mut e,
+        "proponer",
+        json!({"partida":"SR.M2","precio":5,"confianza":"baja","justificacion":"x"}),
+    );
+    assert!(err && t.contains("descompuesto"), "{t}");
+    let b = ppto_propuestas::Bandeja::cargar(&dir.join("propuestas.json"));
+    assert_eq!(b.entradas.len(), 1);
+}

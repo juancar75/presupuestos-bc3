@@ -148,7 +148,7 @@ impl Aplicacion {
                 }
                 if ui
                     .selectable_label(a.de_tarifa, "De tarifa de subcontrata")
-                    .on_hover_text("Tarifas importadas en «🧾 Tarifas…»")
+                    .on_hover_text("Tarifas importadas en «Tarifas…»")
                     .clicked()
                 {
                     (a.nuevo, a.de_tarifa) = (false, true);
@@ -275,7 +275,7 @@ impl Aplicacion {
     /// Línea con un recurso de una tarifa de subcontrata.
     fn form_linea_tarifa(&self, ui: &mut egui::Ui, a: &mut Alta, padre: &str, acciones: &mut Vec<Accion>) -> bool {
         if self.tarifas.tarifas.is_empty() {
-            ui.label("No hay tarifas: impórtelas en «🧾 Tarifas…».");
+            ui.label("No hay tarifas: impórtelas en «Tarifas…».");
             return false;
         }
         campo(ui, "Buscar", &mut a.buscar, 300.0);

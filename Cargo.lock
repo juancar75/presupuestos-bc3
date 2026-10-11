@@ -3179,6 +3179,7 @@ dependencies = [
  "ppto-db",
  "ppto-informes",
  "ppto-pdf",
+ "ppto-propuestas",
  "ppto-tarifas",
  "rfd",
  "rust_decimal",
@@ -3205,6 +3206,8 @@ dependencies = [
  "ppto-core",
  "ppto-db",
  "ppto-informes",
+ "ppto-propuestas",
+ "ppto-tarifas",
  "rust_decimal",
  "rust_decimal_macros",
  "serde_json",
@@ -3225,6 +3228,17 @@ dependencies = [
  "typst-assets",
  "typst-layout",
  "typst-pdf",
+]
+
+[[package]]
+name = "ppto-propuestas"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "ppto-core",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

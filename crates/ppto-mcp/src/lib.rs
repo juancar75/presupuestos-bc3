@@ -4,10 +4,11 @@
 //! Servidor MCP (Model Context Protocol, JSON-RPC 2.0 por stdio) para que un
 //! asistente como Claude consulte y simule presupuestos (P-020).
 //!
-//! **Solo lectura y simulación**: ninguna herramienta modifica el presupuesto
-//! abierto ni el fichero de origen. Las simulaciones trabajan sobre copias.
-//! Las escrituras con aprobación llegarán en P-021. Las exportaciones crean
-//! ficheros nuevos y nunca sobrescriben el de origen.
+//! **Ninguna herramienta modifica el presupuesto**. Las simulaciones trabajan
+//! sobre copias y las exportaciones crean ficheros nuevos. Para poner
+//! precios, la IA abre la obra activa del programa (`abrir_obra_activa`) y
+//! hace **propuestas** (`proponer`) que el usuario acepta o rechaza en el
+//! programa de escritorio (P-021).
 //!
 //! Todas las cifras salen de `ppto-core`, igual que en la interfaz y los informes.
 
@@ -26,6 +27,12 @@ pub const PROTOCOLO: &str = "2025-06-18";
 pub struct Estado {
     pub presupuesto: Option<Presupuesto>,
     pub origen: String,
+    /// Clave de la obra activa del programa (si se abrió con `abrir_obra_activa`).
+    pub obra_activa: Option<String>,
+    /// Ficheros compartidos con el programa (por defecto, en la carpeta de configuración).
+    pub ruta_obra_activa: Option<std::path::PathBuf>,
+    pub ruta_bandeja: Option<std::path::PathBuf>,
+    pub ruta_tarifas: Option<std::path::PathBuf>,
     pub gg: Decimal,
     pub bi: Decimal,
     pub iva: Decimal,
@@ -36,6 +43,10 @@ impl Default for Estado {
         Self {
             presupuesto: None,
             origen: String::new(),
+            obra_activa: None,
+            ruta_obra_activa: ppto_propuestas::ruta_obra_activa(),
+            ruta_bandeja: ppto_propuestas::ruta_bandeja(),
+            ruta_tarifas: ppto_propuestas::carpeta_config().map(|c| c.join("tarifas.json")),
             gg: venta::GG_HABITUAL,
             bi: venta::BI_HABITUAL,
             iva: venta::IVA_GENERAL,
@@ -100,6 +111,7 @@ impl Estado {
             return Err(format!("extensión no admitida «{ext}»: use .bc3 o .sqlite"));
         }
         self.origen = ruta.to_owned();
+        self.obra_activa = None;
         let p = self.presupuesto.as_ref().ok_or("sin presupuesto")?;
         let _ = writeln!(
             informe,
@@ -147,7 +159,12 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                 "serverInfo": { "name": "presupuestos-bc3", "version": env!("CARGO_PKG_VERSION") },
                 "instructions": "Gestor de presupuestos de construcción e instalaciones (BC3/FIEBDC-3). \
                     Abre un presupuesto con abrir_presupuesto y consulta o simula. Las herramientas no \
-                    modifican el presupuesto. Importes en euros con formato español."
+                    modifican el presupuesto. Para valorar la obra que el usuario tiene abierta en el \
+                    programa: abrir_obra_activa, partidas_sin_precio, ver_concepto/buscar/buscar_tarifas \
+                    para reutilizar recursos y precios existentes, y proponer (una propuesta por partida, \
+                    con confianza y justificación de cada precio y rendimiento). El usuario acepta o \
+                    rechaza cada propuesta en el programa; consulte ver_propuestas. Importes en euros con \
+                    formato español."
             }))
         }
         "ping" => Ok(json!({})),
@@ -236,6 +253,44 @@ fn herramientas() -> Value {
             }, "required": ["partida", "modalidad"] }
         },
         {
+            "name": "abrir_obra_activa",
+            "description": "Abre el presupuesto que el usuario tiene abierto en el programa de escritorio (p. ej. un ciego que está valorando). Necesario para hacer propuestas.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "partidas_sin_precio",
+            "description": "Partidas de la obra con precio 0 (por valorar), con unidad, cantidad, capítulo y texto descriptivo.",
+            "inputSchema": { "type": "object", "properties": { "limite": { "type": "integer", "description": "Máximo (por defecto 40)" } } }
+        },
+        {
+            "name": "buscar_tarifas",
+            "description": "Busca en las tarifas de subcontratas del usuario (precios netos sin IVA por unidad de obra). Devuelve el código a usar en un descompuesto (PROVEEDOR.REFERENCIA), unidad y precio.",
+            "inputSchema": { "type": "object", "properties": { "texto": { "type": "string" } }, "required": ["texto"] }
+        },
+        {
+            "name": "proponer",
+            "description": "Propone el precio de una partida de la obra activa: un descompuesto (lineas) o un precio directo (precio). NO modifica el presupuesto: queda pendiente hasta que el usuario la acepte en el programa. Reutilice los códigos de recursos que ya existen en la obra (se usan con su precio de la obra); para un recurso nuevo indique naturaleza, unidad, resumen y precio. Para usar una tarifa de subcontrata, código PROVEEDOR.REFERENCIA con naturaleza subcontrata y su precio. Una línea porcentual (medios auxiliares) lleva naturaleza porcentaje y los puntos como rendimiento.",
+            "inputSchema": { "type": "object", "properties": {
+                "partida": { "type": "string" },
+                "precio": num,
+                "lineas": { "type": "array", "items": { "type": "object", "properties": {
+                    "codigo": { "type": "string" },
+                    "rendimiento": num,
+                    "naturaleza": { "type": "string", "enum": ["mano_obra", "material", "maquinaria", "subcontrata", "otros", "porcentaje"] },
+                    "unidad": { "type": "string" },
+                    "resumen": { "type": "string" },
+                    "precio": num
+                }, "required": ["codigo", "rendimiento"] } },
+                "confianza": { "type": "string", "enum": ["alta", "media", "baja"] },
+                "justificacion": { "type": "string", "description": "De dónde salen precios y rendimientos (obra anterior, tarifa, estimación…)" }
+            }, "required": ["partida", "confianza", "justificacion"] }
+        },
+        {
+            "name": "ver_propuestas",
+            "description": "Propuestas hechas para la obra activa y su estado (pendiente, aceptada o rechazada por el usuario).",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
             "name": "exportar_excel",
             "description": "Genera el informe Excel (resumen, presupuesto, descompuestos, mediciones, recursos y horas por oficio) en un fichero nuevo.",
             "inputSchema": { "type": "object", "properties": { "ruta": { "type": "string", "description": "Ruta del .xlsx a crear" } }, "required": ["ruta"] }
@@ -254,6 +309,7 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "abrir_ejemplo" => {
             estado.presupuesto = Some(ppto_core::ejemplos::suelo_radiante());
             estado.origen = "ejemplo".into();
+            estado.obra_activa = None;
             Ok("Abierto el ejemplo sintético de suelo radiante (PEM 7.005,15 €).".into())
         }
         "resumen" => resumen(estado),
@@ -266,6 +322,13 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "recursos" => recursos(estado.p()?, a.get("naturaleza").and_then(Value::as_str)),
         "simular_cambios" => simular_cambios(estado.p()?, a),
         "simular_subcontrata" => simular_subcontrata(estado.p()?, a),
+        "abrir_obra_activa" => abrir_obra_activa(estado),
+        "partidas_sin_precio" => {
+            partidas_sin_precio(estado.p()?, a.get("limite").and_then(Value::as_u64).unwrap_or(40))
+        }
+        "buscar_tarifas" => buscar_tarifas(estado, texto(a, "texto")?),
+        "proponer" => proponer(estado, a),
+        "ver_propuestas" => ver_propuestas(estado),
         "exportar_excel" => {
             let ruta = destino(estado, texto(a, "ruta")?, "xlsx")?;
             let o = ppto_informes::OpcionesInforme {
@@ -737,4 +800,228 @@ fn naturaleza(n: Naturaleza) -> &'static str {
         Naturaleza::Porcentaje => "porcentaje",
         Naturaleza::Otros => "otros",
     }
+}
+
+// ---------------------------------------------------------------- propuestas (P-021)
+
+fn abrir_obra_activa(estado: &mut Estado) -> Result<String, String> {
+    let ruta = estado
+        .ruta_obra_activa
+        .clone()
+        .ok_or("no se encuentra la carpeta de configuración")?;
+    let o = ppto_propuestas::ObraActiva::cargar(&ruta)?;
+    let p = o.presupuesto;
+    let partidas: Vec<&ppto_core::Concepto> = p
+        .conceptos
+        .values()
+        .filter(|c| c.naturaleza == Naturaleza::Partida)
+        .collect();
+    let v = p.valorar().map_err(|e| e.to_string())?;
+    let sin = partidas
+        .iter()
+        .filter(|c| v.precios.get(&c.codigo).is_none_or(Decimal::is_zero))
+        .count();
+    let t = format!(
+        "Obra activa del programa: {} — {} partidas, {} sin precio, PEM {} €.",
+        o.clave,
+        partidas.len(),
+        sin,
+        eur(v.pem)
+    );
+    estado.presupuesto = Some(p);
+    estado.origen = String::new();
+    estado.obra_activa = Some(o.clave);
+    Ok(t)
+}
+
+fn partidas_sin_precio(p: &Presupuesto, limite: u64) -> Result<String, String> {
+    let v = p.valorar().map_err(|e| e.to_string())?;
+    let cant = p.cantidades_partidas().map_err(|e| e.to_string())?;
+    // Capítulo de cada partida
+    let mut capitulo = std::collections::BTreeMap::new();
+    for (padre, c) in &p.conceptos {
+        if c.naturaleza == Naturaleza::Capitulo {
+            for l in &c.descomposicion {
+                capitulo.entry(l.hijo.clone()).or_insert_with(|| padre.clone());
+            }
+        }
+    }
+    let mut t = String::new();
+    let (mut n, mut total) = (0u64, 0u64);
+    for (codigo, q) in &cant {
+        let c = &p.conceptos[codigo];
+        if !v.precios.get(codigo).is_none_or(Decimal::is_zero) {
+            continue;
+        }
+        total += 1;
+        if n >= limite {
+            continue;
+        }
+        n += 1;
+        let cap = capitulo.get(codigo).map(String::as_str).unwrap_or("");
+        let _ = writeln!(
+            t,
+            "## {} · {} · {} {}\nCapítulo: {} {}",
+            c.codigo,
+            c.resumen,
+            num(*q, p.decimales.medicion),
+            c.unidad,
+            cap,
+            p.conceptos.get(cap).map(|x| x.resumen.as_str()).unwrap_or("")
+        );
+        if let Some(tx) = c.texto.as_deref().filter(|x| !x.trim().is_empty()) {
+            let corto: String = tx.chars().take(600).collect();
+            let _ = writeln!(t, "{corto}");
+        }
+        t.push('\n');
+    }
+    if total == 0 {
+        return Ok("Todas las partidas tienen precio.".into());
+    }
+    let _ = write!(t, "{total} partidas sin precio; se muestran {n}.");
+    Ok(t)
+}
+
+fn buscar_tarifas(estado: &Estado, consulta: &str) -> Result<String, String> {
+    let ruta = estado
+        .ruta_tarifas
+        .as_ref()
+        .ok_or("no se encuentra la carpeta de configuración")?;
+    let b = ppto_tarifas::Biblioteca::cargar(ruta);
+    if b.tarifas.is_empty() {
+        return Ok("El usuario no tiene tarifas de subcontratas cargadas.".into());
+    }
+    let e = b.buscar(consulta);
+    if e.is_empty() {
+        return Ok(format!("Sin resultados en las tarifas para «{consulta}»."));
+    }
+    let mut t =
+        String::from("| Código | Ud | Descripción | Precio € | Tarifa | Incluye |\n|---|---|---|---:|---|---|\n");
+    for x in e.iter().take(40) {
+        if let Some((tf, l)) = b.linea(*x) {
+            let _ = writeln!(
+                t,
+                "| {} | {} | {} | {} | {} | {} |",
+                tf.codigo(l),
+                l.unidad,
+                l.descripcion,
+                eur(l.precio),
+                tf.nombre(),
+                tf.notas
+            );
+        }
+    }
+    if e.len() > 40 {
+        let _ = write!(t, "\n{} resultados; se muestran 40.", e.len());
+    }
+    Ok(t)
+}
+
+fn leer_naturaleza(s: &str) -> Option<Naturaleza> {
+    Some(match plegar(s).replace([' ', '-'], "_").as_str() {
+        "mano_obra" | "mano_de_obra" | "manoobra" => Naturaleza::ManoObra,
+        "material" | "materiales" => Naturaleza::Material,
+        "maquinaria" => Naturaleza::Maquinaria,
+        "subcontrata" => Naturaleza::Subcontrata,
+        "otros" => Naturaleza::Otros,
+        "porcentaje" | "%" => Naturaleza::Porcentaje,
+        _ => return None,
+    })
+}
+
+fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
+    use ppto_core::propuesta::{Confianza, Contenido, EstadoPropuesta, LineaPropuesta, Propuesta};
+    let obra = estado
+        .obra_activa
+        .clone()
+        .ok_or("las propuestas van a la obra abierta en el programa: use antes abrir_obra_activa")?;
+    let p = estado.p()?;
+    let partida = texto(a, "partida")?.trim().to_owned();
+    let confianza = Confianza::leer(texto(a, "confianza")?).ok_or("confianza: alta, media o baja")?;
+    let justificacion = texto(a, "justificacion")?.trim().to_owned();
+    let contenido = match (a.get("lineas").and_then(Value::as_array), dec_campo(a, "precio")?) {
+        (Some(_), Some(_)) => return Err("indique lineas o precio, no ambos".into()),
+        (None, Some(precio)) => Contenido::PrecioDirecto(precio),
+        (Some(ls), None) => {
+            let mut v = Vec::new();
+            for l in ls {
+                let codigo = texto(l, "codigo")?.trim().to_owned();
+                let rendimiento = dec_campo(l, "rendimiento")?.ok_or_else(|| format!("«{codigo}» sin rendimiento"))?;
+                let naturaleza = match l.get("naturaleza").and_then(Value::as_str) {
+                    None => None,
+                    Some(n) => Some(leer_naturaleza(n).ok_or_else(|| format!("naturaleza no válida «{n}»"))?),
+                };
+                v.push(LineaPropuesta {
+                    codigo,
+                    rendimiento,
+                    naturaleza,
+                    unidad: l.get("unidad").and_then(Value::as_str).unwrap_or("").to_owned(),
+                    resumen: l.get("resumen").and_then(Value::as_str).unwrap_or("").to_owned(),
+                    precio: dec_campo(l, "precio")?,
+                });
+            }
+            Contenido::Descompuesto(v)
+        }
+        (None, None) => return Err("indique lineas (descompuesto) o precio (precio directo)".into()),
+    };
+    let mut prop = Propuesta {
+        id: 0,
+        partida: partida.clone(),
+        contenido,
+        confianza,
+        justificacion,
+        autor: "IA (MCP)".into(),
+        estado: EstadoPropuesta::Pendiente,
+    };
+    let sim = p
+        .simular_propuesta(&prop)
+        .map_err(|e| format!("propuesta no válida: {e}"))?;
+    let ruta = estado
+        .ruta_bandeja
+        .clone()
+        .ok_or("no se encuentra la carpeta de configuración")?;
+    let id = ppto_propuestas::Bandeja::modificar(&ruta, |b| b.anadir(&obra, prop.clone()))
+        .map_err(|e| format!("no se pudo guardar la propuesta: {e}"))?;
+    prop.id = id;
+    let mut t = format!(
+        "Propuesta #{id} para {partida}: {} → {} € (pendiente de que el usuario la acepte en el programa).",
+        eur(sim.precio_antes),
+        eur(sim.precio_despues)
+    );
+    if !sim.nuevos.is_empty() {
+        let _ = write!(t, "\nRecursos nuevos: {}.", sim.nuevos.join(", "));
+    }
+    for (c, obra, propuesto) in &sim.precios_distintos {
+        let _ = write!(
+            t,
+            "\nAviso: {c} está en la obra a {} € (usted indicó {} €): se usará el de la obra.",
+            eur(*obra),
+            eur(*propuesto)
+        );
+    }
+    Ok(t)
+}
+
+fn ver_propuestas(estado: &Estado) -> Result<String, String> {
+    use ppto_core::propuesta::EstadoPropuesta as E;
+    let obra = estado.obra_activa.as_deref().ok_or("use antes abrir_obra_activa")?;
+    let ruta = estado
+        .ruta_bandeja
+        .as_ref()
+        .ok_or("no se encuentra la carpeta de configuración")?;
+    let b = ppto_propuestas::Bandeja::cargar(ruta);
+    let v = b.de_obra(obra);
+    if v.is_empty() {
+        return Ok("No hay propuestas para esta obra.".into());
+    }
+    let mut t = String::from("| # | Partida | Estado | Confianza |\n|---:|---|---|---|\n");
+    for p in v {
+        let e = match p.estado {
+            E::Pendiente => "pendiente",
+            E::Aceptada => "aceptada",
+            E::Rechazada => "rechazada",
+        };
+        let _ = writeln!(t, "| {} | {} | {e} | {} |", p.id, p.partida, p.confianza.nombre());
+    }
+    Ok(t)
 }
