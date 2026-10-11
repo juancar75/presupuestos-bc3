@@ -5,6 +5,18 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — subcontrata a ratio
+- `ppto_core::ratio`: `Presupuesto::aplicar_ratio(PaqueteRatio)` aplica al
+  presupuesto una subcontrata por unidad de contratación (p. ej. montaje VRF
+  a € por máquina): medidor = suma de las cantidades de las partidas
+  elegidas; en cada partida se quitan los recursos que pone la subcontrata
+  y se añade la línea de subcontrata; reparto en proporción al coste propio
+  retirado (Σ rendimientos × cantidades = medidor exacto); los medios
+  auxiliares se conservan. Partida entera o solo mano de obra = paquete de
+  una partida. Informe: importe, retirado, coste antes/después, horas.
+- Interfaz: «Subcontrata a ratio» en la pestaña Subcontratar, con vista
+  previa y Deshacer.
+
 ### Añadido — presupuestos ciegos
 - `ppto-ciego`: importa el listado de Presto en Excel (.xlsx/.xls) y devuelve
   el mismo .xlsx con los precios (solo se escriben las celdas PrPres;
