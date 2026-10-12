@@ -7,6 +7,7 @@ mod ciego;
 mod pdf;
 mod ratio;
 mod tarifas;
+mod tema;
 
 use crate::celdas::Edicion;
 use alta::{Alta, TipoAlta};
@@ -241,6 +242,7 @@ impl Aplicacion {
         let mut estilo = (*cc.egui_ctx.global_style()).clone();
         estilo.spacing.item_spacing = egui::vec2(8.0, 5.0);
         cc.egui_ctx.set_global_style(estilo);
+        tema::aplicar_guardado(&cc.egui_ctx);
         let mut app = Self::sin_ventana();
         if let Some(r) = tarifas::ruta_tarifas() {
             app.tarifas = ppto_tarifas::Biblioteca::cargar(&r);
@@ -962,6 +964,14 @@ impl Aplicacion {
                 self.rehacer();
             }
             ui.separator();
+            let oscuro = ui.visuals().dark_mode;
+            if ui
+                .button(if oscuro { "☀ Claro" } else { "🌙 Oscuro" })
+                .on_hover_text("Cambiar entre modo diurno y nocturno")
+                .clicked()
+            {
+                self.cambiar_tema(ui.ctx(), !oscuro);
+            }
             if ui
                 .button("📄 Ejemplo")
                 .on_hover_text("Cargar el ejemplo sintético de suelo radiante")
@@ -1428,7 +1438,8 @@ impl Aplicacion {
                             ui.label(&h.unidad);
                             ui.label(corto(&h.resumen, 46)).on_hover_text(&h.resumen);
                             ui.label(
-                                RichText::new(nombre_naturaleza(h.naturaleza)).color(color_naturaleza(h.naturaleza)),
+                                RichText::new(nombre_naturaleza(h.naturaleza))
+                                    .color(color_naturaleza(h.naturaleza, ui.visuals().dark_mode)),
                             );
                             if let Some(v) = self.edicion.decimal(
                                 ui,
@@ -1704,7 +1715,7 @@ impl Aplicacion {
                 ui.label(
                     RichText::new(format!("{}  —  {} €", nombre_naturaleza(nat), eur(subtotal)))
                         .strong()
-                        .color(color_naturaleza(nat)),
+                        .color(color_naturaleza(nat, ui.visuals().dark_mode)),
                 );
                 egui::Grid::new(("recursos", nombre_naturaleza(nat)))
                     .striped(true)
@@ -2294,14 +2305,15 @@ fn nombre_naturaleza(n: Naturaleza) -> &'static str {
     }
 }
 
-fn color_naturaleza(n: Naturaleza) -> Color32 {
+fn color_naturaleza(n: Naturaleza, oscuro: bool) -> Color32 {
     match n {
         Naturaleza::ManoObra => Color32::from_rgb(90, 150, 230),
         Naturaleza::Material => Color32::from_rgb(80, 175, 110),
         Naturaleza::Maquinaria => Color32::from_rgb(200, 140, 60),
         Naturaleza::Subcontrata => Color32::from_rgb(170, 110, 210),
         Naturaleza::Porcentaje => Color32::GRAY,
-        _ => Color32::LIGHT_GRAY,
+        _ if oscuro => Color32::LIGHT_GRAY,
+        _ => Color32::from_gray(60),
     }
 }
 

@@ -5,6 +5,11 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — modo claro / oscuro
+- Interfaz: botón «☀ Claro» / «🌙 Oscuro» en la barra; la elección se guarda
+  en `tema.txt` de la carpeta de configuración (sin elección, sigue al
+  sistema). Colores de tipo de recurso legibles en los dos modos.
+
 ### Añadido — tarifas de subcontratas
 - `ppto-tarifas`: lee la tarifa de una subcontrata en Excel (Referencia,
   Descripción, Precio y, si la hay, Unidad; proveedor y año del título).

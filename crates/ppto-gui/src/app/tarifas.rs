@@ -188,7 +188,11 @@ impl Aplicacion {
                                 ui.label(super::corto(&l.descripcion, 70)).on_hover_text(&l.descripcion);
                                 let mut ud = egui::TextEdit::singleline(&mut l.unidad).desired_width(40.0);
                                 if l.revisar_unidad {
-                                    ud = ud.background_color(Color32::from_rgb(120, 80, 20));
+                                    ud = ud.background_color(if ui.visuals().dark_mode {
+                                        Color32::from_rgb(120, 80, 20)
+                                    } else {
+                                        Color32::from_rgb(255, 215, 150)
+                                    });
                                 }
                                 if ui.add(ud).changed() {
                                     v.cambios = true;
