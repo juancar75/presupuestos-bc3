@@ -290,14 +290,21 @@ impl Aplicacion {
                                     let precio = match existe {
                                         Some(_) if liga && l.pvp.is_some() && l.fabricante.is_some() => self.p.neto(
                                             l.pvp.unwrap_or_default(),
-                                            dto_de(&self.p, prop, l.fabricante.as_deref().unwrap_or("")),
+                                            dto_de(
+                                                &self.p,
+                                                prop,
+                                                l.fabricante.as_deref().unwrap_or(""),
+                                                l.grupo.as_deref(),
+                                            ),
                                         ),
                                         Some(x) if x.naturaleza != Naturaleza::Porcentaje => {
                                             self.calc.precios.get(&x.codigo).copied().unwrap_or(x.precio)
                                         }
                                         Some(_) => Decimal::ZERO,
                                         None => match (l.pvp, &l.fabricante) {
-                                            (Some(pvp), Some(f)) => self.p.neto(pvp, dto_de(&self.p, prop, f)),
+                                            (Some(pvp), Some(f)) => {
+                                                self.p.neto(pvp, dto_de(&self.p, prop, f, l.grupo.as_deref()))
+                                            }
                                             _ => l.precio.unwrap_or_default(),
                                         },
                                     };
@@ -305,8 +312,8 @@ impl Aplicacion {
                                         (None, Some(pvp), Some(f)) => format!(
                                             "  (PVP {} − {} % {})",
                                             eur(pvp),
-                                            num(dto_de(&self.p, prop, f), 2),
-                                            ppto_core::descuentos::normalizar(f)
+                                            num(dto_de(&self.p, prop, f, l.grupo.as_deref()), 2),
+                                            ppto_core::descuentos::clave(f, l.grupo.as_deref())
                                         ),
                                         _ => String::new(),
                                     };
@@ -362,11 +369,15 @@ impl Aplicacion {
 }
 
 /// Descuento que se aplicará: el de la obra si existe; si no, el estimado por la IA.
-fn dto_de(p: &ppto_core::Presupuesto, prop: &Propuesta, fabricante: &str) -> Decimal {
-    let f = ppto_core::descuentos::normalizar(fabricante);
-    p.descuentos
-        .get(&f)
-        .or_else(|| prop.descuentos.get(&f))
+/// Descuento que tendrá la línea al aceptar: los de la obra mandan y la
+/// propuesta añade los que falten; el del grupo, si existe, y si no el general.
+fn dto_de(p: &ppto_core::Presupuesto, prop: &Propuesta, fabricante: &str, grupo: Option<&str>) -> Decimal {
+    use ppto_core::descuentos::{clave, normalizar};
+    let mut m = prop.descuentos.clone();
+    m.extend(p.descuentos.iter().map(|(k, v)| (k.clone(), *v)));
+    grupo
+        .and_then(|g| m.get(&clave(fabricante, Some(g))))
+        .or_else(|| m.get(&normalizar(fabricante)))
         .copied()
         .unwrap_or_default()
 }

@@ -68,6 +68,9 @@ pub struct LineaPropuesta {
     pub pvp: Option<Decimal>,
     #[serde(default)]
     pub fabricante: Option<String>,
+    /// Grupo de producto del fabricante (descuento propio, p. ej. «E08»).
+    #[serde(default)]
+    pub grupo: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -156,7 +159,8 @@ impl Presupuesto {
                     return Err(ErrorMotor::ValorInvalido("el descompuesto propuesto está vacío".into()));
                 }
                 for (fab, pct) in &prop.descuentos {
-                    let f = crate::descuentos::normalizar(fab);
+                    let (fa, gr) = crate::descuentos::partes(fab);
+                    let f = crate::descuentos::clave(&fa, gr.as_deref());
                     if !self.descuentos.contains_key(&f) {
                         self.fijar_descuento(&f, *pct)?;
                         out.descuentos_nuevos.push((f, *pct));
@@ -184,7 +188,7 @@ impl Presupuesto {
                             if let (true, Some(pvp), Some(fab)) = (sin_tarifa, l.pvp, &l.fabricante) {
                                 // Recurso ya en la obra a neto: se liga a la tarifa del fabricante
                                 let antes = h.precio;
-                                self.fijar_tarifa(&l.codigo, fab, pvp)?;
+                                self.fijar_tarifa_grupo(&l.codigo, fab, l.grupo.as_deref(), pvp)?;
                                 let despues = self.concepto(&l.codigo)?.precio;
                                 out.ligados.push((l.codigo.clone(), antes, despues));
                             } else if let Some(pp) = l.precio
@@ -240,7 +244,7 @@ impl Presupuesto {
                             crate::edicion::validar_codigo(&l.codigo)?;
                             self.insertar(nuevo)?;
                             if let (Some(pvp), Some(fab)) = (l.pvp, &l.fabricante) {
-                                self.fijar_tarifa(&l.codigo, fab, pvp)?;
+                                self.fijar_tarifa_grupo(&l.codigo, fab, l.grupo.as_deref(), pvp)?;
                             }
                             out.nuevos.push(l.codigo.clone());
                         }

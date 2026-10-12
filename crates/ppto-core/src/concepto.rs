@@ -85,6 +85,10 @@ pub struct Concepto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PrecioTarifa {
     pub fabricante: String,
+    /// Grupo de producto del fabricante (p. ej. «E08» de S&P), si tiene
+    /// descuento propio.
+    #[serde(default)]
+    pub grupo: Option<String>,
     pub pvp: Decimal,
 }
 

@@ -281,9 +281,10 @@ fn herramientas() -> Value {
                     "resumen": { "type": "string" },
                     "precio": num,
                     "pvp": num,
-                    "fabricante": { "type": "string" }
+                    "fabricante": { "type": "string" },
+                    "grupo": { "type": "string", "description": "Grupo de producto del fabricante con descuento propio (p. ej. E08 de S&P)" }
                 }, "required": ["codigo", "rendimiento"] } },
-                "descuentos": { "type": "array", "description": "Descuento estimado del instalador sobre tarifa por fabricante (solo se usa si la obra no tiene ya uno para ese fabricante)", "items": { "type": "object", "properties": { "fabricante": { "type": "string" }, "porcentaje": num }, "required": ["fabricante", "porcentaje"] } },
+                "descuentos": { "type": "array", "description": "Descuento estimado del instalador sobre tarifa por fabricante, o por grupo de producto con fabricante «S&P/E08» (solo se usa si la obra no tiene ya ese descuento)", "items": { "type": "object", "properties": { "fabricante": { "type": "string" }, "porcentaje": num }, "required": ["fabricante", "porcentaje"] } },
                 "confianza": { "type": "string", "enum": ["alta", "media", "baja"] },
                 "justificacion": { "type": "string", "description": "De dónde salen precios y rendimientos (obra anterior, tarifa, estimación…)" }
             }, "required": ["partida", "confianza", "justificacion"] }
@@ -514,9 +515,9 @@ fn ver_concepto(p: &Presupuesto, codigo: &str) -> Result<String, String> {
         let _ = writeln!(
             t,
             "Tarifa {}: PVP {} € − {} % = {} € neto",
-            tf.fabricante,
+            p.clave_aplicada(tf),
             eur(tf.pvp),
-            num(p.descuento(&tf.fabricante), 2),
+            num(p.descuento_tarifa(tf), 2),
             eur(c.precio)
         );
     }
@@ -990,6 +991,12 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
                         .map(str::trim)
                         .filter(|f| !f.is_empty())
                         .map(str::to_owned),
+                    grupo: l
+                        .get("grupo")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|g| !g.is_empty())
+                        .map(str::to_owned),
                 });
             }
             Contenido::Descompuesto(v)
@@ -1059,13 +1066,15 @@ fn leer_descuentos(a: &Value) -> Result<std::collections::BTreeMap<String, Decim
             for d in v {
                 let f = texto(d, "fabricante")?;
                 let pct = dec_campo(d, "porcentaje")?.ok_or_else(|| format!("descuento de {f} sin porcentaje"))?;
-                m.insert(ppto_core::descuentos::normalizar(f), pct);
+                let (fa, gr) = ppto_core::descuentos::partes(f);
+                m.insert(ppto_core::descuentos::clave(&fa, gr.as_deref()), pct);
             }
         }
         Some(Value::Object(o)) => {
             for (f, v) in o {
                 let pct = decimal(v).ok_or_else(|| format!("descuento de {f} no válido"))?;
-                m.insert(ppto_core::descuentos::normalizar(f), pct);
+                let (fa, gr) = ppto_core::descuentos::partes(f);
+                m.insert(ppto_core::descuentos::clave(&fa, gr.as_deref()), pct);
             }
         }
         Some(_) => return Err("descuentos: lista de {fabricante, porcentaje}".into()),

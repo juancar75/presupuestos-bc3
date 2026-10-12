@@ -16,6 +16,10 @@ versionado [semántico](https://semver.org/lang/es/).
   estimados por fabricante, que solo se usan si la obra no tiene uno.
 - Interfaz: Recursos → «Descuentos por fabricante» (editar o añadir) y
   columna de tarifa con el PVP editable.
+- **Descuentos por grupo de producto** (p. ej. S&P E08): clave «S&P/E08»;
+  un recurso con grupo usa el descuento del grupo si existe y, si no, el
+  general del fabricante. Grupo editable en Recursos; quitar un descuento
+  de grupo devuelve sus recursos al general. Migración 0005.
 
 ### Añadido — propuestas de la IA con aprobación (P-021)
 - `ppto_core::propuesta`: propuesta de descompuesto o precio directo para

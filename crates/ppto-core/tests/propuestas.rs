@@ -16,6 +16,7 @@ fn linea(codigo: &str, r: rust_decimal::Decimal) -> LineaPropuesta {
         precio: None,
         pvp: None,
         fabricante: None,
+        grupo: None,
     }
 }
 
@@ -185,4 +186,40 @@ fn recurso_a_neto_se_liga_a_la_tarifa() {
     assert_eq!(p.precio("SR.M2").unwrap(), dec!(12));
     p.fijar_descuento("SCHAKO", dec!(50)).unwrap();
     assert_eq!(p.precio("SR.M2").unwrap(), dec!(10));
+}
+
+#[test]
+fn descuento_por_grupo_de_producto() {
+    let mut p = suelo_radiante();
+    p.fijar_descuento("S&P", dec!(40)).unwrap();
+    p.fijar_tarifa_grupo("MT.PANEL", "s&p", Some("e08"), dec!(10)).unwrap();
+    p.fijar_tarifa_grupo("MT.TUBO16", "S&P", Some("E22"), dec!(2)).unwrap();
+    // Sin descuento de grupo: el general (40 %)
+    assert_eq!(p.concepto("MT.PANEL").unwrap().precio, dec!(6));
+    // Grupo E08 con descuento propio: solo cambia MT.PANEL
+    assert_eq!(p.fijar_descuento("S&P/E08", dec!(52)).unwrap(), ["MT.PANEL"]);
+    assert_eq!(p.concepto("MT.PANEL").unwrap().precio, dec!(4.80));
+    assert_eq!(
+        p.concepto("MT.TUBO16").unwrap().precio,
+        dec!(1.20),
+        "E22 sigue con el general"
+    );
+    // El general solo afecta a los que no tienen grupo con descuento propio
+    assert_eq!(p.fijar_descuento("S&P", dec!(45)).unwrap(), ["MT.TUBO16"]);
+    assert_eq!(p.concepto("MT.PANEL").unwrap().precio, dec!(4.80));
+    assert_eq!(p.concepto("MT.TUBO16").unwrap().precio, dec!(1.10));
+    // Tabla
+    let f = p.fabricantes();
+    let filas: Vec<_> = f.iter().map(|x| (x.nombre.as_str(), x.descuento, x.recursos)).collect();
+    assert_eq!(filas, [("S&P", dec!(45), 1), ("S&P/E08", dec!(52), 1)]);
+    // Quitar el del grupo: vuelve al general
+    p.quitar_descuento("S&P/E08");
+    assert_eq!(p.concepto("MT.PANEL").unwrap().precio, dec!(5.50));
+    // Cambiar el grupo de un recurso
+    p.fijar_descuento("S&P/E22", dec!(60)).unwrap();
+    p.fijar_grupo("MT.PANEL", "E22").unwrap();
+    assert_eq!(p.concepto("MT.PANEL").unwrap().precio, dec!(4));
+    p.fijar_grupo("MT.PANEL", "").unwrap();
+    assert_eq!(p.concepto("MT.PANEL").unwrap().tarifa.as_ref().unwrap().grupo, None);
+    assert_eq!(p.concepto("MT.PANEL").unwrap().precio, dec!(5.50));
 }

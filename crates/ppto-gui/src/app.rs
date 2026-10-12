@@ -84,6 +84,10 @@ enum Accion {
     Descuento(String, Decimal),
     /// PVP de tarifa de un recurso ligado a un fabricante.
     Pvp(String, Decimal),
+    /// Grupo de producto de un recurso con tarifa (vacío = sin grupo).
+    GrupoTarifa(String, String),
+    /// Quitar un descuento («S&P» o «S&P/E08»).
+    QuitarDescuento(String),
     RechazarPropuesta(u64),
     Dificultad {
         ambito: String,
@@ -254,6 +258,8 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::AceptarPropuesta(id) => (format!("propuesta IA #{id}"), None),
         Accion::Descuento(f, _) => (format!("descuento {f}"), None),
         Accion::Pvp(c, _) => (format!("PVP de {c}"), None),
+        Accion::GrupoTarifa(c, _) => (format!("grupo de {c}"), None),
+        Accion::QuitarDescuento(k) => (format!("quitar descuento {k}"), None),
         Accion::Dificultad {
             ambito,
             coeficiente,
@@ -880,11 +886,19 @@ impl Aplicacion {
                 Accion::Pvp(codigo, pvp) => {
                     let fab = self.p.conceptos.get(&codigo).and_then(|c| c.tarifa.clone());
                     match fab {
-                        Some(t) => self.p.fijar_tarifa(&codigo, &t.fabricante, pvp),
+                        Some(t) => self
+                            .p
+                            .fijar_tarifa_grupo(&codigo, &t.fabricante, t.grupo.as_deref(), pvp),
                         None => Err(ppto_core::ErrorMotor::ValorInvalido(format!(
                             "«{codigo}» no tiene tarifa"
                         ))),
                     }
+                }
+                Accion::GrupoTarifa(codigo, grupo) => self.p.fijar_grupo(&codigo, &grupo),
+                Accion::QuitarDescuento(k) => {
+                    let v = self.p.quitar_descuento(&k);
+                    self.info(format!("Descuento {k} quitado: {} recursos recalculados.", v.len()));
+                    Ok(())
                 }
                 Accion::RechazarPropuesta(id) => {
                     self.enlace.marcar(id, ppto_core::propuesta::EstadoPropuesta::Rechazada);
@@ -1859,13 +1873,25 @@ impl Aplicacion {
                                     ) {
                                         acciones.push(Accion::Pvp(r.codigo.clone(), v));
                                     }
+                                    ui.label(RichText::new(format!("{} grupo", t.fabricante)).weak());
+                                    if let Some(g) = self.edicion.texto(
+                                        ui,
+                                        &format!("grp|{}", r.codigo),
+                                        t.grupo.as_deref().unwrap_or(""),
+                                        45.0,
+                                    ) {
+                                        acciones.push(Accion::GrupoTarifa(r.codigo.clone(), g));
+                                    }
                                     ui.label(
                                         RichText::new(format!(
-                                            "− {} % {}",
-                                            num(self.p.descuento(&t.fabricante), 2),
-                                            t.fabricante
+                                            "− {} % ({})",
+                                            num(self.p.descuento_tarifa(&t), 2),
+                                            self.p.clave_aplicada(&t)
                                         ))
                                         .weak(),
+                                    )
+                                    .on_hover_text(
+                                        "Si el grupo tiene descuento propio (p. ej. S&P/E08) se usa ese; si no, el general del fabricante.",
                                     );
                                 });
                                 ui.label(eur(r.precio)).on_hover_text(

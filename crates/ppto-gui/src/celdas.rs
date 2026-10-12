@@ -43,6 +43,13 @@ impl Edicion {
         leer(&t).filter(|v| *v != valor)
     }
 
+    /// Celda de texto corto. Devuelve `Some(nuevo)` al confirmar un cambio.
+    pub fn texto(&mut self, ui: &mut egui::Ui, clave: &str, valor: &str, ancho: f32) -> Option<String> {
+        let t = self.celda(ui, clave, valor.to_owned(), ancho)?;
+        let t = t.trim().to_owned();
+        (t != valor).then_some(t)
+    }
+
     /// Celda que admite quedar vacía. Devuelve `Some(nuevo)` al confirmar un cambio.
     pub fn opcional(
         &mut self,
