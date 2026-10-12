@@ -35,6 +35,10 @@ pub struct Presupuesto {
     pub costes_indirectos: Decimal,
     #[serde(default)]
     pub opciones_ci: OpcionesCi,
+    /// Descuento sobre tarifa por fabricante, en puntos (45 = 45 %). Se
+    /// aplica a los recursos con [`crate::concepto::PrecioTarifa`].
+    #[serde(default)]
+    pub descuentos: BTreeMap<String, Decimal>,
 }
 
 /// Opciones de aplicación de los costes indirectos (equivalentes a las de
@@ -108,6 +112,7 @@ impl Presupuesto {
             mediciones: BTreeMap::new(),
             costes_indirectos: Decimal::ZERO,
             opciones_ci: OpcionesCi::default(),
+            descuentos: BTreeMap::new(),
         }
     }
 
@@ -191,6 +196,8 @@ impl Presupuesto {
 
     /// Cambia el precio propio de un recurso básico o de una partida sin
     /// descomponer (precio directo, como al valorar un presupuesto ciego).
+    /// Fija el precio neto. Si el recurso estaba ligado a una tarifa de
+    /// fabricante, deja de estarlo (el precio escrito manda).
     pub fn fijar_precio(&mut self, codigo: &str, precio: Decimal) -> Result<(), ErrorMotor> {
         let c = self.concepto_mut(codigo)?;
         let partida_directa = c.naturaleza == Naturaleza::Partida && c.descomposicion.is_empty();
@@ -203,6 +210,7 @@ impl Presupuesto {
             return Err(ErrorMotor::ValorInvalido("el precio no puede ser negativo".into()));
         }
         c.precio = precio;
+        c.tarifa = None;
         Ok(())
     }
 

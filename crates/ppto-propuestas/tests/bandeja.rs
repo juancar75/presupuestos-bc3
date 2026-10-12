@@ -13,6 +13,7 @@ fn prop(partida: &str, precio: rust_decimal::Decimal) -> Propuesta {
         justificacion: "x".into(),
         autor: "IA".into(),
         estado: EstadoPropuesta::Aceptada, // se ignora: entra pendiente
+        descuentos: Default::default(),
     }
 }
 

@@ -275,12 +275,24 @@ impl Aplicacion {
                                             self.calc.precios.get(&x.codigo).copied().unwrap_or(x.precio)
                                         }
                                         Some(_) => Decimal::ZERO,
-                                        None => l.precio.unwrap_or_default(),
+                                        None => match (l.pvp, &l.fabricante) {
+                                            (Some(pvp), Some(f)) => self.p.neto(pvp, dto_de(&self.p, prop, f)),
+                                            _ => l.precio.unwrap_or_default(),
+                                        },
+                                    };
+                                    let tarifa = match (existe, l.pvp, &l.fabricante) {
+                                        (None, Some(pvp), Some(f)) => format!(
+                                            "  (PVP {} − {} % {})",
+                                            eur(pvp),
+                                            num(dto_de(&self.p, prop, f), 2),
+                                            ppto_core::descuentos::normalizar(f)
+                                        ),
+                                        _ => String::new(),
                                     };
                                     ui.label(if n == Some(Naturaleza::Porcentaje) {
                                         "%".to_owned()
                                     } else {
-                                        eur(precio)
+                                        format!("{}{tarifa}", eur(precio))
                                     });
                                     ui.end_row();
                                 }
@@ -326,6 +338,16 @@ impl Aplicacion {
             }
         ))
     }
+}
+
+/// Descuento que se aplicará: el de la obra si existe; si no, el estimado por la IA.
+fn dto_de(p: &ppto_core::Presupuesto, prop: &Propuesta, fabricante: &str) -> Decimal {
+    let f = ppto_core::descuentos::normalizar(fabricante);
+    p.descuentos
+        .get(&f)
+        .or_else(|| prop.descuentos.get(&f))
+        .copied()
+        .unwrap_or_default()
 }
 
 /// Número de la propuesta en la etiqueta de Deshacer («propuesta IA #12»).

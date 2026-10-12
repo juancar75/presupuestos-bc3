@@ -5,6 +5,18 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — descuentos por fabricante
+- Recursos con **PVP de tarifa y fabricante** (`PrecioTarifa`): el neto es
+  PVP × (1 − descuento del fabricante). `Presupuesto::descuentos`,
+  `fijar_descuento` (recalcula todos los recursos del fabricante),
+  `fijar_tarifa`, `fabricantes`. Escribir el neto a mano desliga la tarifa.
+- Base de datos: migración 0004 (PVP, fabricante y tabla de descuentos por
+  revisión). El BC3 sigue llevando netos.
+- Propuestas de la IA: líneas con `pvp` y `fabricante` y descuentos
+  estimados por fabricante, que solo se usan si la obra no tiene uno.
+- Interfaz: Recursos → «Descuentos por fabricante» (editar o añadir) y
+  columna de tarifa con el PVP editable.
+
 ### Añadido — propuestas de la IA con aprobación (P-021)
 - `ppto_core::propuesta`: propuesta de descompuesto o precio directo para
   una partida, con confianza y justificación; `aplicar_propuesta` (reutiliza

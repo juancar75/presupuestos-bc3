@@ -12,6 +12,9 @@ pub(super) struct FormDificultad {
     pub ambito: String,
     pub coeficiente: String,
     pub motivo: String,
+    /// Alta de un descuento de fabricante (pestaña Recursos).
+    pub nuevo_fab: String,
+    pub nuevo_dto: String,
 }
 
 /// Texto para Deshacer y para la auditoría de la revisión.
@@ -155,5 +158,65 @@ impl Aplicacion {
             },
         }
         self.dificultad = f;
+    }
+}
+
+impl Aplicacion {
+    /// Tabla de descuentos por fabricante (pestaña Recursos).
+    pub(super) fn form_descuentos(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+        ui.label(
+            RichText::new(
+                "Los recursos con PVP de tarifa calculan su neto con el descuento de su fabricante. \
+                 Cambie aquí el descuento y se recalculan todos de una vez.",
+            )
+            .weak(),
+        );
+        let fabs = self.p.fabricantes();
+        egui::Grid::new("descuentos")
+            .striped(true)
+            .num_columns(3)
+            .show(ui, |ui| {
+                for t in ["Fabricante", "Descuento %", "Recursos"] {
+                    ui.label(RichText::new(t).weak());
+                }
+                ui.end_row();
+                for f in &fabs {
+                    ui.label(&f.nombre);
+                    if let Some(v) = self
+                        .edicion
+                        .decimal(ui, &format!("dto|{}", f.nombre), f.descuento, 2, 70.0)
+                    {
+                        acciones.push(Accion::Descuento(f.nombre.clone(), v));
+                    }
+                    ui.label(f.recursos.to_string());
+                    ui.end_row();
+                }
+            });
+        ui.horizontal(|ui| {
+            ui.label("Añadir fabricante");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.dificultad.nuevo_fab)
+                    .desired_width(140.0)
+                    .hint_text("KOOLAIR"),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut self.dificultad.nuevo_dto)
+                    .desired_width(60.0)
+                    .hint_text("45"),
+            );
+            let v = leer(&self.dificultad.nuevo_dto);
+            if ui
+                .add_enabled(
+                    v.is_some() && !self.dificultad.nuevo_fab.trim().is_empty(),
+                    egui::Button::new("Añadir"),
+                )
+                .clicked()
+                && let Some(v) = v
+            {
+                acciones.push(Accion::Descuento(self.dificultad.nuevo_fab.trim().to_owned(), v));
+                self.dificultad.nuevo_fab.clear();
+                self.dificultad.nuevo_dto.clear();
+            }
+        });
     }
 }

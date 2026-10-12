@@ -269,7 +269,7 @@ fn herramientas() -> Value {
         },
         {
             "name": "proponer",
-            "description": "Propone el precio de una partida de la obra activa: un descompuesto (lineas) o un precio directo (precio). NO modifica el presupuesto: queda pendiente hasta que el usuario la acepte en el programa. Reutilice los códigos de recursos que ya existen en la obra (se usan con su precio de la obra); para un recurso nuevo indique naturaleza, unidad, resumen y precio. Para usar una tarifa de subcontrata, código PROVEEDOR.REFERENCIA con naturaleza subcontrata y su precio. Una línea porcentual (medios auxiliares) lleva naturaleza porcentaje y los puntos como rendimiento.",
+            "description": "Propone el precio de una partida de la obra activa: un descompuesto (lineas) o un precio directo (precio). NO modifica el presupuesto: queda pendiente hasta que el usuario la acepte en el programa. Reutilice los códigos de recursos que ya existen en la obra (se usan con su precio de la obra); para un recurso nuevo indique naturaleza, unidad, resumen y precio. Para material de catálogo de un fabricante, indique pvp (precio de tarifa) y fabricante en lugar de precio, y en descuentos el descuento estimado del instalador para ese fabricante: el neto se calcula con el descuento de la obra y el usuario lo ajusta después para todos los recursos del fabricante. Para usar una tarifa de subcontrata, código PROVEEDOR.REFERENCIA con naturaleza subcontrata y su precio. Una línea porcentual (medios auxiliares) lleva naturaleza porcentaje y los puntos como rendimiento.",
             "inputSchema": { "type": "object", "properties": {
                 "partida": { "type": "string" },
                 "precio": num,
@@ -279,8 +279,11 @@ fn herramientas() -> Value {
                     "naturaleza": { "type": "string", "enum": ["mano_obra", "material", "maquinaria", "subcontrata", "otros", "porcentaje"] },
                     "unidad": { "type": "string" },
                     "resumen": { "type": "string" },
-                    "precio": num
+                    "precio": num,
+                    "pvp": num,
+                    "fabricante": { "type": "string" }
                 }, "required": ["codigo", "rendimiento"] } },
+                "descuentos": { "type": "array", "description": "Descuento estimado del instalador sobre tarifa por fabricante (solo se usa si la obra no tiene ya uno para ese fabricante)", "items": { "type": "object", "properties": { "fabricante": { "type": "string" }, "porcentaje": num }, "required": ["fabricante", "porcentaje"] } },
                 "confianza": { "type": "string", "enum": ["alta", "media", "baja"] },
                 "justificacion": { "type": "string", "description": "De dónde salen precios y rendimientos (obra anterior, tarifa, estimación…)" }
             }, "required": ["partida", "confianza", "justificacion"] }
@@ -507,6 +510,16 @@ fn ver_concepto(p: &Presupuesto, codigo: &str) -> Result<String, String> {
         c.resumen,
         naturaleza(c.naturaleza)
     );
+    if let Some(tf) = &c.tarifa {
+        let _ = writeln!(
+            t,
+            "Tarifa {}: PVP {} € − {} % = {} € neto",
+            tf.fabricante,
+            eur(tf.pvp),
+            num(p.descuento(&tf.fabricante), 2),
+            eur(c.precio)
+        );
+    }
     if c.naturaleza == Naturaleza::Capitulo {
         let _ = writeln!(t, "Importe del capítulo: {} €", eur(coste));
     } else {
@@ -828,6 +841,18 @@ fn abrir_obra_activa(estado: &mut Estado) -> Result<String, String> {
         sin,
         eur(v.pem)
     );
+    let mut t = t;
+    let fabs = p.fabricantes();
+    if !fabs.is_empty() {
+        t.push_str("\nDescuentos de la obra: ");
+        t.push_str(
+            &fabs
+                .iter()
+                .map(|f| format!("{} {} % ({} recursos)", f.nombre, num(f.descuento, 2), f.recursos))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+    }
     estado.presupuesto = Some(p);
     estado.origen = String::new();
     estado.obra_activa = Some(o.clave);
@@ -958,6 +983,13 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
                     unidad: l.get("unidad").and_then(Value::as_str).unwrap_or("").to_owned(),
                     resumen: l.get("resumen").and_then(Value::as_str).unwrap_or("").to_owned(),
                     precio: dec_campo(l, "precio")?,
+                    pvp: dec_campo(l, "pvp")?,
+                    fabricante: l
+                        .get("fabricante")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|f| !f.is_empty())
+                        .map(str::to_owned),
                 });
             }
             Contenido::Descompuesto(v)
@@ -972,6 +1004,7 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
         justificacion,
         autor: "IA (MCP)".into(),
         estado: EstadoPropuesta::Pendiente,
+        descuentos: leer_descuentos(a)?,
     };
     let sim = p
         .simular_propuesta(&prop)
@@ -991,6 +1024,13 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
     if !sim.nuevos.is_empty() {
         let _ = write!(t, "\nRecursos nuevos: {}.", sim.nuevos.join(", "));
     }
+    for (f, pct) in &sim.descuentos_nuevos {
+        let _ = write!(
+            t,
+            "\nDescuento {f} {} % (estimado; la obra no lo tenía: el usuario lo puede cambiar para todos sus recursos).",
+            num(*pct, 2)
+        );
+    }
     for (c, obra, propuesto) in &sim.precios_distintos {
         let _ = write!(
             t,
@@ -1000,6 +1040,29 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
         );
     }
     Ok(t)
+}
+
+/// `descuentos`: [{fabricante, porcentaje}] o {"FABRICANTE": porcentaje}.
+fn leer_descuentos(a: &Value) -> Result<std::collections::BTreeMap<String, Decimal>, String> {
+    let mut m = std::collections::BTreeMap::new();
+    match a.get("descuentos") {
+        None | Some(Value::Null) => {}
+        Some(Value::Array(v)) => {
+            for d in v {
+                let f = texto(d, "fabricante")?;
+                let pct = dec_campo(d, "porcentaje")?.ok_or_else(|| format!("descuento de {f} sin porcentaje"))?;
+                m.insert(ppto_core::descuentos::normalizar(f), pct);
+            }
+        }
+        Some(Value::Object(o)) => {
+            for (f, v) in o {
+                let pct = decimal(v).ok_or_else(|| format!("descuento de {f} no válido"))?;
+                m.insert(ppto_core::descuentos::normalizar(f), pct);
+            }
+        }
+        Some(_) => return Err("descuentos: lista de {fabricante, porcentaje}".into()),
+    }
+    Ok(m)
 }
 
 fn ver_propuestas(estado: &Estado) -> Result<String, String> {

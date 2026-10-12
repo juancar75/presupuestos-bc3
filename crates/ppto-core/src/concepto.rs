@@ -75,6 +75,17 @@ pub struct Concepto {
     pub precio: Decimal,
     pub descomposicion: Vec<LineaDescomposicion>,
     pub texto: Option<String>,
+    /// Precio de tarifa del fabricante: el precio neto (`precio`) se calcula
+    /// con el descuento del fabricante del presupuesto (ver `descuentos`).
+    #[serde(default)]
+    pub tarifa: Option<PrecioTarifa>,
+}
+
+/// PVP de tarifa y fabricante de un recurso.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrecioTarifa {
+    pub fabricante: String,
+    pub pvp: Decimal,
 }
 
 impl Concepto {
@@ -93,6 +104,7 @@ impl Concepto {
             precio,
             descomposicion: Vec::new(),
             texto: None,
+            tarifa: None,
         }
     }
 
@@ -110,6 +122,7 @@ impl Concepto {
             precio: Decimal::ZERO,
             descomposicion: lineas,
             texto: None,
+            tarifa: None,
         }
     }
 
@@ -122,6 +135,7 @@ impl Concepto {
             precio: Decimal::ZERO,
             descomposicion: Vec::new(),
             texto: None,
+            tarifa: None,
         }
     }
 

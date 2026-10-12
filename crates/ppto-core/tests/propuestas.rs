@@ -14,6 +14,8 @@ fn linea(codigo: &str, r: rust_decimal::Decimal) -> LineaPropuesta {
         unidad: String::new(),
         resumen: String::new(),
         precio: None,
+        pvp: None,
+        fabricante: None,
     }
 }
 
@@ -26,6 +28,7 @@ fn propuesta(partida: &str, contenido: Contenido) -> Propuesta {
         justificacion: "prueba".into(),
         autor: "IA".into(),
         estado: EstadoPropuesta::Pendiente,
+        descuentos: Default::default(),
     }
 }
 
@@ -103,4 +106,61 @@ fn precio_directo_y_errores() {
         assert!(p.aplicar_propuesta(m).is_err(), "{m:?}");
         assert_eq!(p, antes, "un error no deja nada a medias");
     }
+}
+
+#[test]
+fn material_de_tarifa_con_descuento_del_fabricante() {
+    let mut p = suelo_radiante();
+    p.nueva_partida("C01", "P.CF", "ud", "Compuerta cortafuegos").unwrap();
+    p.nueva_partida("C01", "P.CF2", "ud", "Otra compuerta").unwrap();
+    let cf = |partida: &str, codigo: &str, pvp| {
+        let mut x = propuesta(
+            partida,
+            Contenido::Descompuesto(vec![
+                LineaPropuesta {
+                    naturaleza: Some(N::Material),
+                    unidad: "ud".into(),
+                    resumen: "Compuerta cortafuegos".into(),
+                    pvp: Some(pvp),
+                    fabricante: Some("koolair".into()),
+                    ..linea(codigo, dec!(1))
+                },
+                linea("MO.OF1F", dec!(1)),
+            ]),
+        );
+        x.descuentos.insert("KOOLAIR".into(), dec!(40)); // estimación de la IA
+        x
+    };
+    // La obra no tiene descuento KOOLAIR: se toma el estimado (40 %)
+    let a = p.aplicar_propuesta(&cf("P.CF", "MT.CF", dec!(500))).unwrap();
+    assert_eq!(a.descuentos_nuevos, [("KOOLAIR".to_owned(), dec!(40))]);
+    // 500 × 0,60 = 300 + 24,50 = 324,50
+    assert_eq!(p.precio("P.CF").unwrap(), dec!(324.50));
+    // El usuario fija su descuento real (45 %): la siguiente propuesta lo respeta
+    let cambiados = p.fijar_descuento("Koolair", dec!(45)).unwrap();
+    assert_eq!(cambiados, ["MT.CF"]);
+    assert_eq!(p.precio("P.CF").unwrap(), dec!(299.50), "500 × 0,55 = 275 + 24,50");
+    let a = p.aplicar_propuesta(&cf("P.CF2", "MT.CF2", dec!(800))).unwrap();
+    assert!(a.descuentos_nuevos.is_empty(), "manda el descuento de la obra");
+    assert_eq!(p.concepto("MT.CF2").unwrap().precio, dec!(440), "800 × 0,55");
+    // Escribir el neto a mano rompe el vínculo con la tarifa
+    p.fijar_precio("MT.CF2", dec!(350)).unwrap();
+    assert!(p.concepto("MT.CF2").unwrap().tarifa.is_none());
+    assert_eq!(p.fijar_descuento("KOOLAIR", dec!(50)).unwrap(), ["MT.CF"]);
+    assert_eq!(p.concepto("MT.CF2").unwrap().precio, dec!(350));
+    assert_eq!(p.concepto("MT.CF").unwrap().precio, dec!(250));
+    // Fabricantes
+    let f = p.fabricantes();
+    assert_eq!(
+        (f[0].nombre.as_str(), f[0].descuento, f[0].recursos),
+        ("KOOLAIR", dec!(50), 1)
+    );
+    // Errores
+    assert!(p.fijar_descuento("KOOLAIR", dec!(100)).is_err());
+    assert!(p.fijar_descuento("", dec!(10)).is_err());
+    let mut sin_fab = cf("P.CF2", "MT.CF3", dec!(10));
+    if let Contenido::Descompuesto(l) = &mut sin_fab.contenido {
+        l[0].fabricante = None;
+    }
+    assert!(p.aplicar_propuesta(&sin_fab).is_err(), "PVP sin fabricante");
 }

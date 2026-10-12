@@ -58,8 +58,14 @@ pub struct LineaPropuesta {
     pub unidad: String,
     #[serde(default)]
     pub resumen: String,
+    /// Precio neto (si no se da PVP).
     #[serde(default)]
     pub precio: Option<Decimal>,
+    /// PVP de tarifa: el neto sale del descuento del fabricante.
+    #[serde(default)]
+    pub pvp: Option<Decimal>,
+    #[serde(default)]
+    pub fabricante: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -86,6 +92,10 @@ pub struct Propuesta {
     #[serde(default)]
     pub autor: String,
     pub estado: EstadoPropuesta,
+    /// Descuentos estimados por fabricante (puntos). Solo se usan para los
+    /// fabricantes que la obra aún no tiene: los del usuario mandan.
+    #[serde(default)]
+    pub descuentos: std::collections::BTreeMap<String, Decimal>,
 }
 
 /// Resultado de aplicar una propuesta.
@@ -97,6 +107,8 @@ pub struct Aplicada {
     pub nuevos: Vec<String>,
     /// (código, precio en la obra, precio propuesto) cuando no coinciden.
     pub precios_distintos: Vec<(String, Decimal, Decimal)>,
+    /// Descuentos de fabricante que la obra no tenía y se toman de la propuesta.
+    pub descuentos_nuevos: Vec<(String, Decimal)>,
 }
 
 impl Presupuesto {
@@ -137,6 +149,13 @@ impl Presupuesto {
             Contenido::Descompuesto(lineas) => {
                 if lineas.is_empty() {
                     return Err(ErrorMotor::ValorInvalido("el descompuesto propuesto está vacío".into()));
+                }
+                for (fab, pct) in &prop.descuentos {
+                    let f = crate::descuentos::normalizar(fab);
+                    if !self.descuentos.contains_key(&f) {
+                        self.fijar_descuento(&f, *pct)?;
+                        out.descuentos_nuevos.push((f, *pct));
+                    }
                 }
                 let mut nuevas = Vec::new();
                 for l in lineas {
@@ -179,9 +198,18 @@ impl Presupuesto {
                                     )));
                                 }
                                 n => {
-                                    let precio = l.precio.ok_or_else(|| {
-                                        ErrorMotor::ValorInvalido(format!("«{}» nuevo sin precio", l.codigo))
-                                    })?;
+                                    let precio = match (l.pvp, &l.fabricante) {
+                                        (Some(_), None) => {
+                                            return Err(ErrorMotor::ValorInvalido(format!(
+                                                "«{}»: con PVP hay que indicar el fabricante",
+                                                l.codigo
+                                            )));
+                                        }
+                                        (Some(pvp), Some(_)) => pvp,
+                                        (None, _) => l.precio.ok_or_else(|| {
+                                            ErrorMotor::ValorInvalido(format!("«{}» nuevo sin precio", l.codigo))
+                                        })?,
+                                    };
                                     if precio < Decimal::ZERO {
                                         return Err(ErrorMotor::ValorInvalido(format!(
                                             "«{}» con precio negativo",
@@ -199,6 +227,9 @@ impl Presupuesto {
                             };
                             crate::edicion::validar_codigo(&l.codigo)?;
                             self.insertar(nuevo)?;
+                            if let (Some(pvp), Some(fab)) = (l.pvp, &l.fabricante) {
+                                self.fijar_tarifa(&l.codigo, fab, pvp)?;
+                            }
                             out.nuevos.push(l.codigo.clone());
                         }
                     }
