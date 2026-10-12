@@ -93,6 +93,23 @@ cargo run -p ppto-cli -- ciego ciego.xlsx --precios base.bc3 --valorado ciego-va
 cargo run -p ppto-cli -- ciego ciego.xlsx --bc3 ciego.bc3     # para valorarlo en Presto
 ```
 
+## Tarifas de subcontratas
+
+Las tarifas de las subcontratas (p. ej. «Instalación detector analógico
+15,00 €/ud», «Cableado manguera 4,50 €/m») se importan desde Excel en
+**🧾 Tarifas…**: columnas Referencia, Descripción, Precio y, si existe,
+Unidad. Si la tarifa no trae unidad se deduce de la descripción y las dudosas
+salen en naranja para revisarlas. Se guardan solo en el equipo del usuario
+(`%APPDATA%\presupuestos-bc3\tarifas.json`).
+
+En un descompuesto, **+ Añadir línea… → De tarifa de subcontrata** busca en
+todas las tarifas y añade el recurso como subcontrata con código
+`PROVEEDOR.REFERENCIA`, en lugar de la mano de obra propia.
+
+```
+ppto tarifa "Tarifa proveedor 2026.xlsx"     # comprobar lo que se importa
+```
+
 ## Presupuesto en PDF
 
 Botón **PDF…** de la interfaz (o `--pdf presupuesto.pdf` en `ppto demo` e

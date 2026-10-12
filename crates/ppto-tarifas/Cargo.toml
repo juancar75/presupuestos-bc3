@@ -1,0 +1,24 @@
+[package]
+name = "ppto-tarifas"
+description = "Tarifas de subcontratas (precios netos por unidad de obra) para usar como recursos de subcontrata"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ppto-core.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json = "1.0"
+thiserror.workspace = true
+calamine = "0.36"
+
+[dev-dependencies]
+rust_decimal_macros.workspace = true
+rust_xlsxwriter = "0.99"
+
+[lints]
+workspace = true

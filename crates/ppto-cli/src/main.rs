@@ -16,6 +16,9 @@
 //!                             le pone los precios de un BC3 y devuelve el mismo
 //!                             Excel con los precios (o lo exporta a BC3 para
 //!                             valorarlo en Presto).
+//!   ppto tarifa <tarifa.xlsx> [--proveedor <nombre>] [--vigencia <año>]
+//!                             Lee la tarifa de una subcontrata y lista los
+//!                             recursos con su unidad (marca las deducidas).
 
 use ppto_core::concepto::Naturaleza;
 use ppto_core::ejemplos::{ofertas_montaje_suelo_radiante, suelo_radiante};
@@ -78,9 +81,37 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Some("tarifa") if args.len() >= 2 => {
+            let opcion = |n: &str| {
+                args.iter()
+                    .position(|a| a == n)
+                    .and_then(|i| args.get(i + 1))
+                    .map_or("", String::as_str)
+            };
+            match ppto_tarifas::leer_excel(args[1].as_ref(), opcion("--proveedor"), opcion("--vigencia")) {
+                Ok(t) => {
+                    println!("Tarifa {} · {} · {} líneas", t.nombre(), t.especialidad, t.lineas.len());
+                    for l in &t.lineas {
+                        println!(
+                            "  {:<20} {:<4} {:>12} €  {}{}",
+                            t.codigo(l),
+                            l.unidad,
+                            eur(l.precio),
+                            l.descripcion,
+                            if l.revisar_unidad { "   ← revisar unidad" } else { "" }
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         _ => {
             eprintln!(
-                "uso:\n  ppto demo [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <fichero.bc3>] [--pdf <fichero.pdf>]\n  ppto importar <fichero.bc3> [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <salida.bc3>] [--pdf <fichero.pdf>] [--todo]\n  ppto ciego <ciego.xlsx> [--precios <base.bc3>] [--valorado <salida.xlsx>] [--bc3 <salida.bc3>] [--db <fichero.sqlite>] [--pdf <fichero.pdf>]"
+                "uso:\n  ppto demo [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <fichero.bc3>] [--pdf <fichero.pdf>]\n  ppto importar <fichero.bc3> [--db <fichero.sqlite>] [--excel <fichero.xlsx>] [--bc3 <salida.bc3>] [--pdf <fichero.pdf>] [--todo]\n  ppto ciego <ciego.xlsx> [--precios <base.bc3>] [--valorado <salida.xlsx>] [--bc3 <salida.bc3>] [--db <fichero.sqlite>] [--pdf <fichero.pdf>]\n  ppto tarifa <tarifa.xlsx> [--proveedor <nombre>] [--vigencia <año>]"
             );
             ExitCode::from(2)
         }
