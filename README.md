@@ -97,7 +97,7 @@ cargo run -p ppto-cli -- ciego ciego.xlsx --bc3 ciego.bc3     # para valorarlo e
 
 Las tarifas de las subcontratas (p. ej. «Instalación detector analógico
 15,00 €/ud», «Cableado manguera 4,50 €/m») se importan desde Excel en
-**🧾 Tarifas…**: columnas Referencia, Descripción, Precio y, si existe,
+**Tarifas…**: columnas Referencia, Descripción, Precio y, si existe,
 Unidad. Si la tarifa no trae unidad se deduce de la descripción y las dudosas
 salen en naranja para revisarlas. Se guardan solo en el equipo del usuario
 (`%APPDATA%\presupuestos-bc3\tarifas.json`).
@@ -143,6 +143,25 @@ Se guardan en `%APPDATA%\presupuestos-bc3\perfiles.json`. El diseño está en `c
 `cargo build --release -p ppto-mcp` y añadir `target\release\ppto-mcp.exe` a
 la configuración de Claude Desktop. Permite preguntar por el presupuesto y
 simular cambios y subcontratas sin modificarlo. Ver [`docs/mcp.md`](docs/mcp.md).
+
+### Propuestas de la IA con aprobación
+
+La IA (Claude u otra compatible con MCP) **nunca modifica el presupuesto**:
+propone y usted decide.
+
+1. Abra la obra en el programa (p. ej. un ciego recién importado).
+2. Pida a la IA: «abre la obra activa y propón precio a las partidas sin
+   precio». Usa `abrir_obra_activa`, `partidas_sin_precio`, `buscar`,
+   `ver_concepto` y `buscar_tarifas` para reutilizar sus recursos, precios y
+   tarifas de subcontratas, y deja una propuesta por partida con `proponer`
+   (descompuesto o precio directo, con confianza y justificación).
+3. En el programa, **✨ Propuestas IA (n)** muestra cada propuesta con el
+   precio actual y el propuesto, el importe, el descompuesto (recursos
+   nuevos marcados) y la justificación: **Aceptar** o **Rechazar**, una a
+   una o todas las de confianza alta. Aceptar se deshace con Ctrl+Z.
+
+Programa y MCP se comunican por dos ficheros de la carpeta de configuración
+(`obra-activa.json` y `propuestas.json`).
 
 ## Interfaz de escritorio (prototipo)
 

@@ -5,6 +5,19 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — propuestas de la IA con aprobación (P-021)
+- `ppto_core::propuesta`: propuesta de descompuesto o precio directo para
+  una partida, con confianza y justificación; `aplicar_propuesta` (reutiliza
+  recursos existentes con su precio, da de alta los nuevos, todo o nada) y
+  `simular_propuesta`.
+- `ppto-propuestas`: obra activa publicada por el programa y bandeja de
+  propuestas compartida con el MCP (escritura atómica).
+- MCP: `abrir_obra_activa`, `partidas_sin_precio`, `buscar_tarifas`,
+  `proponer` y `ver_propuestas`. Ninguna herramienta modifica el presupuesto.
+- Interfaz: «✨ Propuestas IA (n)» con vista previa del precio e importe,
+  descompuesto, justificación, Aceptar/Rechazar, aceptar en bloque las de
+  confianza alta y Deshacer (la propuesta vuelve a pendiente).
+
 ### Añadido — coeficiente de dificultad
 - `Presupuesto::aplicar_dificultad(ámbito, coeficiente)`: multiplica los
   rendimientos de mano de obra propia de toda la obra, un capítulo o una
@@ -28,7 +41,7 @@ versionado [semántico](https://semver.org/lang/es/).
   cable, tubo…) y marca las dudosas para revisar. Biblioteca de tarifas en
   `tarifas.json` de la carpeta de configuración (nunca en el repositorio),
   búsqueda en todas y alta como recurso de subcontrata `PROVEEDOR.REFERENCIA`.
-- Interfaz: «🧾 Tarifas…» (importar, revisar unidades y precios, guardar) y
+- Interfaz: «Tarifas…» (importar, revisar unidades y precios, guardar) y
   «+ Añadir línea… → De tarifa de subcontrata».
 - CLI: `ppto tarifa <tarifa.xlsx>` lista los recursos con su unidad.
 

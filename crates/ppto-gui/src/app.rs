@@ -6,6 +6,7 @@ mod alta;
 mod ciego;
 mod dificultad;
 mod pdf;
+mod propuestas;
 mod ratio;
 mod tarifas;
 mod tema;
@@ -78,6 +79,8 @@ enum Accion {
     Trasladar(String, String, String, Option<String>),
     Alta(TipoAlta),
     AplicarRatio(ppto_core::ratio::PaqueteRatio),
+    AceptarPropuesta(u64),
+    RechazarPropuesta(u64),
     Dificultad {
         ambito: String,
         coeficiente: Decimal,
@@ -189,6 +192,8 @@ pub struct Aplicacion {
     dificultad: dificultad::FormDificultad,
     /// Cambios que se anotan en la auditoría al guardar la revisión.
     notas_revision: Vec<String>,
+    /// Obra publicada para la IA y bandeja de propuestas.
+    enlace: propuestas::Enlace,
 }
 
 /// Deshacer / rehacer: copias completas del presupuesto antes de cada cambio.
@@ -242,6 +247,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::Mover(p, h, _) => (format!("mover {h} en {p}"), None),
         Accion::Trasladar(o, h, d, _) => (format!("mover {h} de {o} a {d}"), None),
         Accion::AplicarRatio(p) => (format!("subcontrata {}", p.codigo), None),
+        Accion::AceptarPropuesta(id) => (format!("propuesta IA #{id}"), None),
         Accion::Dificultad {
             ambito,
             coeficiente,
@@ -258,6 +264,7 @@ impl Aplicacion {
         cc.egui_ctx.set_global_style(estilo);
         tema::aplicar_guardado(&cc.egui_ctx);
         let mut app = Self::sin_ventana();
+        app.enlace = propuestas::Enlace::en_disco();
         if let Some(r) = tarifas::ruta_tarifas() {
             app.tarifas = ppto_tarifas::Biblioteca::cargar(&r);
         }
@@ -314,6 +321,7 @@ impl Aplicacion {
             ventana_tarifas: None,
             dificultad: dificultad::FormDificultad::default(),
             notas_revision: Vec::new(),
+            enlace: propuestas::Enlace::sin_disco(),
         };
         app.recalcular();
         app
@@ -321,6 +329,7 @@ impl Aplicacion {
 
     fn recalcular(&mut self) {
         self.calc = Calculo::de(&self.p);
+        self.enlace.sucia = true;
     }
 
     fn marcar_cambio(&mut self) {
@@ -834,7 +843,7 @@ impl Aplicacion {
                 } => self.p.aplicar_dificultad(&ambito, coeficiente).map(|inf| {
                     let nota = dificultad::describir(&ambito, coeficiente, &motivo);
                     self.info(format!(
-                        "Aplicado {nota}: {} h → {} h de mano de obra propia; coste directo {} → {} €.{}",
+                        "Aplicado {nota}: de {} h a {} h de mano de obra propia; coste directo de {} € a {} €.{}",
                         num(inf.total_antes(), 2),
                         num(inf.total_despues(), 2),
                         eur(inf.coste_antes),
@@ -847,6 +856,18 @@ impl Aplicacion {
                     ));
                     self.notas_revision.push(nota);
                 }),
+                Accion::AceptarPropuesta(id) => match self.aceptar_propuesta(id) {
+                    Ok(t) => {
+                        self.info(t);
+                        Ok(())
+                    }
+                    Err(e) => Err(ppto_core::ErrorMotor::ValorInvalido(e)),
+                },
+                Accion::RechazarPropuesta(id) => {
+                    self.enlace.marcar(id, ppto_core::propuesta::EstadoPropuesta::Rechazada);
+                    self.info(format!("Propuesta #{id} rechazada."));
+                    continue;
+                }
                 Accion::Navegar(d) => {
                     self.navegar(d, false);
                     continue;
@@ -957,6 +978,9 @@ impl Aplicacion {
             if let Some(i) = self.notas_revision.iter().rposition(|n| *n == que) {
                 self.notas_revision.remove(i);
             }
+            if let Some(id) = propuestas::id_en_etiqueta(&que) {
+                self.enlace.marcar(id, ppto_core::propuesta::EstadoPropuesta::Pendiente);
+            }
             self.historial.rehacer.push((actual, que.clone()));
             self.tras_historial(format!("Deshecho: {que}."));
         }
@@ -967,6 +991,9 @@ impl Aplicacion {
             let actual = std::mem::replace(&mut self.p, p);
             if que.starts_with("dificultad ") {
                 self.notas_revision.push(que.clone());
+            }
+            if let Some(id) = propuestas::id_en_etiqueta(&que) {
+                self.enlace.marcar(id, ppto_core::propuesta::EstadoPropuesta::Aceptada);
             }
             self.historial.deshacer.push((actual, que.clone()));
             self.tras_historial(format!("Rehecho: {que}."));
@@ -1078,8 +1105,9 @@ impl Aplicacion {
             {
                 self.exportar_excel();
             }
+            self.boton_propuestas(ui);
             if ui
-                .button("🧾 Tarifas…")
+                .button("Tarifas…")
                 .on_hover_text(
                     "Tarifas de subcontratas: importar de Excel, revisar unidades y usarlas en los descompuestos",
                 )
@@ -2219,6 +2247,8 @@ impl eframe::App for Aplicacion {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Title(titulo.clone()));
             self.titulo = titulo;
         }
+        let ctx0 = ui.ctx().clone();
+        self.sincronizar_ia(&ctx0);
 
         let mut acciones = Vec::new();
         // Ctrl+Z / Ctrl+Y (o Ctrl+Mayús+Z): deshacer / rehacer, salvo mientras
@@ -2303,6 +2333,7 @@ impl eframe::App for Aplicacion {
         self.ventana_alta(&ctx, &mut acciones);
         self.ventana_pdf(&ctx);
         self.ventana_tarifas(&ctx);
+        self.ventana_propuestas(&ctx, &mut acciones);
         if !acciones.is_empty() {
             self.aplicar(acciones);
         }
@@ -2910,5 +2941,64 @@ mod pruebas {
             });
             out.textures_delta.clear();
         }
+    }
+    #[test]
+    fn propuestas_de_la_ia() {
+        use ppto_core::propuesta::{Confianza, Contenido, EstadoPropuesta as E, Propuesta};
+        let mut app = Aplicacion::sin_ventana();
+        app.aplicar(vec![Accion::NuevaPartida {
+            capitulo: "C01".into(),
+            codigo: "P.DIR".into(),
+            unidad: "ud".into(),
+            resumen: "Partida".into(),
+        }]);
+        let obra = ppto_propuestas::clave(&app.p);
+        for (partida, precio, conf) in [
+            ("P.DIR", dec!(57.30), Confianza::Alta),
+            ("SR.M2", dec!(5), Confianza::Baja),
+        ] {
+            app.enlace.bandeja.anadir(
+                &obra,
+                Propuesta {
+                    id: 0,
+                    partida: partida.into(),
+                    contenido: Contenido::PrecioDirecto(precio),
+                    confianza: conf,
+                    justificacion: "prueba".into(),
+                    autor: "IA".into(),
+                    estado: E::Pendiente,
+                },
+            );
+        }
+        assert_eq!(app.propuestas_pendientes().len(), 2);
+        // La ventana se pinta (una de las dos no se puede aplicar: SR.M2 tiene descompuesto)
+        app.enlace.ventana = true;
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let mut acc = Vec::new();
+                let c = ui.ctx().clone();
+                app.ventana_propuestas(&c, &mut acc);
+                assert!(acc.is_empty());
+            });
+            out.textures_delta.clear();
+        }
+        let pem = app.calc.pem;
+        app.aplicar(vec![Accion::AceptarPropuesta(1)]);
+        assert_eq!(app.calc.precios["P.DIR"], dec!(57.30));
+        assert_eq!(app.enlace.bandeja.buscar(1).unwrap().estado, E::Aceptada);
+        assert!(app.calc.pem > pem);
+        // Deshacer: vuelve a pendiente; rehacer: aceptada
+        app.deshacer();
+        assert_eq!(app.calc.pem, pem);
+        assert_eq!(app.enlace.bandeja.buscar(1).unwrap().estado, E::Pendiente);
+        app.rehacer();
+        assert_eq!(app.enlace.bandeja.buscar(1).unwrap().estado, E::Aceptada);
+        // La imposible da error sin cambiar nada; se puede rechazar
+        let p = app.p.clone();
+        app.aplicar(vec![Accion::AceptarPropuesta(2)]);
+        assert_eq!(app.p, p);
+        app.aplicar(vec![Accion::RechazarPropuesta(2)]);
+        assert!(app.propuestas_pendientes().is_empty());
     }
 }
