@@ -1024,6 +1024,14 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
     if !sim.nuevos.is_empty() {
         let _ = write!(t, "\nRecursos nuevos: {}.", sim.nuevos.join(", "));
     }
+    for (c, antes, despues) in &sim.ligados {
+        let _ = write!(
+            t,
+            "\n{c} se liga a la tarifa del fabricante: neto {} → {} €.",
+            eur(*antes),
+            eur(*despues)
+        );
+    }
     for (f, pct) in &sim.descuentos_nuevos {
         let _ = write!(
             t,

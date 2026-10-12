@@ -164,3 +164,25 @@ fn material_de_tarifa_con_descuento_del_fabricante() {
     }
     assert!(p.aplicar_propuesta(&sin_fab).is_err(), "PVP sin fabricante");
 }
+
+#[test]
+fn recurso_a_neto_se_liga_a_la_tarifa() {
+    let mut p = suelo_radiante();
+    p.fijar_descuento("SCHAKO", dec!(40)).unwrap();
+    // MT.PANEL está en la obra a 9,50 € neto, sin tarifa
+    let mut prop = propuesta(
+        "SR.M2",
+        Contenido::Descompuesto(vec![LineaPropuesta {
+            pvp: Some(dec!(20)),
+            fabricante: Some("Schako".into()),
+            ..linea("MT.PANEL", dec!(1))
+        }]),
+    );
+    prop.descuentos.insert("SCHAKO".into(), dec!(30)); // la obra ya tiene 40 %: manda la obra
+    let a = p.aplicar_propuesta(&prop).unwrap();
+    assert_eq!(a.ligados, [("MT.PANEL".to_owned(), dec!(9.50), dec!(12))], "20 × 0,60");
+    assert!(a.descuentos_nuevos.is_empty());
+    assert_eq!(p.precio("SR.M2").unwrap(), dec!(12));
+    p.fijar_descuento("SCHAKO", dec!(50)).unwrap();
+    assert_eq!(p.precio("SR.M2").unwrap(), dec!(10));
+}

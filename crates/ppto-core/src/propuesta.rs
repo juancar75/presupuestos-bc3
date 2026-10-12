@@ -8,7 +8,9 @@
 //!
 //! Al aceptar ([`Presupuesto::aplicar_propuesta`]):
 //! - Los recursos que ya existen en la obra se reutilizan **con su precio**
-//!   (si la IA proponía otro, se informa en `precios_distintos`).
+//!   (si la IA proponía otro, se informa en `precios_distintos`). Si existen
+//!   a neto sin tarifa y la propuesta trae PVP y fabricante, se **ligan** a
+//!   la tarifa (`ligados`), y su neto pasa a depender del descuento.
 //! - Los nuevos se dan de alta con la naturaleza, unidad y precio propuestos.
 //! - El descompuesto de la partida se sustituye por el propuesto.
 //!
@@ -109,6 +111,9 @@ pub struct Aplicada {
     pub precios_distintos: Vec<(String, Decimal, Decimal)>,
     /// Descuentos de fabricante que la obra no tenía y se toman de la propuesta.
     pub descuentos_nuevos: Vec<(String, Decimal)>,
+    /// Recursos que ya estaban en la obra a neto y se ligan a la tarifa del
+    /// fabricante: (código, neto antes, neto con el descuento).
+    pub ligados: Vec<(String, Decimal, Decimal)>,
 }
 
 impl Presupuesto {
@@ -175,7 +180,14 @@ impl Presupuesto {
                             if h.naturaleza == Naturaleza::Capitulo {
                                 return Err(ErrorMotor::ValorInvalido(format!("«{}» es un capítulo", l.codigo)));
                             }
-                            if let Some(pp) = l.precio
+                            let sin_tarifa = h.tarifa.is_none() && h.naturaleza.es_basico();
+                            if let (true, Some(pvp), Some(fab)) = (sin_tarifa, l.pvp, &l.fabricante) {
+                                // Recurso ya en la obra a neto: se liga a la tarifa del fabricante
+                                let antes = h.precio;
+                                self.fijar_tarifa(&l.codigo, fab, pvp)?;
+                                let despues = self.concepto(&l.codigo)?.precio;
+                                out.ligados.push((l.codigo.clone(), antes, despues));
+                            } else if let Some(pp) = l.precio
                                 && h.naturaleza.es_basico()
                                 && pp != h.precio
                             {

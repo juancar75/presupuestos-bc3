@@ -227,6 +227,22 @@ impl Aplicacion {
                         ))
                         .strong(),
                     );
+                    for (cod, antes, despues) in &s.ligados {
+                        ui.label(
+                            RichText::new(format!(
+                                "{cod}: pasa a precio de tarifa con descuento ({} → {} €)",
+                                eur(*antes),
+                                eur(*despues)
+                            ))
+                            .color(Color32::from_rgb(90, 150, 230)),
+                        );
+                    }
+                    for (f, pct) in &s.descuentos_nuevos {
+                        ui.label(
+                            RichText::new(format!("Descuento {f} {} % (estimado por la IA)", num(*pct, 2)))
+                                .color(Color32::from_rgb(220, 150, 40)),
+                        );
+                    }
                     for (cod, obra, propuesto) in &s.precios_distintos {
                         ui.label(
                             RichText::new(format!(
@@ -270,7 +286,12 @@ impl Aplicacion {
                                         45,
                                     ));
                                     ui.label(num(l.rendimiento, 3));
+                                    let liga = existe.is_some_and(|x| x.tarifa.is_none() && x.naturaleza.es_basico());
                                     let precio = match existe {
+                                        Some(_) if liga && l.pvp.is_some() && l.fabricante.is_some() => self.p.neto(
+                                            l.pvp.unwrap_or_default(),
+                                            dto_de(&self.p, prop, l.fabricante.as_deref().unwrap_or("")),
+                                        ),
                                         Some(x) if x.naturaleza != Naturaleza::Porcentaje => {
                                             self.calc.precios.get(&x.codigo).copied().unwrap_or(x.precio)
                                         }
@@ -280,7 +301,7 @@ impl Aplicacion {
                                             _ => l.precio.unwrap_or_default(),
                                         },
                                     };
-                                    let tarifa = match (existe, l.pvp, &l.fabricante) {
+                                    let tarifa = match (existe.filter(|x| x.tarifa.is_some()), l.pvp, &l.fabricante) {
                                         (None, Some(pvp), Some(f)) => format!(
                                             "  (PVP {} − {} % {})",
                                             eur(pvp),
