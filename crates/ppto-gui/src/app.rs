@@ -3,6 +3,7 @@
 //! recursos, subcontratación y resumen.
 
 mod alta;
+mod asistente;
 mod ciego;
 mod dificultad;
 mod pdf;
@@ -205,6 +206,8 @@ pub struct Aplicacion {
     notas_revision: Vec<String>,
     /// Obra publicada para la IA y bandeja de propuestas.
     enlace: propuestas::Enlace,
+    /// Panel del asistente (conversación con la IA por obra).
+    asistente: asistente::PanelAsistente,
 }
 
 /// Deshacer / rehacer: copias completas del presupuesto antes de cada cambio.
@@ -281,6 +284,7 @@ impl Aplicacion {
         tema::aplicar_guardado(&cc.egui_ctx);
         let mut app = Self::sin_ventana();
         app.enlace = propuestas::Enlace::en_disco();
+        app.asistente = asistente::PanelAsistente::en_disco();
         if let Some(r) = tarifas::ruta_tarifas() {
             app.tarifas = ppto_tarifas::Biblioteca::cargar(&r);
         }
@@ -338,6 +342,7 @@ impl Aplicacion {
             dificultad: dificultad::FormDificultad::default(),
             notas_revision: Vec::new(),
             enlace: propuestas::Enlace::sin_disco(),
+            asistente: asistente::PanelAsistente::sin_disco(),
         };
         app.recalcular();
         app
@@ -1159,6 +1164,8 @@ impl Aplicacion {
                 self.exportar_excel();
             }
             self.boton_propuestas(ui);
+            ui.toggle_value(&mut self.asistente.abierto, "✨ Asistente")
+                .on_hover_text("Conversación con la IA sobre esta obra: encargos, ofertas adjuntas e informes");
             if ui
                 .button("Tarifas…")
                 .on_hover_text(
@@ -2410,6 +2417,7 @@ impl eframe::App for Aplicacion {
                 _ => {}
             });
         });
+        self.panel_asistente(ui);
         egui::Panel::left("arbol")
             .resizable(true)
             .default_size(330.0)
@@ -3176,5 +3184,30 @@ mod pruebas {
         assert!(app.reaplicables().is_empty());
         app.deshacer();
         assert_eq!(app.reaplicables().len(), 1, "se deshace en un paso");
+    }
+
+    #[test]
+    fn panel_del_asistente_en_modo_encargo() {
+        use ppto_propuestas::conversacion::Autor;
+        let mut app = Aplicacion::sin_ventana();
+        app.asistente.abierto = true;
+        app.asistente.entrada = "Valora la climatización con la oferta".into();
+        app.asistente.adjuntos = vec!["C:/ofertas/koolair.pdf".into()];
+        let p = app.p.clone();
+        app.asistente.enviar(&p).unwrap();
+        assert!(app.asistente.entrada.is_empty() && app.asistente.adjuntos.is_empty());
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| app.panel_asistente(ui));
+            out.textures_delta.clear();
+        }
+        let obra = ppto_propuestas::clave(&app.p);
+        let m = app.asistente.mensajes(&obra);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].autor, Autor::Usuario);
+        assert!(!m[0].atendido);
+        assert_eq!(m[0].adjuntos, ["C:/ofertas/koolair.pdf"]);
+        // El presupuesto no cambia
+        assert_eq!(app.p, p);
     }
 }
