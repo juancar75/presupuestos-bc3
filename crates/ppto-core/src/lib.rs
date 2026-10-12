@@ -25,6 +25,7 @@ pub mod explosion;
 pub mod formato;
 pub mod medicion;
 pub mod presupuesto;
+pub mod ratio;
 pub mod subcontrata;
 pub mod venta;
 

@@ -5,6 +5,7 @@
 mod alta;
 mod ciego;
 mod pdf;
+mod ratio;
 
 use crate::celdas::Edicion;
 use alta::{Alta, TipoAlta};
@@ -73,6 +74,7 @@ enum Accion {
     /// Arrastrar y soltar: (origen, hijo, destino, delante de).
     Trasladar(String, String, String, Option<String>),
     Alta(TipoAlta),
+    AplicarRatio(ppto_core::ratio::PaqueteRatio),
     /// Ir a la partida anterior (-1) o siguiente (+1) del presupuesto.
     Navegar(i32),
     SiguienteSinPrecio,
@@ -172,6 +174,7 @@ pub struct Aplicacion {
     /// Llevar el árbol hasta la partida elegida en el próximo fotograma.
     desplazar_arbol: bool,
     historial: Historial,
+    ratio: ratio::FormRatio,
 }
 
 /// Deshacer / rehacer: copias completas del presupuesto antes de cada cambio.
@@ -224,6 +227,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::QuitarLinea(p, h, _) => (format!("quitar {h} de {p}"), None),
         Accion::Mover(p, h, _) => (format!("mover {h} en {p}"), None),
         Accion::Trasladar(o, h, d, _) => (format!("mover {h} de {o} a {d}"), None),
+        Accion::AplicarRatio(p) => (format!("subcontrata {}", p.codigo), None),
         _ => return None,
     })
 }
@@ -282,6 +286,7 @@ impl Aplicacion {
             buscar: String::new(),
             desplazar_arbol: false,
             historial: Historial::default(),
+            ratio: ratio::FormRatio::default(),
         };
         app.recalcular();
         app
@@ -777,6 +782,20 @@ impl Aplicacion {
                     self.cambios = true;
                     continue;
                 }
+                Accion::AplicarRatio(paq) => self.p.aplicar_ratio(&paq).map(|inf| {
+                    let a = inf.ahorro();
+                    self.info(format!(
+                        "Subcontrata {} aplicada: {} {} × {} € = {} € en {} partidas; {} {} €.",
+                        paq.codigo,
+                        num(inf.medidor, 2),
+                        paq.unidad,
+                        eur(paq.precio),
+                        eur(inf.importe),
+                        inf.reparto.len(),
+                        if a >= Decimal::ZERO { "ahorro" } else { "sobrecoste" },
+                        eur(a.abs())
+                    ));
+                }),
                 Accion::Navegar(d) => {
                     self.navegar(d, false);
                     continue;
@@ -1722,6 +1741,15 @@ impl Aplicacion {
     }
 
     fn pestana_subcontratar(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+        egui::CollapsingHeader::new(
+            RichText::new("Subcontrata a ratio (se aplica al presupuesto)")
+                .strong()
+                .size(15.0),
+        )
+        .default_open(true)
+        .show(ui, |ui| self.form_ratio(ui, acciones));
+        ui.separator();
+        ui.label(RichText::new("Comparar ofertas (simulación)").strong().size(15.0));
         let dec = self.p.decimales;
         ui.label("Simula contratar fuera parte de una partida (normalmente la mano de obra). El presupuesto original no cambia.");
         ui.add_space(6.0);
@@ -2686,5 +2714,40 @@ mod pruebas {
         // Abrir otro presupuesto empieza un historial nuevo
         app.nuevo_presupuesto();
         assert!(app.historial.deshacer.is_empty());
+    }
+
+    #[test]
+    fn subcontrata_a_ratio_desde_la_interfaz() {
+        // SR.M2 entera (salvo %MA) a 38 €/m² → 38,76; SR.COL8 sin tocar 242,75 × 3
+        // PEM = 210 × 38,76 + 728,25 = 8.139,60 + 728,25 = 8.867,85
+        let mut app = Aplicacion::sin_ventana();
+        app.pestana = Pestana::Subcontratar;
+        let todos: Vec<String> = app.p.conceptos["SR.M2"]
+            .descomposicion
+            .iter()
+            .map(|l| l.hijo.clone())
+            .filter(|h| h != "%MA")
+            .collect();
+        let paq = ppto_core::ratio::PaqueteRatio {
+            codigo: "SUB.SR".into(),
+            descripcion: "Suelo radiante".into(),
+            unidad: "m2".into(),
+            precio: dec!(38),
+            medidor: vec!["SR.M2".into()],
+            asignaciones: std::collections::BTreeMap::from([("SR.M2".into(), todos)]),
+        };
+        app.aplicar(vec![Accion::AplicarRatio(paq)]);
+        assert_eq!(app.calc.pem, dec!(8867.85));
+        app.deshacer();
+        assert_eq!(app.calc.pem, dec!(7005.15));
+        // La pestaña se pinta con el formulario vacío
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let mut acc = Vec::new();
+                egui::CentralPanel::default_margins().show(ui, |ui| app.pestana_subcontratar(ui, &mut acc));
+            });
+            out.textures_delta.clear();
+        }
     }
 }
