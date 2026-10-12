@@ -5,6 +5,23 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — panel del asistente
+- **✨ Asistente**: conversación con la IA por obra, con adjuntos (ofertas,
+  tarifas, mediciones) e informes. Modo *encargo por MCP* (gratis: «atiende
+  el asistente» en Claude Desktop) o *directo* con clave de API, en segundo
+  plano, con coste por respuesta y límite de gasto mensual.
+- MCP: `leer_mensajes`, `responder`, `leer_adjunto` (Excel, PDF, CSV) y
+  `guardar_informe`; `herramientas_api` y `ejecutar` para el modo directo.
+- Nuevo crate `ppto-asistente` (bucle de herramientas con la API de
+  mensajes, caché de instrucciones, reintentos, control de gasto).
+- «Reaplicar aceptadas»: vuelve a aplicar las propuestas aceptadas al abrir
+  de nuevo el Excel ciego.
+
+### Corregido
+- La bandeja de propuestas se podía perder cuando el programa y el MCP la
+  escribían a la vez o fallaba una lectura: ahora se modifica con fichero de
+  bloqueo y no se sobrescribe si no se puede leer.
+
 ### Cambiado
 - MCP `proponer`: solo admite descompuestos (material, mano de obra,
   maquinaria o subcontrata y medios auxiliares); los precios directos se

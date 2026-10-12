@@ -317,3 +317,68 @@ fn propuestas_a_la_obra_activa() {
         "la segunda propuesta de P.VAL sustituye a la primera"
     );
 }
+
+#[test]
+fn encargos_del_panel_del_asistente() {
+    use ppto_propuestas::conversacion::{Autor, Conversaciones};
+    let dir = std::env::temp_dir().join(format!("mcp-asistente-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = ppto_core::ejemplos::suelo_radiante();
+    let obra = ppto_propuestas::clave(&p);
+    let activa = dir.join("obra-activa.json");
+    ppto_propuestas::ObraActiva::guardar(&p, &activa).unwrap();
+    let conv = dir.join("asistente.json");
+    let oferta = dir.join("oferta fabricante.csv");
+    std::fs::write(&oferta, "Ref;Descripción;PVP\nE08-100;Extractor;812,50\n").unwrap();
+    Conversaciones::modificar(&conv, |c| {
+        c.anadir(
+            &obra,
+            Autor::Usuario,
+            "Valora con la oferta adjunta",
+            vec![oferta.display().to_string()],
+        )
+    })
+    .unwrap();
+    let mut e = Estado {
+        ruta_obra_activa: Some(activa),
+        ruta_bandeja: Some(dir.join("propuestas.json")),
+        ruta_tarifas: Some(dir.join("tarifas.json")),
+        ruta_conversaciones: Some(conv.clone()),
+        ..Estado::default()
+    };
+    // Abre la obra activa sola si hace falta
+    let (t, err) = llamar(&mut e, "leer_mensajes", json!({}));
+    assert!(
+        !err && t.contains("Valora con la oferta adjunta") && t.contains("oferta fabricante.csv"),
+        "{t}"
+    );
+    let (t, err) = llamar(&mut e, "leer_adjunto", json!({ "ruta": oferta.display().to_string() }));
+    assert!(!err && t.contains("E08-100;Extractor;812,50"), "{t}");
+    let (t, err) = llamar(&mut e, "leer_adjunto", json!({ "ruta": "x.dwg" }));
+    assert!(err && t.contains("no admitido"), "{t}");
+
+    let (t, err) = llamar(
+        &mut e,
+        "guardar_informe",
+        json!({ "titulo": "Comparativa ofertas", "contenido": "# Comparativa\n" }),
+    );
+    assert!(!err && t.contains("Comparativa ofertas.md"), "{t}");
+    let (t, err) = llamar(&mut e, "responder", json!({ "texto": "Hecho: 3 propuestas" }));
+    assert!(!err, "{t}");
+    let c = Conversaciones::cargar(&conv);
+    assert!(c.pendientes(&obra).is_empty());
+    assert_eq!(c.de_obra(&obra).last().unwrap().texto, "Hecho: 3 propuestas");
+    let (t, _) = llamar(&mut e, "leer_mensajes", json!({}));
+    assert!(
+        t.contains("No hay mensajes pendientes") && t.contains("Hecho: 3 propuestas"),
+        "{t}"
+    );
+
+    // Formato de la API de mensajes para el modo directo
+    let h = ppto_mcp::herramientas_api(&["leer_mensajes", "responder"]);
+    assert!(h.iter().all(|h| h["input_schema"]["type"] == "object"));
+    assert!(!h.iter().any(|h| h["name"] == "responder"));
+    assert!(h.iter().any(|h| h["name"] == "proponer"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

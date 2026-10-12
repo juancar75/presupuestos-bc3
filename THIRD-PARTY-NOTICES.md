@@ -23,6 +23,14 @@ que las fuentes no se vendan por separado y se conserven sus avisos.
 
 `clipboard-win` y `error-code` (Boost Software License 1.0), compatible con GPL.
 
+## Conexión con la API (`ppto-asistente`)
+
+HTTPS con `ureq` y `rustls` (MIT / Apache-2.0 / ISC). Los certificados se
+verifican con el almacén del sistema (`rustls-platform-verifier`), que en
+algunas plataformas incluye los certificados raíz de Mozilla de
+`webpki-root-certs` (Community Data License Agreement Permissive 2.0: datos,
+no código; ver `deny.toml`). Lectura de PDF adjuntos con `pdf-extract` (MIT).
+
 ## Maquetación PDF (`ppto-pdf`)
 
 El PDF se compone con [Typst](https://github.com/typst/typst) (Apache-2.0),

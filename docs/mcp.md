@@ -42,6 +42,10 @@ ese presupuesto al arrancar.
 | `buscar_tarifas` | Busca en las tarifas de subcontratas del usuario | No |
 | `proponer` | Propone el descompuesto de una partida (no se admiten precios directos) | No: queda **pendiente** en la bandeja |
 | `ver_propuestas` | Estado de las propuestas (pendiente, aceptada, rechazada) | No |
+| `leer_mensajes` | Encargos pendientes del panel del asistente (con adjuntos) y conversación anterior | No |
+| `responder` | Contesta en el panel del asistente y marca los encargos como atendidos | No |
+| `leer_adjunto` | Lee un adjunto: Excel/ODS como CSV por hoja, PDF como texto, CSV o texto | No |
+| `guardar_informe` | Guarda un informe Markdown de la obra (comparativas, resúmenes, dudas…) | No: fichero nuevo |
 
 Las exportaciones exigen la extensión correcta y **se niegan a sobrescribir el
 fichero de origen**.
@@ -77,3 +81,31 @@ apuntar al mismo `ppto-mcp.exe`.
 listado, errores), cada herramienta con cifras calculadas a mano, que las
 simulaciones no alteran el presupuesto, protección del fichero de origen y una
 sesión real con el binario por stdin/stdout.
+
+## Panel del asistente
+
+Botón **✨ Asistente** de la barra superior: conversación con la IA sobre la
+obra abierta, con ficheros adjuntos (ofertas de fabricantes, tarifas,
+mediciones; PDF, Excel, CSV o imágenes) e informes. Se guarda por obra en
+`asistente.json` y los informes en `informes/<obra>/` (carpeta de
+configuración). Dos modos:
+
+- **Encargo por MCP** (gratis con la suscripción de Claude): el mensaje queda
+  *pendiente*; en Claude Desktop basta decir «atiende el asistente». La IA
+  usa `leer_mensajes`, `leer_adjunto`, `proponer`, `guardar_informe` y
+  `responder`, y la respuesta aparece en el panel.
+- **Directo (API)**: el programa llama a la API de mensajes de Anthropic con
+  la clave del usuario (Ajustes del panel, o variable `ANTHROPIC_API_KEY`),
+  en segundo plano, con las mismas herramientas (`ppto-asistente`). Envía los
+  PDF e imágenes completos. Cada respuesta muestra su coste, calculado con
+  los precios por millón de tokens de los ajustes, y se respeta un **límite
+  de gasto mensual** (`asistente-gasto.json`). Usa los certificados del
+  sistema y el proxy de `HTTPS_PROXY`.
+
+En los dos modos la IA **no cambia el presupuesto**: deja propuestas para
+aceptar en «Propuestas IA» e informes. La clave se guarda solo en el equipo
+(`asistente-ajustes.json`).
+
+La bandeja y la conversación se modifican con un fichero de bloqueo
+(`.lock`) para que el programa y el MCP no se pisen, y un fichero que no se
+puede leer no se sobrescribe.

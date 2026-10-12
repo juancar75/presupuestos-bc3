@@ -28,6 +28,12 @@ unused-allowed-license = "allow"
 crate = "epaint_default_fonts"
 allow = ["OFL-1.1", "Ubuntu-font-1.0"]
 
+# Certificados raíz de Mozilla (datos, no código) usados para verificar TLS
+# en el modo directo del asistente; licencia de datos permisiva.
+[[licenses.exceptions]]
+crate = "webpki-root-certs"
+allow = ["CDLA-Permissive-2.0"]
+
 [bans]
 multiple-versions = "warn"
 
@@ -46,6 +52,7 @@ ignore = [
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz vía krilla/typst-pdf; Typst lo sustituirá" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser vía Typst" },
     { id = "RUSTSEC-2024-0320", reason = "yaml-rust vía syntect de Typst" },
+    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml vía serde_yaml de hayagriva (bibliografía de Typst), no usado" },
 ]
 
 [sources]

@@ -21,9 +21,14 @@ pub fn ruta_conversaciones() -> Option<PathBuf> {
     carpeta_config().map(|c| c.join("asistente.json"))
 }
 
-/// Carpeta donde el asistente guarda los informes de una obra.
-pub fn carpeta_informes(obra: &str) -> Option<PathBuf> {
-    carpeta_config().map(|c| c.join("informes").join(nombre_fichero(obra)))
+/// Carpeta donde el asistente guarda los informes de una obra: junto al
+/// fichero de conversaciones, en `informes/<obra>`.
+pub fn carpeta_informes(conversaciones: &Path, obra: &str) -> PathBuf {
+    conversaciones
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("informes")
+        .join(nombre_fichero(obra))
 }
 
 /// Texto apto para nombre de fichero (sin barras ni caracteres reservados).
@@ -39,7 +44,11 @@ pub fn nombre_fichero(s: &str) -> String {
         })
         .collect();
     let t = t.trim().trim_matches('.').to_owned();
-    if t.is_empty() { "sin_nombre".into() } else { t.chars().take(80).collect() }
+    if t.is_empty() {
+        "sin_nombre".into()
+    } else {
+        t.chars().take(80).collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,7 +198,12 @@ mod tests {
         assert_eq!(c.de_obra("A [1]")[1].autor, Autor::Asistente);
 
         let inf = guardar_informe(&dir.join("inf"), "Resumen: clima/PCI", "# Hola").unwrap();
-        assert!(inf.file_name().unwrap().to_string_lossy().starts_with("Resumen_ clima_PCI"));
+        assert!(
+            inf.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("Resumen_ clima_PCI")
+        );
         let inf2 = guardar_informe(&dir.join("inf"), "Resumen: clima/PCI", "# Hola").unwrap();
         assert_ne!(inf, inf2);
         let _ = std::fs::remove_dir_all(&dir);

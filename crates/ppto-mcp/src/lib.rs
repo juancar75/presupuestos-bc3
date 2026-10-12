@@ -20,6 +20,8 @@ use serde_json::{Value, json};
 use std::fmt::Write as _;
 use std::str::FromStr;
 
+pub mod asistente;
+
 /// Versión del protocolo MCP que se anuncia si el cliente no pide otra.
 pub const PROTOCOLO: &str = "2025-06-18";
 
@@ -33,6 +35,7 @@ pub struct Estado {
     pub ruta_obra_activa: Option<std::path::PathBuf>,
     pub ruta_bandeja: Option<std::path::PathBuf>,
     pub ruta_tarifas: Option<std::path::PathBuf>,
+    pub ruta_conversaciones: Option<std::path::PathBuf>,
     pub gg: Decimal,
     pub bi: Decimal,
     pub iva: Decimal,
@@ -47,6 +50,7 @@ impl Default for Estado {
             ruta_obra_activa: ppto_propuestas::ruta_obra_activa(),
             ruta_bandeja: ppto_propuestas::ruta_bandeja(),
             ruta_tarifas: ppto_propuestas::carpeta_config().map(|c| c.join("tarifas.json")),
+            ruta_conversaciones: ppto_propuestas::conversacion::ruta_conversaciones(),
             gg: venta::GG_HABITUAL,
             bi: venta::BI_HABITUAL,
             iva: venta::IVA_GENERAL,
@@ -163,7 +167,10 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                     programa: abrir_obra_activa, partidas_sin_precio, ver_concepto/buscar/buscar_tarifas \
                     para reutilizar recursos y precios existentes, y proponer (una propuesta por partida, \
                     con confianza y justificación de cada precio y rendimiento). El usuario acepta o \
-                    rechaza cada propuesta en el programa; consulte ver_propuestas. Importes en euros con \
+                    rechaza cada propuesta en el programa; consulte ver_propuestas. Si el usuario \
+                    pide «atiende el asistente» o similar, lea los encargos que dejó en el panel del \
+                    programa con leer_mensajes (adjuntos con leer_adjunto), atiéndalos y conteste con \
+                    responder; los informes se guardan con guardar_informe. Importes en euros con \
                     formato español."
             }))
         }
@@ -294,6 +301,32 @@ fn herramientas() -> Value {
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
+            "name": "leer_mensajes",
+            "description": "Encargos que el usuario ha dejado en el panel del asistente del programa para la obra activa (mensajes pendientes, con rutas de adjuntos como ofertas de fabricantes) y la conversación anterior.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "responder",
+            "description": "Contesta en el panel del asistente del programa a los mensajes pendientes de la obra activa (los marca como atendidos). Resuma lo hecho: propuestas creadas, dudas, informes guardados.",
+            "inputSchema": { "type": "object", "properties": {
+                "texto": { "type": "string", "description": "Respuesta (Markdown sencillo)" },
+                "mensajes": { "type": "array", "items": { "type": "integer" }, "description": "Números de los mensajes a los que responde; por defecto, todos los pendientes" }
+            }, "required": ["texto"] }
+        },
+        {
+            "name": "leer_adjunto",
+            "description": "Lee un fichero adjunto del usuario (oferta, tarifa, mediciones): Excel/ODS como CSV por hoja, PDF como texto, CSV o texto plano.",
+            "inputSchema": { "type": "object", "properties": { "ruta": { "type": "string" } }, "required": ["ruta"] }
+        },
+        {
+            "name": "guardar_informe",
+            "description": "Guarda un informe en Markdown para la obra activa (resumen de valoración, comparativa de ofertas, dudas al cliente, memoria de legalización…). El usuario lo abre desde el panel del asistente.",
+            "inputSchema": { "type": "object", "properties": {
+                "titulo": { "type": "string" },
+                "contenido": { "type": "string", "description": "Markdown" }
+            }, "required": ["titulo", "contenido"] }
+        },
+        {
             "name": "exportar_excel",
             "description": "Genera el informe Excel (resumen, presupuesto, descompuestos, mediciones, recursos y horas por oficio) en un fichero nuevo.",
             "inputSchema": { "type": "object", "properties": { "ruta": { "type": "string", "description": "Ruta del .xlsx a crear" } }, "required": ["ruta"] }
@@ -304,6 +337,31 @@ fn herramientas() -> Value {
             "inputSchema": { "type": "object", "properties": { "ruta": { "type": "string", "description": "Ruta del .bc3 a crear" } }, "required": ["ruta"] }
         }
     ])
+}
+
+/// Herramientas en el formato de la API de mensajes de Anthropic
+/// (`name`, `description`, `input_schema`), sin las indicadas en `excluir`.
+/// Las usa el modo directo del asistente del programa.
+pub fn herramientas_api(excluir: &[&str]) -> Vec<Value> {
+    herramientas()
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|h| !excluir.contains(&h["name"].as_str().unwrap_or("")))
+        .map(|h| {
+            json!({
+                "name": h["name"],
+                "description": h["description"],
+                "input_schema": h["inputSchema"],
+            })
+        })
+        .collect()
+}
+
+/// Ejecuta una herramienta (igual que `tools/call`). `Err` lleva el mensaje
+/// de error para la IA.
+pub fn ejecutar(estado: &mut Estado, nombre: &str, args: &Value) -> Result<String, String> {
+    llamar(estado, nombre, args)
 }
 
 fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String> {
@@ -332,6 +390,10 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "buscar_tarifas" => buscar_tarifas(estado, texto(a, "texto")?),
         "proponer" => proponer(estado, a),
         "ver_propuestas" => ver_propuestas(estado),
+        "leer_mensajes" => asistente::leer_mensajes(estado),
+        "responder" => asistente::responder(estado, a),
+        "leer_adjunto" => asistente::leer_adjunto(a),
+        "guardar_informe" => asistente::guardar_informe(estado, a),
         "exportar_excel" => {
             let ruta = destino(estado, texto(a, "ruta")?, "xlsx")?;
             let o = ppto_informes::OpcionesInforme {
@@ -817,7 +879,7 @@ fn naturaleza(n: Naturaleza) -> &'static str {
 
 // ---------------------------------------------------------------- propuestas (P-021)
 
-fn abrir_obra_activa(estado: &mut Estado) -> Result<String, String> {
+pub(crate) fn abrir_obra_activa(estado: &mut Estado) -> Result<String, String> {
     let ruta = estado
         .ruta_obra_activa
         .clone()
