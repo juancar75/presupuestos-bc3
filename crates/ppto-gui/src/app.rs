@@ -80,6 +80,9 @@ enum Accion {
     Alta(TipoAlta),
     AplicarRatio(ppto_core::ratio::PaqueteRatio),
     AceptarPropuesta(u64),
+    /// Volver a aplicar las propuestas ya aceptadas cuyas partidas están
+    /// sin precio (p. ej. tras abrir de nuevo el Excel ciego).
+    ReaplicarAceptadas,
     /// Descuento de un fabricante (puntos).
     Descuento(String, Decimal),
     /// PVP de tarifa de un recurso ligado a un fabricante.
@@ -256,6 +259,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::Trasladar(o, h, d, _) => (format!("mover {h} de {o} a {d}"), None),
         Accion::AplicarRatio(p) => (format!("subcontrata {}", p.codigo), None),
         Accion::AceptarPropuesta(id) => (format!("propuesta IA #{id}"), None),
+        Accion::ReaplicarAceptadas => ("reaplicar propuestas aceptadas".into(), None),
         Accion::Descuento(f, _) => (format!("descuento {f}"), None),
         Accion::Pvp(c, _) => (format!("PVP de {c}"), None),
         Accion::GrupoTarifa(c, _) => (format!("grupo de {c}"), None),
@@ -898,6 +902,18 @@ impl Aplicacion {
                 Accion::QuitarDescuento(k) => {
                     let v = self.p.quitar_descuento(&k);
                     self.info(format!("Descuento {k} quitado: {} recursos recalculados.", v.len()));
+                    Ok(())
+                }
+                Accion::ReaplicarAceptadas => {
+                    let (n, fallos) = self.reaplicar_aceptadas();
+                    self.info(format!(
+                        "{n} propuestas aceptadas vueltas a aplicar.{}",
+                        if fallos.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" No se pudieron aplicar: {}", fallos.join(", "))
+                        }
+                    ));
                     Ok(())
                 }
                 Accion::RechazarPropuesta(id) => {
@@ -2375,6 +2391,9 @@ impl eframe::App for Aplicacion {
             ui.add_space(4.0);
             self.barra_superior(ui);
             ui.add_space(2.0);
+            if std::mem::take(&mut self.enlace.reaplicar) {
+                acciones.push(Accion::ReaplicarAceptadas);
+            }
         });
         egui::Panel::bottom("estado").show(ui, |ui| {
             ui.horizontal(|ui| match (&self.calc.error, &self.mensaje) {
@@ -3110,5 +3129,52 @@ mod pruebas {
             });
             out.textures_delta.clear();
         }
+    }
+    #[test]
+    fn reaplicar_propuestas_aceptadas_tras_reabrir() {
+        use ppto_core::propuesta::{Confianza, Contenido, EstadoPropuesta as E, LineaPropuesta, Propuesta};
+        let mut app = Aplicacion::sin_ventana();
+        app.aplicar(vec![Accion::NuevaPartida {
+            capitulo: "C01".into(),
+            codigo: "P.X".into(),
+            unidad: "ud".into(),
+            resumen: "Partida".into(),
+        }]);
+        let vacio = app.p.clone();
+        let obra = ppto_propuestas::clave(&app.p);
+        app.enlace.bandeja.anadir(
+            &obra,
+            Propuesta {
+                id: 0,
+                partida: "P.X".into(),
+                contenido: Contenido::Descompuesto(vec![LineaPropuesta {
+                    codigo: "MO.OF1F".into(),
+                    rendimiento: dec!(2),
+                    naturaleza: None,
+                    unidad: String::new(),
+                    resumen: String::new(),
+                    precio: None,
+                    pvp: None,
+                    fabricante: None,
+                    grupo: None,
+                }]),
+                confianza: Confianza::Alta,
+                justificacion: "x".into(),
+                autor: "IA".into(),
+                estado: E::Pendiente,
+                descuentos: Default::default(),
+            },
+        );
+        app.aplicar(vec![Accion::AceptarPropuesta(1)]);
+        assert_eq!(app.calc.precios["P.X"], dec!(49));
+        assert!(app.reaplicables().is_empty(), "ya tiene precio");
+        // Se vuelve a abrir la obra vacía (como al importar otra vez el ciego)
+        app.cargar_presupuesto(vacio);
+        assert_eq!(app.reaplicables().len(), 1);
+        app.aplicar(vec![Accion::ReaplicarAceptadas]);
+        assert_eq!(app.calc.precios["P.X"], dec!(49));
+        assert!(app.reaplicables().is_empty());
+        app.deshacer();
+        assert_eq!(app.reaplicables().len(), 1, "se deshace en un paso");
     }
 }

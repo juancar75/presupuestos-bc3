@@ -29,6 +29,8 @@ pub(super) struct Enlace {
     pub ventana: bool,
     /// Solo las de confianza alta en «Aceptar todas».
     pub solo_alta: bool,
+    /// Pulsado «Reaplicar aceptadas» (se convierte en acción en el fotograma).
+    pub reaplicar: bool,
 }
 
 impl Enlace {
@@ -43,6 +45,7 @@ impl Enlace {
             mtime: None,
             ventana: false,
             solo_alta: true,
+            reaplicar: false,
         }
     }
 
@@ -115,7 +118,51 @@ impl Aplicacion {
             .collect()
     }
 
+    /// Propuestas ya aceptadas (la última de cada partida) cuya partida está
+    /// ahora sin precio ni descompuesto: pasa al volver a abrir el Excel ciego.
+    pub(super) fn reaplicables(&self) -> Vec<Propuesta> {
+        let mut ult: std::collections::BTreeMap<String, Propuesta> = std::collections::BTreeMap::new();
+        for p in self.enlace.bandeja.de_obra(&clave(&self.p)) {
+            if p.estado != EstadoPropuesta::Aceptada {
+                continue;
+            }
+            let vacia = self.p.conceptos.get(&p.partida).is_some_and(|c| {
+                c.naturaleza == Naturaleza::Partida && c.descomposicion.is_empty() && c.precio.is_zero()
+            });
+            if vacia && ult.get(&p.partida).is_none_or(|x| x.id < p.id) {
+                ult.insert(p.partida.clone(), p.clone());
+            }
+        }
+        ult.into_values().collect()
+    }
+
+    /// Vuelve a aplicar las propuestas aceptadas de partidas que están vacías.
+    /// Devuelve cuántas se aplicaron y las que fallaron.
+    pub(super) fn reaplicar_aceptadas(&mut self) -> (usize, Vec<String>) {
+        let mut n = 0;
+        let mut fallos = Vec::new();
+        for prop in self.reaplicables() {
+            match self.p.aplicar_propuesta(&prop) {
+                Ok(_) => n += 1,
+                Err(e) => fallos.push(format!("{} ({e})", prop.partida)),
+            }
+        }
+        (n, fallos)
+    }
+
     pub(super) fn boton_propuestas(&mut self, ui: &mut Ui) {
+        let r = self.reaplicables().len();
+        if r > 0
+            && ui
+                .button(RichText::new(format!("Reaplicar aceptadas ({r})")).strong())
+                .on_hover_text(
+                    "Hay propuestas que ya aceptó para esta obra cuyas partidas están ahora sin precio \
+                     (por ejemplo, al abrir de nuevo el Excel ciego). Pulse para recuperarlas.",
+                )
+                .clicked()
+        {
+            self.enlace.reaplicar = true;
+        }
         let n = self.propuestas_pendientes().len();
         let txt = if n > 0 {
             RichText::new(format!("✨ Propuestas IA ({n})")).strong()
