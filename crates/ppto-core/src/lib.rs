@@ -18,6 +18,7 @@
 
 pub mod concepto;
 pub mod decimales;
+pub mod descuentos;
 pub mod dificultad;
 pub mod edicion;
 pub mod ejemplos;
@@ -31,7 +32,7 @@ pub mod ratio;
 pub mod subcontrata;
 pub mod venta;
 
-pub use concepto::{Concepto, LineaDescomposicion, Naturaleza};
+pub use concepto::{Concepto, LineaDescomposicion, Naturaleza, PrecioTarifa};
 pub use decimales::{Decimales, redondear};
 pub use error::ErrorMotor;
 pub use medicion::{LineaMedicion, Medicion, TipoLinea};

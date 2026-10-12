@@ -40,7 +40,7 @@ ese presupuesto al arrancar.
 | `abrir_obra_activa` | Abre la obra que está abierta en el programa de escritorio | No |
 | `partidas_sin_precio` | Partidas a 0 € con unidad, cantidad, capítulo y texto | No |
 | `buscar_tarifas` | Busca en las tarifas de subcontratas del usuario | No |
-| `proponer` | Propone descompuesto o precio directo de una partida | No: queda **pendiente** en la bandeja |
+| `proponer` | Propone el descompuesto de una partida (no se admiten precios directos) | No: queda **pendiente** en la bandeja |
 | `ver_propuestas` | Estado de las propuestas (pendiente, aceptada, rechazada) | No |
 
 Las exportaciones exigen la extensión correcta y **se niegan a sobrescribir el

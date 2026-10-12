@@ -80,6 +80,14 @@ enum Accion {
     Alta(TipoAlta),
     AplicarRatio(ppto_core::ratio::PaqueteRatio),
     AceptarPropuesta(u64),
+    /// Descuento de un fabricante (puntos).
+    Descuento(String, Decimal),
+    /// PVP de tarifa de un recurso ligado a un fabricante.
+    Pvp(String, Decimal),
+    /// Grupo de producto de un recurso con tarifa (vacío = sin grupo).
+    GrupoTarifa(String, String),
+    /// Quitar un descuento («S&P» o «S&P/E08»).
+    QuitarDescuento(String),
     RechazarPropuesta(u64),
     Dificultad {
         ambito: String,
@@ -248,6 +256,10 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::Trasladar(o, h, d, _) => (format!("mover {h} de {o} a {d}"), None),
         Accion::AplicarRatio(p) => (format!("subcontrata {}", p.codigo), None),
         Accion::AceptarPropuesta(id) => (format!("propuesta IA #{id}"), None),
+        Accion::Descuento(f, _) => (format!("descuento {f}"), None),
+        Accion::Pvp(c, _) => (format!("PVP de {c}"), None),
+        Accion::GrupoTarifa(c, _) => (format!("grupo de {c}"), None),
+        Accion::QuitarDescuento(k) => (format!("quitar descuento {k}"), None),
         Accion::Dificultad {
             ambito,
             coeficiente,
@@ -863,6 +875,31 @@ impl Aplicacion {
                     }
                     Err(e) => Err(ppto_core::ErrorMotor::ValorInvalido(e)),
                 },
+                Accion::Descuento(fab, pct) => self.p.fijar_descuento(&fab, pct).map(|v| {
+                    self.info(format!(
+                        "Descuento {} {} %: {} recursos recalculados.",
+                        ppto_core::descuentos::normalizar(&fab),
+                        num(pct, 2),
+                        v.len()
+                    ));
+                }),
+                Accion::Pvp(codigo, pvp) => {
+                    let fab = self.p.conceptos.get(&codigo).and_then(|c| c.tarifa.clone());
+                    match fab {
+                        Some(t) => self
+                            .p
+                            .fijar_tarifa_grupo(&codigo, &t.fabricante, t.grupo.as_deref(), pvp),
+                        None => Err(ppto_core::ErrorMotor::ValorInvalido(format!(
+                            "«{codigo}» no tiene tarifa"
+                        ))),
+                    }
+                }
+                Accion::GrupoTarifa(codigo, grupo) => self.p.fijar_grupo(&codigo, &grupo),
+                Accion::QuitarDescuento(k) => {
+                    let v = self.p.quitar_descuento(&k);
+                    self.info(format!("Descuento {k} quitado: {} recursos recalculados.", v.len()));
+                    Ok(())
+                }
                 Accion::RechazarPropuesta(id) => {
                     self.enlace.marcar(id, ppto_core::propuesta::EstadoPropuesta::Rechazada);
                     self.info(format!("Propuesta #{id} rechazada."));
@@ -1771,6 +1808,10 @@ impl Aplicacion {
         let e = e.clone();
         let dec = self.p.decimales;
         ui.label("Cantidades totales necesarias para ejecutar el presupuesto. Los precios se pueden editar aquí.");
+        egui::CollapsingHeader::new(RichText::new("Descuentos por fabricante").strong())
+            .id_salt("descuentos")
+            .default_open(!self.p.fabricantes().is_empty())
+            .show(ui, |ui| self.form_descuentos(ui, acciones));
         egui::CollapsingHeader::new(RichText::new("Coeficiente de dificultad (horas de mano de obra propia)").strong())
             .id_salt("dificultad")
             .show(ui, |ui| self.form_dificultad(ui, acciones));
@@ -1796,10 +1837,18 @@ impl Aplicacion {
                 );
                 egui::Grid::new(("recursos", nombre_naturaleza(nat)))
                     .striped(true)
-                    .num_columns(6)
+                    .num_columns(7)
                     .min_col_width(60.0)
                     .show(ui, |ui| {
-                        for t in ["Código", "Ud", "Resumen", "Cantidad", "Precio", "Importe"] {
+                        for t in [
+                            "Código",
+                            "Ud",
+                            "Resumen",
+                            "Cantidad",
+                            "Tarifa (PVP − dto.)",
+                            "Precio",
+                            "Importe",
+                        ] {
                             ui.label(RichText::new(t).weak());
                         }
                         ui.end_row();
@@ -1810,8 +1859,47 @@ impl Aplicacion {
                             if nat == Naturaleza::Porcentaje {
                                 ui.label("");
                                 ui.label("");
+                                ui.label("");
+                            } else if let Some(t) = self.p.conceptos.get(&r.codigo).and_then(|c| c.tarifa.clone()) {
+                                // Ligado a tarifa: se edita el PVP; el neto sale del descuento
+                                ui.label(num(r.cantidad, 3));
+                                ui.horizontal(|ui| {
+                                    if let Some(v) = self.edicion.decimal(
+                                        ui,
+                                        &format!("pvp|{}", r.codigo),
+                                        t.pvp,
+                                        dec.precio,
+                                        ANCHO_NUM,
+                                    ) {
+                                        acciones.push(Accion::Pvp(r.codigo.clone(), v));
+                                    }
+                                    ui.label(RichText::new(format!("{} grupo", t.fabricante)).weak());
+                                    if let Some(g) = self.edicion.texto(
+                                        ui,
+                                        &format!("grp|{}", r.codigo),
+                                        t.grupo.as_deref().unwrap_or(""),
+                                        45.0,
+                                    ) {
+                                        acciones.push(Accion::GrupoTarifa(r.codigo.clone(), g));
+                                    }
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "− {} % ({})",
+                                            num(self.p.descuento_tarifa(&t), 2),
+                                            self.p.clave_aplicada(&t)
+                                        ))
+                                        .weak(),
+                                    )
+                                    .on_hover_text(
+                                        "Si el grupo tiene descuento propio (p. ej. S&P/E08) se usa ese; si no, el general del fabricante.",
+                                    );
+                                });
+                                ui.label(eur(r.precio)).on_hover_text(
+                                    "Neto = PVP × (1 − descuento). Cambie el PVP o el descuento del fabricante.",
+                                );
                             } else {
                                 ui.label(num(r.cantidad, 3));
+                                ui.label("");
                                 if let Some(v) = self.edicion.decimal(
                                     ui,
                                     &format!("rp|{}", r.codigo),
@@ -2967,6 +3055,7 @@ mod pruebas {
                     justificacion: "prueba".into(),
                     autor: "IA".into(),
                     estado: E::Pendiente,
+                    descuentos: Default::default(),
                 },
             );
         }
@@ -3000,5 +3089,26 @@ mod pruebas {
         assert_eq!(app.p, p);
         app.aplicar(vec![Accion::RechazarPropuesta(2)]);
         assert!(app.propuestas_pendientes().is_empty());
+    }
+    #[test]
+    fn descuentos_por_fabricante_desde_recursos() {
+        let mut app = Aplicacion::sin_ventana();
+        app.p.fijar_tarifa("MT.PANEL", "acme", dec!(20)).unwrap();
+        app.recalcular();
+        app.aplicar(vec![Accion::Descuento("Acme".into(), dec!(50))]);
+        assert_eq!(app.p.concepto("MT.PANEL").unwrap().precio, dec!(10));
+        app.aplicar(vec![Accion::Pvp("MT.PANEL".into(), dec!(30))]);
+        assert_eq!(app.p.concepto("MT.PANEL").unwrap().precio, dec!(15));
+        app.deshacer();
+        assert_eq!(app.p.concepto("MT.PANEL").unwrap().precio, dec!(10));
+        // La pestaña se pinta con la tabla de descuentos
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let mut acc = Vec::new();
+                egui::CentralPanel::default_margins().show(ui, |ui| app.pestana_recursos(ui, &mut acc));
+            });
+            out.textures_delta.clear();
+        }
     }
 }

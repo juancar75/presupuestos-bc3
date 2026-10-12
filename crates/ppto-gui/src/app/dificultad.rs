@@ -12,6 +12,10 @@ pub(super) struct FormDificultad {
     pub ambito: String,
     pub coeficiente: String,
     pub motivo: String,
+    /// Alta de un descuento de fabricante (pestaña Recursos).
+    pub nuevo_fab: String,
+    pub nuevo_dto: String,
+    pub nuevo_grupo: String,
 }
 
 /// Texto para Deshacer y para la auditoría de la revisión.
@@ -155,5 +159,90 @@ impl Aplicacion {
             },
         }
         self.dificultad = f;
+    }
+}
+
+impl Aplicacion {
+    /// Tabla de descuentos por fabricante (pestaña Recursos).
+    pub(super) fn form_descuentos(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+        ui.label(
+            RichText::new(
+                "Los recursos con PVP de tarifa calculan su neto con el descuento de su fabricante. \
+                 Cambie aquí el descuento y se recalculan todos de una vez.",
+            )
+            .weak(),
+        );
+        let fabs = self.p.fabricantes();
+        egui::Grid::new("descuentos")
+            .striped(true)
+            .num_columns(5)
+            .show(ui, |ui| {
+                for t in ["Fabricante", "Grupo", "Descuento %", "Recursos", ""] {
+                    ui.label(RichText::new(t).weak());
+                }
+                ui.end_row();
+                for f in &fabs {
+                    ui.label(&f.fabricante);
+                    ui.label(f.grupo.as_deref().unwrap_or("(general)"));
+                    if let Some(v) = self
+                        .edicion
+                        .decimal(ui, &format!("dto|{}", f.nombre), f.descuento, 2, 70.0)
+                    {
+                        acciones.push(Accion::Descuento(f.nombre.clone(), v));
+                    }
+                    ui.label(f.recursos.to_string());
+                    if self.p.descuentos.contains_key(&f.nombre)
+                        && ui
+                            .small_button("x")
+                            .on_hover_text("Quitar este descuento (un grupo vuelve al general del fabricante)")
+                            .clicked()
+                    {
+                        acciones.push(Accion::QuitarDescuento(f.nombre.clone()));
+                    } else {
+                        ui.label("");
+                    }
+                    ui.end_row();
+                }
+            });
+        ui.horizontal(|ui| {
+            ui.label("Añadir");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.dificultad.nuevo_fab)
+                    .desired_width(120.0)
+                    .hint_text("fabricante (S&P)"),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut self.dificultad.nuevo_grupo)
+                    .desired_width(90.0)
+                    .hint_text("grupo (E08)"),
+            )
+            .on_hover_text("Opcional: vacío = descuento general del fabricante");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.dificultad.nuevo_dto)
+                    .desired_width(50.0)
+                    .hint_text("%"),
+            );
+            let v = leer(&self.dificultad.nuevo_dto);
+            if ui
+                .add_enabled(
+                    v.is_some() && !self.dificultad.nuevo_fab.trim().is_empty(),
+                    egui::Button::new("Añadir"),
+                )
+                .clicked()
+                && let Some(v) = v
+            {
+                let k = ppto_core::descuentos::clave(&self.dificultad.nuevo_fab, Some(&self.dificultad.nuevo_grupo));
+                acciones.push(Accion::Descuento(k, v));
+                self.dificultad.nuevo_fab.clear();
+                self.dificultad.nuevo_grupo.clear();
+                self.dificultad.nuevo_dto.clear();
+            }
+        });
+        ui.label(
+            RichText::new(
+                "Para usar el descuento de un grupo, escriba el grupo en el recurso (pestaña Recursos, columna Tarifa).",
+            )
+            .weak(),
+        );
     }
 }

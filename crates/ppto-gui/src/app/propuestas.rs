@@ -227,6 +227,22 @@ impl Aplicacion {
                         ))
                         .strong(),
                     );
+                    for (cod, antes, despues) in &s.ligados {
+                        ui.label(
+                            RichText::new(format!(
+                                "{cod}: pasa a precio de tarifa con descuento ({} → {} €)",
+                                eur(*antes),
+                                eur(*despues)
+                            ))
+                            .color(Color32::from_rgb(90, 150, 230)),
+                        );
+                    }
+                    for (f, pct) in &s.descuentos_nuevos {
+                        ui.label(
+                            RichText::new(format!("Descuento {f} {} % (estimado por la IA)", num(*pct, 2)))
+                                .color(Color32::from_rgb(220, 150, 40)),
+                        );
+                    }
                     for (cod, obra, propuesto) in &s.precios_distintos {
                         ui.label(
                             RichText::new(format!(
@@ -270,17 +286,41 @@ impl Aplicacion {
                                         45,
                                     ));
                                     ui.label(num(l.rendimiento, 3));
+                                    let liga = existe.is_some_and(|x| x.tarifa.is_none() && x.naturaleza.es_basico());
                                     let precio = match existe {
+                                        Some(_) if liga && l.pvp.is_some() && l.fabricante.is_some() => self.p.neto(
+                                            l.pvp.unwrap_or_default(),
+                                            dto_de(
+                                                &self.p,
+                                                prop,
+                                                l.fabricante.as_deref().unwrap_or(""),
+                                                l.grupo.as_deref(),
+                                            ),
+                                        ),
                                         Some(x) if x.naturaleza != Naturaleza::Porcentaje => {
                                             self.calc.precios.get(&x.codigo).copied().unwrap_or(x.precio)
                                         }
                                         Some(_) => Decimal::ZERO,
-                                        None => l.precio.unwrap_or_default(),
+                                        None => match (l.pvp, &l.fabricante) {
+                                            (Some(pvp), Some(f)) => {
+                                                self.p.neto(pvp, dto_de(&self.p, prop, f, l.grupo.as_deref()))
+                                            }
+                                            _ => l.precio.unwrap_or_default(),
+                                        },
+                                    };
+                                    let tarifa = match (existe.filter(|x| x.tarifa.is_some()), l.pvp, &l.fabricante) {
+                                        (None, Some(pvp), Some(f)) => format!(
+                                            "  (PVP {} − {} % {})",
+                                            eur(pvp),
+                                            num(dto_de(&self.p, prop, f, l.grupo.as_deref()), 2),
+                                            ppto_core::descuentos::clave(f, l.grupo.as_deref())
+                                        ),
+                                        _ => String::new(),
                                     };
                                     ui.label(if n == Some(Naturaleza::Porcentaje) {
                                         "%".to_owned()
                                     } else {
-                                        eur(precio)
+                                        format!("{}{tarifa}", eur(precio))
                                     });
                                     ui.end_row();
                                 }
@@ -326,6 +366,20 @@ impl Aplicacion {
             }
         ))
     }
+}
+
+/// Descuento que se aplicará: el de la obra si existe; si no, el estimado por la IA.
+/// Descuento que tendrá la línea al aceptar: los de la obra mandan y la
+/// propuesta añade los que falten; el del grupo, si existe, y si no el general.
+fn dto_de(p: &ppto_core::Presupuesto, prop: &Propuesta, fabricante: &str, grupo: Option<&str>) -> Decimal {
+    use ppto_core::descuentos::{clave, normalizar};
+    let mut m = prop.descuentos.clone();
+    m.extend(p.descuentos.iter().map(|(k, v)| (k.clone(), *v)));
+    grupo
+        .and_then(|g| m.get(&clave(fabricante, Some(g))))
+        .or_else(|| m.get(&normalizar(fabricante)))
+        .copied()
+        .unwrap_or_default()
 }
 
 /// Número de la propuesta en la etiqueta de Deshacer («propuesta IA #12»).

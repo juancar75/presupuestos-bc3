@@ -275,13 +275,45 @@ fn propuestas_a_la_obra_activa() {
     assert!(t.contains("P.VAL"));
     let (t, _) = llamar(&mut e, "ver_propuestas", json!({}));
     assert!(t.contains("| 1 | P.VAL | pendiente | media |"), "{t}");
-    // Una propuesta imposible se rechaza sin guardarse
+    // Material de tarifa con descuento estimado: 0,5 h × 24,50 + 600 × (1 − 0,45) = 342,25 + 2 % MA
     let (t, err) = llamar(
         &mut e,
         "proponer",
-        json!({"partida":"SR.M2","precio":5,"confianza":"baja","justificacion":"x"}),
+        json!({
+            "partida": "P.VAL",
+            "lineas": [
+                {"codigo":"MO.OF1F","rendimiento":"0,5"},
+                {"codigo":"MT.CFK","rendimiento":1,"naturaleza":"material","unidad":"ud","resumen":"Compuerta cortafuegos","pvp":600,"fabricante":"Koolair"},
+                {"codigo":"%MA","rendimiento":2}
+            ],
+            "descuentos": [{"fabricante":"KOOLAIR","porcentaje":45}],
+            "confianza": "media",
+            "justificacion": "PVP de tarifa Koolair"
+        }),
+    );
+    // base 342,25 → 3,4225 → 3,423 × 2 = 6,846 → 6,85 → 349,10
+    assert!(
+        !err && t.contains("349,10") && t.contains("Descuento KOOLAIR 45"),
+        "{t}"
+    );
+    // Sin descompuesto no se admite (siempre hay que descomponer), y no se guarda
+    let (t, err) = llamar(
+        &mut e,
+        "proponer",
+        json!({"partida":"P.VAL","precio":5,"confianza":"baja","justificacion":"x"}),
     );
     assert!(err && t.contains("descompuesto"), "{t}");
+    // Una propuesta imposible tampoco
+    let (t, err) = llamar(
+        &mut e,
+        "proponer",
+        json!({"partida":"P.VAL","lineas":[{"codigo":"NO.EXISTE","rendimiento":1}],"confianza":"baja","justificacion":"x"}),
+    );
+    assert!(err && t.contains("no válida"), "{t}");
     let b = ppto_propuestas::Bandeja::cargar(&dir.join("propuestas.json"));
-    assert_eq!(b.entradas.len(), 1);
+    assert_eq!(
+        b.entradas.len(),
+        1,
+        "la segunda propuesta de P.VAL sustituye a la primera"
+    );
 }

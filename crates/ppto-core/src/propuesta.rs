@@ -8,7 +8,9 @@
 //!
 //! Al aceptar ([`Presupuesto::aplicar_propuesta`]):
 //! - Los recursos que ya existen en la obra se reutilizan **con su precio**
-//!   (si la IA proponía otro, se informa en `precios_distintos`).
+//!   (si la IA proponía otro, se informa en `precios_distintos`). Si existen
+//!   a neto sin tarifa y la propuesta trae PVP y fabricante, se **ligan** a
+//!   la tarifa (`ligados`), y su neto pasa a depender del descuento.
 //! - Los nuevos se dan de alta con la naturaleza, unidad y precio propuestos.
 //! - El descompuesto de la partida se sustituye por el propuesto.
 //!
@@ -58,8 +60,17 @@ pub struct LineaPropuesta {
     pub unidad: String,
     #[serde(default)]
     pub resumen: String,
+    /// Precio neto (si no se da PVP).
     #[serde(default)]
     pub precio: Option<Decimal>,
+    /// PVP de tarifa: el neto sale del descuento del fabricante.
+    #[serde(default)]
+    pub pvp: Option<Decimal>,
+    #[serde(default)]
+    pub fabricante: Option<String>,
+    /// Grupo de producto del fabricante (descuento propio, p. ej. «E08»).
+    #[serde(default)]
+    pub grupo: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -86,6 +97,10 @@ pub struct Propuesta {
     #[serde(default)]
     pub autor: String,
     pub estado: EstadoPropuesta,
+    /// Descuentos estimados por fabricante (puntos). Solo se usan para los
+    /// fabricantes que la obra aún no tiene: los del usuario mandan.
+    #[serde(default)]
+    pub descuentos: std::collections::BTreeMap<String, Decimal>,
 }
 
 /// Resultado de aplicar una propuesta.
@@ -97,6 +112,11 @@ pub struct Aplicada {
     pub nuevos: Vec<String>,
     /// (código, precio en la obra, precio propuesto) cuando no coinciden.
     pub precios_distintos: Vec<(String, Decimal, Decimal)>,
+    /// Descuentos de fabricante que la obra no tenía y se toman de la propuesta.
+    pub descuentos_nuevos: Vec<(String, Decimal)>,
+    /// Recursos que ya estaban en la obra a neto y se ligan a la tarifa del
+    /// fabricante: (código, neto antes, neto con el descuento).
+    pub ligados: Vec<(String, Decimal, Decimal)>,
 }
 
 impl Presupuesto {
@@ -138,6 +158,14 @@ impl Presupuesto {
                 if lineas.is_empty() {
                     return Err(ErrorMotor::ValorInvalido("el descompuesto propuesto está vacío".into()));
                 }
+                for (fab, pct) in &prop.descuentos {
+                    let (fa, gr) = crate::descuentos::partes(fab);
+                    let f = crate::descuentos::clave(&fa, gr.as_deref());
+                    if !self.descuentos.contains_key(&f) {
+                        self.fijar_descuento(&f, *pct)?;
+                        out.descuentos_nuevos.push((f, *pct));
+                    }
+                }
                 let mut nuevas = Vec::new();
                 for l in lineas {
                     if l.codigo == partida {
@@ -156,7 +184,14 @@ impl Presupuesto {
                             if h.naturaleza == Naturaleza::Capitulo {
                                 return Err(ErrorMotor::ValorInvalido(format!("«{}» es un capítulo", l.codigo)));
                             }
-                            if let Some(pp) = l.precio
+                            let sin_tarifa = h.tarifa.is_none() && h.naturaleza.es_basico();
+                            if let (true, Some(pvp), Some(fab)) = (sin_tarifa, l.pvp, &l.fabricante) {
+                                // Recurso ya en la obra a neto: se liga a la tarifa del fabricante
+                                let antes = h.precio;
+                                self.fijar_tarifa_grupo(&l.codigo, fab, l.grupo.as_deref(), pvp)?;
+                                let despues = self.concepto(&l.codigo)?.precio;
+                                out.ligados.push((l.codigo.clone(), antes, despues));
+                            } else if let Some(pp) = l.precio
                                 && h.naturaleza.es_basico()
                                 && pp != h.precio
                             {
@@ -179,9 +214,18 @@ impl Presupuesto {
                                     )));
                                 }
                                 n => {
-                                    let precio = l.precio.ok_or_else(|| {
-                                        ErrorMotor::ValorInvalido(format!("«{}» nuevo sin precio", l.codigo))
-                                    })?;
+                                    let precio = match (l.pvp, &l.fabricante) {
+                                        (Some(_), None) => {
+                                            return Err(ErrorMotor::ValorInvalido(format!(
+                                                "«{}»: con PVP hay que indicar el fabricante",
+                                                l.codigo
+                                            )));
+                                        }
+                                        (Some(pvp), Some(_)) => pvp,
+                                        (None, _) => l.precio.ok_or_else(|| {
+                                            ErrorMotor::ValorInvalido(format!("«{}» nuevo sin precio", l.codigo))
+                                        })?,
+                                    };
                                     if precio < Decimal::ZERO {
                                         return Err(ErrorMotor::ValorInvalido(format!(
                                             "«{}» con precio negativo",
@@ -199,6 +243,9 @@ impl Presupuesto {
                             };
                             crate::edicion::validar_codigo(&l.codigo)?;
                             self.insertar(nuevo)?;
+                            if let (Some(pvp), Some(fab)) = (l.pvp, &l.fabricante) {
+                                self.fijar_tarifa_grupo(&l.codigo, fab, l.grupo.as_deref(), pvp)?;
+                            }
                             out.nuevos.push(l.codigo.clone());
                         }
                     }

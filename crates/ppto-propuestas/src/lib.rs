@@ -84,6 +84,8 @@ mod plano {
         mediciones: Vec<(String, String, Medicion)>,
         costes_indirectos: Decimal,
         opciones_ci: ppto_core::presupuesto::OpcionesCi,
+        #[serde(default)]
+        descuentos: BTreeMap<String, Decimal>,
     }
 
     pub fn serialize<S: Serializer>(p: &Presupuesto, s: S) -> Result<S::Ok, S::Error> {
@@ -99,6 +101,7 @@ mod plano {
                 .collect(),
             costes_indirectos: p.costes_indirectos,
             opciones_ci: p.opciones_ci,
+            descuentos: p.descuentos.clone(),
         }
         .serialize(s)
     }
@@ -113,6 +116,7 @@ mod plano {
             mediciones: x.mediciones.into_iter().map(|(a, b, m)| ((a, b), m)).collect(),
             costes_indirectos: x.costes_indirectos,
             opciones_ci: x.opciones_ci,
+            descuentos: x.descuentos,
         })
     }
 }

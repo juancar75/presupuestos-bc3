@@ -511,6 +511,7 @@ impl Lector {
                     precio,
                     descomposicion: Vec::new(),
                     texto: self.textos.remove(codigo),
+                    tarifa: None,
                 },
             );
         }
@@ -775,6 +776,7 @@ impl Lector {
             mediciones: mediciones.into_iter().map(|(k, (m, _, _))| (k, m)).collect(),
             costes_indirectos: self.porcentajes.costes_indirectos.unwrap_or_default(),
             opciones_ci: OpcionesCi::default(),
+            descuentos: Default::default(),
         };
 
         // 7. Ciclos: se rompe la última relación de cada ciclo encontrado.
