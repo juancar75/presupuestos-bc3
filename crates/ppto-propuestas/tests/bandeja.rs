@@ -55,3 +55,37 @@ fn bandeja_y_obra_activa() {
     assert_eq!(o.presupuesto, p);
     assert!(ObraActiva::cargar(&dir.join("no.json")).is_err());
 }
+
+#[test]
+fn modificaciones_concurrentes_no_se_pierden() {
+    let dir = std::env::temp_dir().join(format!("ppto-band-conc-{}", std::process::id()));
+    let ruta = dir.join("propuestas.json");
+    let _ = std::fs::remove_dir_all(&dir);
+    let hilos: Vec<_> = (0..8)
+        .map(|h| {
+            let ruta = ruta.clone();
+            std::thread::spawn(move || {
+                for i in 0..10 {
+                    let p = prop(&format!("P{h}-{i}"), dec!(1));
+                    ppto_propuestas::Bandeja::modificar(&ruta, |b| b.anadir("O [1]", p)).unwrap();
+                }
+            })
+        })
+        .collect();
+    for h in hilos {
+        h.join().unwrap();
+    }
+    assert_eq!(ppto_propuestas::Bandeja::cargar(&ruta).entradas.len(), 80);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn una_bandeja_danada_no_se_sobrescribe() {
+    let dir = std::env::temp_dir().join(format!("ppto-band-d-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let ruta = dir.join("propuestas.json");
+    std::fs::write(&ruta, "[roto").unwrap();
+    assert!(ppto_propuestas::Bandeja::modificar(&ruta, |b| b.anadir("O", prop("X", dec!(1)))).is_err());
+    assert_eq!(std::fs::read_to_string(&ruta).unwrap(), "[roto");
+    let _ = std::fs::remove_dir_all(&dir);
+}
