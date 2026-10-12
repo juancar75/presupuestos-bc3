@@ -310,6 +310,53 @@ impl Presupuesto {
             .unwrap_or_default()
     }
 
+    /// Trae de `origen` (otra obra o una base de precios) el precio de la
+    /// partida `codigo`: su descompuesto completo con todos sus auxiliares y
+    /// recursos, o su precio directo si allí no está descompuesta.
+    ///
+    /// - La partida debe existir aquí y no estar descompuesta (p. ej. una
+    ///   partida de un presupuesto ciego); si ya tiene descompuesto, no se toca.
+    /// - Los conceptos que ya existen aquí se respetan (no se sobrescriben
+    ///   precios propios); solo se añaden los que faltan.
+    ///
+    /// Devuelve los códigos nuevos añadidos.
+    pub fn traer_precio(&mut self, origen: &Presupuesto, codigo: &str) -> Result<Vec<String>, ErrorMotor> {
+        let destino = self.concepto(codigo)?;
+        if destino.naturaleza != Naturaleza::Partida {
+            return Err(ErrorMotor::ValorInvalido(format!("«{codigo}» no es una partida")));
+        }
+        if !destino.descomposicion.is_empty() {
+            return Err(ErrorMotor::ValorInvalido(format!(
+                "«{codigo}» ya está descompuesta aquí: no se sustituye"
+            )));
+        }
+        let o = origen.concepto(codigo)?;
+        if o.descomposicion.is_empty() {
+            let precio = origen.precio(codigo)?;
+            self.concepto_mut(codigo)?.precio = precio;
+            return Ok(Vec::new());
+        }
+        let copia = self.clone();
+        let mut nuevos = Vec::new();
+        let mut pendientes: Vec<String> = o.descomposicion.iter().map(|l| l.hijo.clone()).collect();
+        while let Some(c) = pendientes.pop() {
+            if self.conceptos.contains_key(&c) {
+                continue;
+            }
+            let concepto = origen.concepto(&c)?.clone();
+            pendientes.extend(concepto.descomposicion.iter().map(|l| l.hijo.clone()));
+            self.conceptos.insert(c.clone(), concepto);
+            nuevos.push(c);
+        }
+        self.concepto_mut(codigo)?.descomposicion = o.descomposicion.clone();
+        if let Err(e) = self.validar() {
+            *self = copia;
+            return Err(e);
+        }
+        nuevos.sort();
+        Ok(nuevos)
+    }
+
     fn exigir_capitulo(&self, codigo: &str) -> Result<(), ErrorMotor> {
         if self.concepto(codigo)?.naturaleza != Naturaleza::Capitulo {
             return Err(ErrorMotor::ValorInvalido(format!("«{codigo}» no es un capítulo")));

@@ -5,6 +5,37 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — presupuestos ciegos
+- `ppto-ciego`: importa el listado de Presto en Excel (.xlsx/.xls) y devuelve
+  el mismo .xlsx con los precios (solo se escriben las celdas PrPres;
+  `fullCalcOnLoad`). Mediciones a precisión completa para cuadrar al céntimo
+  con el Excel; parciales fijos; números y códigos guardados como texto;
+  partidas repetidas en varios capítulos. Validado con un ciego real de 507
+  partidas y 1.684 líneas de medición (no se sube).
+- `traer_precios` / `Presupuesto::traer_precio`: trae de otra obra o de un BC3
+  el descompuesto completo (o el precio directo) de cada partida sin precio.
+- Partidas sin descomponer con precio directo (como en Presto).
+- `ppto_core::formato::cant`: cantidades sin ceros sobrantes.
+- CLI `ppto ciego`; interfaz: menú «📋 Ciego» y precio directo en la partida.
+- Interfaz: **Deshacer / Rehacer** (Ctrl+Z, Ctrl+Y) de todos los cambios del
+  presupuesto, hasta 200 pasos; navegación anterior/siguiente/sin precio
+  (Ctrl+↑/↓) y buscador de partidas.
+
+### Añadido — PDF (P-016)
+- `ppto-pdf`: presupuesto en PDF con Typst incluido (ADR-0007): portada con
+  logo, fecha y revisión; capítulos y subcapítulos; textos justificados con
+  partición silábica en castellano; mediciones; resumen con GG, BI, IVA, total
+  en letra y firma; hoja de observaciones. Plantilla editable.
+- `ppto_core::formato::en_letra` (importe en letra) y `fecha_larga`/`fecha_hoy`.
+- Interfaz: botón «PDF…» con ventana de opciones que recuerda empresa, firma,
+  logo y observaciones. CLI: `--pdf`.
+- Perfiles de empresa en el PDF (`ppto_pdf::Perfiles`): instaladora (sin PEM,
+  GG ni BI) e ingeniería (PEM + GG + BI) de serie, cada uno con su logo
+  (copia guardada), empresa, firma y observaciones tipo; duplicar y borrar.
+
+### Cambiado
+- Versión mínima de Rust: 1.92 (requisito de Typst).
+
 ### Añadido — edición (P-014)
 - `ppto-core::edicion`: `nuevo_capitulo`, `nueva_partida`, `nuevo_recurso`,
   `anadir_linea`, `quitar_linea`, `quitar_y_purgar`, `mover_linea`,

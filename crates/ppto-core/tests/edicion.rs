@@ -164,3 +164,62 @@ fn trasladar_partidas_entre_capitulos_como_arrastrar() {
     );
     assert_eq!(p, antes, "los intentos fallidos no tocan nada");
 }
+
+#[test]
+fn partida_sin_descomponer_con_precio_directo() {
+    // Presupuesto ciego: P1 (12 m) a 15,50 €/m directo = 186,00; al descomponerla manda el descompuesto
+    let mut p = Presupuesto::new("t", "OBRA", "Obra");
+    p.nuevo_capitulo("OBRA", "C01", "Cap").unwrap();
+    p.nueva_partida("C01", "P1", "m", "Tubería").unwrap();
+    p.fijar_rendimiento("C01", "P1", dec!(12)).unwrap();
+    p.fijar_precio("P1", dec!(15.50)).unwrap();
+    assert_eq!(p.precio("P1").unwrap(), dec!(15.50));
+    assert_eq!(p.pem().unwrap(), dec!(186.00));
+    // Con CI 10 %: 15,50 × 1,10 = 17,05 → 204,60
+    p.costes_indirectos = dec!(10);
+    assert_eq!(p.pem().unwrap(), dec!(204.60));
+    p.costes_indirectos = dec!(0);
+    p.nuevo_recurso("MO", "h", "Oficial", Naturaleza::ManoObra, dec!(20))
+        .unwrap();
+    p.anadir_linea("P1", "MO", dec!(0.5)).unwrap();
+    assert_eq!(p.precio("P1").unwrap(), dec!(10.00));
+    assert!(
+        p.fijar_precio("P1", dec!(1)).is_err(),
+        "descompuesta: su precio sale de las líneas"
+    );
+}
+
+#[test]
+fn traer_precios_de_otra_obra() {
+    // Obra «ciego» con SR.M2 (210 m²) y SR.COL8 (3 ud) sin precio; se traen
+    // del ejemplo: SR.M2 29,89 y SR.COL8 242,75 → PEM 7.005,15, igual que el original.
+    let base = suelo_radiante();
+    let mut p = Presupuesto::new("ciego", "OBRA", "Ciego");
+    p.nuevo_capitulo("OBRA", "C01", "Cap").unwrap();
+    p.nueva_partida("C01", "SR.M2", "m2", "Suelo radiante").unwrap();
+    p.nueva_partida("C01", "SR.COL8", "ud", "Colector").unwrap();
+    p.fijar_rendimiento("C01", "SR.M2", dec!(210)).unwrap();
+    p.fijar_rendimiento("C01", "SR.COL8", dec!(3)).unwrap();
+    assert_eq!(p.pem().unwrap(), dec!(0));
+    let nuevos = p.traer_precio(&base, "SR.M2").unwrap();
+    assert!(nuevos.contains(&"MO.OF1F".to_owned()) && nuevos.contains(&"%MA".to_owned()));
+    p.traer_precio(&base, "SR.COL8").unwrap();
+    assert_eq!(p.precio("SR.M2").unwrap(), dec!(29.89));
+    assert_eq!(p.pem().unwrap(), dec!(7005.15));
+    // Ya descompuesta: no se sustituye; inexistente en el origen: error claro
+    assert!(
+        p.traer_precio(&base, "SR.M2")
+            .unwrap_err()
+            .to_string()
+            .contains("ya está descompuesta")
+    );
+    p.nueva_partida("C01", "OTRA", "ud", "x").unwrap();
+    assert!(p.traer_precio(&base, "OTRA").is_err());
+    // Precio directo en el origen (partida sin descomponer)
+    let mut b2 = Presupuesto::new("b", "B", "B");
+    b2.nuevo_capitulo("B", "C", "c").unwrap();
+    b2.nueva_partida("C", "OTRA", "ud", "x").unwrap();
+    b2.fijar_precio("OTRA", dec!(55.5)).unwrap();
+    p.traer_precio(&b2, "OTRA").unwrap();
+    assert_eq!(p.precio("OTRA").unwrap(), dec!(55.50));
+}

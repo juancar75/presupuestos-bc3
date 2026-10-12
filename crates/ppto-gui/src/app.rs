@@ -3,6 +3,8 @@
 //! recursos, subcontratación y resumen.
 
 mod alta;
+mod ciego;
+mod pdf;
 
 use crate::celdas::Edicion;
 use alta::{Alta, TipoAlta};
@@ -10,7 +12,7 @@ use eframe::egui::{self, Color32, RichText, Ui};
 use ppto_core::concepto::Naturaleza;
 use ppto_core::ejemplos::{ofertas_montaje_suelo_radiante, suelo_radiante};
 use ppto_core::explosion::Explosion;
-use ppto_core::formato::{eur, num};
+use ppto_core::formato::{cant, eur, num};
 use ppto_core::medicion::{LineaMedicion, Medicion, TipoLinea};
 use ppto_core::presupuesto::LineaValorada;
 use ppto_core::subcontrata::{Asignacion, Contratacion, PaqueteTrabajo, ResultadoEscenario, simular};
@@ -71,6 +73,9 @@ enum Accion {
     /// Arrastrar y soltar: (origen, hijo, destino, delante de).
     Trasladar(String, String, String, Option<String>),
     Alta(TipoAlta),
+    /// Ir a la partida anterior (-1) o siguiente (+1) del presupuesto.
+    Navegar(i32),
+    SiguienteSinPrecio,
 }
 
 /// Resultados del motor para el estado actual del presupuesto.
@@ -161,6 +166,66 @@ pub struct Aplicacion {
     informe: Option<ppto_bc3::Importacion>,
     ver_informe: bool,
     alta: Option<Alta>,
+    ventana_pdf: Option<pdf::VentanaPdf>,
+    ciego: Option<ciego::CiegoAbierto>,
+    buscar: String,
+    /// Llevar el árbol hasta la partida elegida en el próximo fotograma.
+    desplazar_arbol: bool,
+    historial: Historial,
+}
+
+/// Deshacer / rehacer: copias completas del presupuesto antes de cada cambio.
+#[derive(Default)]
+struct Historial {
+    deshacer: Vec<(Presupuesto, String)>,
+    rehacer: Vec<(Presupuesto, String)>,
+    /// Escritura en curso (resumen, texto, unidad de un concepto): las
+    /// pulsaciones seguidas en el mismo campo se deshacen de una vez.
+    grupo: Option<String>,
+}
+
+const MAX_HISTORIAL: usize = 200;
+
+impl Historial {
+    fn limpiar(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Guarda el estado anterior a un cambio. Devuelve `true` si se ha guardado.
+    fn antes(&mut self, p: &Presupuesto, que: String, grupo: Option<String>) -> bool {
+        if grupo.is_some() && grupo == self.grupo {
+            return false;
+        }
+        self.grupo = grupo;
+        self.deshacer.push((p.clone(), que));
+        if self.deshacer.len() > MAX_HISTORIAL {
+            self.deshacer.remove(0);
+        }
+        self.rehacer.clear();
+        true
+    }
+}
+
+/// Descripción para «Deshacer …» y, en la escritura de textos, el grupo.
+fn describir(a: &Accion) -> Option<(String, Option<String>)> {
+    Some(match a {
+        Accion::Precio(c, _) => (format!("precio de {c}"), None),
+        Accion::Rendimiento(p, h, _) => (format!("cantidad de {h} en {p}"), None),
+        Accion::Medicion(_, h, _) => (format!("medición de {h}"), None),
+        Accion::Resumen(c, _) => (format!("resumen de {c}"), Some(format!("resumen|{c}"))),
+        Accion::Texto(c, _) => (format!("texto de {c}"), Some(format!("texto|{c}"))),
+        Accion::Unidad(c, _) => (format!("unidad de {c}"), Some(format!("unidad|{c}"))),
+        Accion::Ci(_) => ("costes indirectos".into(), None),
+        Accion::OpcionesCi(_) => ("opciones de costes indirectos".into(), None),
+        Accion::NuevoCapitulo { codigo, .. } => (format!("nuevo capítulo {codigo}"), None),
+        Accion::NuevaPartida { codigo, .. } => (format!("nueva partida {codigo}"), None),
+        Accion::NuevoRecurso { codigo, .. } => (format!("nuevo {codigo}"), None),
+        Accion::AnadirLinea(p, h, _) => (format!("añadir {h} a {p}"), None),
+        Accion::QuitarLinea(p, h, _) => (format!("quitar {h} de {p}"), None),
+        Accion::Mover(p, h, _) => (format!("mover {h} en {p}"), None),
+        Accion::Trasladar(o, h, d, _) => (format!("mover {h} de {o} a {d}"), None),
+        _ => return None,
+    })
 }
 
 impl Aplicacion {
@@ -212,6 +277,11 @@ impl Aplicacion {
             informe: None,
             ver_informe: false,
             alta: None,
+            ventana_pdf: None,
+            ciego: None,
+            buscar: String::new(),
+            desplazar_arbol: false,
+            historial: Historial::default(),
         };
         app.recalcular();
         app
@@ -227,6 +297,8 @@ impl Aplicacion {
     }
 
     fn cargar_ejemplo(&mut self) {
+        self.ciego = None;
+        self.historial.limpiar();
         self.p = suelo_radiante();
         self.fichero = None;
         self.presupuesto_id = None;
@@ -241,6 +313,8 @@ impl Aplicacion {
     }
 
     fn nuevo_presupuesto(&mut self) {
+        self.ciego = None;
+        self.historial.limpiar();
         self.p = Presupuesto::new("Presupuesto nuevo", "OBRA", "Presupuesto nuevo");
         self.fichero = None;
         self.presupuesto_id = None;
@@ -253,6 +327,60 @@ impl Aplicacion {
         self.informe = None;
         self.recalcular();
         self.info("Presupuesto vacío: cree un capítulo con «+ Capítulo» en el árbol.");
+    }
+
+    /// Partidas en el orden del presupuesto (capítulo, partida), recorriendo
+    /// capítulos y subcapítulos.
+    fn orden_partidas(&self) -> Vec<(String, String)> {
+        fn rec(app: &Aplicacion, cap: &str, out: &mut Vec<(String, String)>) {
+            for l in app.calc.lineas.get(cap).into_iter().flatten() {
+                if app
+                    .p
+                    .conceptos
+                    .get(&l.hijo)
+                    .is_some_and(|c| c.naturaleza == Naturaleza::Capitulo)
+                {
+                    rec(app, &l.hijo, out);
+                } else {
+                    out.push((cap.to_owned(), l.hijo.clone()));
+                }
+            }
+        }
+        let mut out = Vec::new();
+        rec(self, &self.p.raiz, &mut out);
+        out
+    }
+
+    /// Mueve la selección `d` partidas; con `sin_precio`, a la siguiente sin precio.
+    fn navegar(&mut self, d: i32, sin_precio: bool) {
+        let orden = self.orden_partidas();
+        if orden.is_empty() {
+            return;
+        }
+        let actual = self.sel.as_ref().and_then(|s| orden.iter().position(|x| x == s));
+        let n = orden.len();
+        let destino = if sin_precio {
+            let inicio = actual.map_or(0, |i| i + 1);
+            (0..n)
+                .map(|k| (inicio + k) % n)
+                .find(|&i| self.calc.precios.get(&orden[i].1).is_none_or(|p| p.is_zero()))
+        } else {
+            Some(match actual {
+                None => 0,
+                Some(i) => {
+                    (i64::try_from(i).unwrap_or(0) + i64::from(d)).clamp(0, i64::try_from(n - 1).unwrap_or(0)) as usize
+                }
+            })
+        };
+        match destino {
+            Some(i) => {
+                self.sel = Some(orden[i].clone());
+                self.pestana = Pestana::Partida;
+                self.avisos.clear();
+                self.desplazar_arbol = true;
+            }
+            None => self.info("Todas las partidas tienen precio."),
+        }
     }
 
     fn info(&mut self, t: impl Into<String>) {
@@ -275,6 +403,8 @@ impl Aplicacion {
     }
 
     fn abrir(&mut self, ruta: PathBuf) {
+        self.ciego = None;
+        self.historial.limpiar();
         let r = (|| -> ppto_db::Resultado<_> {
             let a = Almacen::abrir(&ruta)?;
             let revs = a.listar_revisiones()?;
@@ -384,6 +514,8 @@ impl Aplicacion {
     }
 
     fn importar_bc3(&mut self, ruta: PathBuf) {
+        self.ciego = None;
+        self.historial.limpiar();
         match ppto_bc3::importar_fichero(&ruta) {
             Ok(imp) => {
                 self.p = imp.presupuesto.clone();
@@ -515,6 +647,7 @@ impl Aplicacion {
         match Almacen::abrir(&ruta).and_then(|a| a.cargar_revision(id)) {
             Ok(p) => {
                 self.p = p;
+                self.historial.limpiar();
                 self.revision_actual = Some(id);
                 self.cambios = false;
                 self.recalcular();
@@ -580,6 +713,18 @@ impl Aplicacion {
 
     fn aplicar(&mut self, acciones: Vec<Accion>) {
         for a in acciones {
+            let guardado = match describir(&a) {
+                Some((que, grupo)) => self.historial.antes(&self.p, que, grupo),
+                None => {
+                    if !matches!(
+                        a,
+                        Accion::Seleccionar(..) | Accion::Navegar(_) | Accion::SiguienteSinPrecio
+                    ) {
+                        self.historial.grupo = None;
+                    }
+                    false
+                }
+            };
             let r = match a {
                 Accion::Seleccionar(padre, hijo) => {
                     self.sel = Some((padre, hijo));
@@ -630,6 +775,14 @@ impl Aplicacion {
                         c.resumen = texto;
                     }
                     self.cambios = true;
+                    continue;
+                }
+                Accion::Navegar(d) => {
+                    self.navegar(d, false);
+                    continue;
+                }
+                Accion::SiguienteSinPrecio => {
+                    self.navegar(1, true);
                     continue;
                 }
                 Accion::Alta(t) => {
@@ -716,15 +869,71 @@ impl Aplicacion {
             };
             match r {
                 Ok(()) => self.marcar_cambio(),
-                Err(e) => self.error(e.to_string()),
+                Err(e) => {
+                    // El motor no cambia nada si falla: fuera la copia
+                    if guardado {
+                        self.historial.deshacer.pop();
+                        self.historial.grupo = None;
+                    }
+                    self.error(e.to_string());
+                }
             }
         }
+    }
+
+    fn deshacer(&mut self) {
+        if let Some((p, que)) = self.historial.deshacer.pop() {
+            let actual = std::mem::replace(&mut self.p, p);
+            self.historial.rehacer.push((actual, que.clone()));
+            self.tras_historial(format!("Deshecho: {que}."));
+        }
+    }
+
+    fn rehacer(&mut self) {
+        if let Some((p, que)) = self.historial.rehacer.pop() {
+            let actual = std::mem::replace(&mut self.p, p);
+            self.historial.deshacer.push((actual, que.clone()));
+            self.tras_historial(format!("Rehecho: {que}."));
+        }
+    }
+
+    fn tras_historial(&mut self, mensaje: String) {
+        self.historial.grupo = None;
+        self.edicion = Edicion::default();
+        if let Some((padre, hijo)) = &self.sel
+            && !self
+                .p
+                .conceptos
+                .get(padre)
+                .is_some_and(|c| c.descomposicion.iter().any(|l| &l.hijo == hijo))
+        {
+            self.sel = None;
+        }
+        self.marcar_cambio();
+        self.info(mensaje);
     }
 
     // --------------------------------------------------------------------- UI
 
     fn barra_superior(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
+            let des = self.historial.deshacer.last().map(|(_, q)| q.clone());
+            let reh = self.historial.rehacer.last().map(|(_, q)| q.clone());
+            if ui
+                .add_enabled(des.is_some(), egui::Button::new("Deshacer"))
+                .on_hover_text(des.map_or("Nada que deshacer".into(), |q| format!("Deshacer {q} (Ctrl+Z)")))
+                .clicked()
+            {
+                self.deshacer();
+            }
+            if ui
+                .add_enabled(reh.is_some(), egui::Button::new("Rehacer"))
+                .on_hover_text(reh.map_or("Nada que rehacer".into(), |q| format!("Rehacer {q} (Ctrl+Y)")))
+                .clicked()
+            {
+                self.rehacer();
+            }
+            ui.separator();
             if ui
                 .button("📄 Ejemplo")
                 .on_hover_text("Cargar el ejemplo sintético de suelo radiante")
@@ -745,6 +954,32 @@ impl Aplicacion {
             {
                 self.dialogo_importar();
             }
+            ui.menu_button("📋 Ciego", |ui| {
+                if ui
+                    .button("Abrir Excel ciego…")
+                    .on_hover_text("Listado «Presupuesto y mediciones» de Presto en Excel, con precios a cero")
+                    .clicked()
+                {
+                    ui.close();
+                    self.dialogo_ciego();
+                }
+                if ui
+                    .button("Traer precios de un BC3…")
+                    .on_hover_text("Base de precios, obra anterior o el mismo ciego valorado en Presto")
+                    .clicked()
+                {
+                    ui.close();
+                    self.traer_precios();
+                }
+                if ui
+                    .button("Devolver Excel valorado…")
+                    .on_hover_text("El mismo Excel del cliente con los precios en la columna PrPres")
+                    .clicked()
+                {
+                    ui.close();
+                    self.devolver_valorado();
+                }
+            });
             if ui
                 .button("📤 Exportar BC3…")
                 .on_hover_text("FIEBDC-3/2002 en ANSI, como lo exporta Presto 8.8")
@@ -758,6 +993,15 @@ impl Aplicacion {
                 .clicked()
             {
                 self.exportar_excel();
+            }
+            if ui
+                .button("📄 PDF…")
+                .on_hover_text(
+                    "Presupuesto para el cliente: portada con logo, partidas, mediciones, resumen y observaciones",
+                )
+                .clicked()
+            {
+                self.abrir_pdf();
             }
             if self.informe.is_some() && ui.button("Informe de importación").clicked() {
                 self.ver_informe = true;
@@ -814,7 +1058,7 @@ impl Aplicacion {
         });
     }
 
-    fn arbol(&self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+    fn arbol(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
         ui.heading(&self.p.conceptos[&self.p.raiz].resumen);
         ui.separator();
         ui.horizontal(|ui| {
@@ -829,9 +1073,54 @@ impl Aplicacion {
                     .small(),
             );
         });
+        ui.add(
+            egui::TextEdit::singleline(&mut self.buscar)
+                .hint_text("Buscar partida por código o texto…")
+                .desired_width(f32::INFINITY),
+        );
+        let buscar = self.buscar.trim().to_lowercase();
         egui::ScrollArea::vertical().show(ui, |ui| {
-            self.rama(ui, &self.p.raiz, acciones);
+            if buscar.is_empty() {
+                self.rama(ui, &self.p.raiz, acciones);
+            } else {
+                self.resultados(ui, &buscar, acciones);
+            }
         });
+        self.desplazar_arbol = false;
+    }
+
+    /// Lista plana de partidas que contienen el texto buscado.
+    fn resultados(&self, ui: &mut Ui, buscar: &str, acciones: &mut Vec<Accion>) {
+        let mut n = 0;
+        for (cap, hijo) in self.orden_partidas() {
+            let c = &self.p.conceptos[&hijo];
+            let texto = format!("{} {} {}", c.codigo, c.resumen, c.texto.as_deref().unwrap_or("")).to_lowercase();
+            if !texto.contains(buscar) {
+                continue;
+            }
+            n += 1;
+            let elegido = self.sel.as_ref() == Some(&(cap.clone(), hijo.clone()));
+            let precio = self.calc.precios.get(&hijo).copied().unwrap_or_default();
+            let r = ui.add(
+                egui::Button::selectable(elegido, format!("{}  {}", c.codigo, corto(&c.resumen, 34)))
+                    .wrap_mode(egui::TextWrapMode::Truncate),
+            );
+            ui.label(
+                RichText::new(format!("    en {cap} · {} €/{}", eur(precio), c.unidad))
+                    .weak()
+                    .small(),
+            );
+            if r.clicked() {
+                acciones.push(Accion::Seleccionar(cap, hijo));
+            }
+            if n >= 300 {
+                ui.label(RichText::new("… afine la búsqueda").weak());
+                break;
+            }
+        }
+        if n == 0 {
+            ui.label(RichText::new("Sin resultados").weak());
+        }
     }
 
     fn rama(&self, ui: &mut Ui, capitulo: &str, acciones: &mut Vec<Accion>) {
@@ -844,6 +1133,11 @@ impl Aplicacion {
                 let r = egui::CollapsingHeader::new(RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong())
                     .id_salt(("cap", capitulo, &l.hijo))
                     .default_open(self.calc.lineas.get(&l.hijo).is_none_or(|v| v.len() <= 40))
+                    .open(
+                        (self.desplazar_arbol
+                            && self.sel.as_ref().is_some_and(|(p, _)| self.p.ruta(p).contains(&l.hijo)))
+                        .then_some(true),
+                    )
                     .show(ui, |ui| {
                         ui.label(RichText::new(format!("{} €", eur(l.importe))).weak());
                         self.rama(ui, &l.hijo, acciones);
@@ -888,14 +1182,20 @@ impl Aplicacion {
                     origen: capitulo.to_owned(),
                     hijo: l.hijo.clone(),
                 };
-                let r = ui
-                    .dnd_drag_source(egui::Id::new(("arrastre", capitulo, &l.hijo)), carga, |ui| {
-                        ui.add(
-                            egui::Button::selectable(elegido, format!("{}  {}", c.codigo, corto(&c.resumen, 34)))
-                                .wrap_mode(egui::TextWrapMode::Truncate),
-                        )
-                    })
-                    .inner;
+                // Un solo botón para clic (abrir la partida) y arrastre (moverla):
+                // envolverlo en dnd_drag_source anula el clic.
+                let r = ui.add(
+                    egui::Button::selectable(elegido, format!("{}  {}", c.codigo, corto(&c.resumen, 34)))
+                        .wrap_mode(egui::TextWrapMode::Truncate)
+                        .sense(egui::Sense::click_and_drag()),
+                );
+                r.dnd_set_drag_payload(carga);
+                if r.dragged() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                }
+                if elegido && self.desplazar_arbol {
+                    r.scroll_to_me(Some(egui::Align::Center));
+                }
                 // Soltar otra partida encima: se coloca delante de esta
                 if let Some(a) = r.dnd_release_payload::<Arrastre>() {
                     if a.hijo != l.hijo {
@@ -955,6 +1255,41 @@ impl Aplicacion {
             .get(&padre)
             .is_some_and(|p| p.naturaleza == Naturaleza::Capitulo);
         ui.horizontal(|ui| {
+            let orden = self.orden_partidas();
+            let pos = orden.iter().position(|x| x.0 == padre && x.1 == hijo);
+            if ui
+                .add_enabled(pos.is_some_and(|i| i > 0), egui::Button::new("< Anterior"))
+                .on_hover_text("Ctrl+↑")
+                .clicked()
+            {
+                acciones.push(Accion::Navegar(-1));
+            }
+            if ui
+                .add_enabled(
+                    pos.is_none_or(|i| i + 1 < orden.len()),
+                    egui::Button::new("Siguiente >"),
+                )
+                .on_hover_text("Ctrl+↓ (pulse Intro antes para confirmar el precio)")
+                .clicked()
+            {
+                acciones.push(Accion::Navegar(1));
+            }
+            if ui
+                .button("Siguiente sin precio >>")
+                .on_hover_text("Ctrl+Mayús+↓")
+                .clicked()
+            {
+                acciones.push(Accion::SiguienteSinPrecio);
+            }
+            if let Some(i) = pos {
+                let sin = orden
+                    .iter()
+                    .filter(|(_, h)| self.calc.precios.get(h).is_none_or(|p| p.is_zero()))
+                    .count();
+                ui.label(RichText::new(format!("{} de {} · {sin} sin precio", i + 1, orden.len())).weak());
+            }
+        });
+        ui.horizontal(|ui| {
             if !padre_es_capitulo
                 && ui
                     .button(format!("<< Volver a {padre}"))
@@ -1002,7 +1337,7 @@ impl Aplicacion {
             ui.label(
                 RichText::new(format!(
                     "Cantidad {} {}   ·   Precio {} €/{}   ·   Importe {} €",
-                    num(l.cantidad, dec.medicion),
+                    cant(l.cantidad, dec.medicion),
                     c.unidad,
                     eur(l.precio),
                     c.unidad,
@@ -1113,7 +1448,17 @@ impl Aplicacion {
                     acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
                 }
             } else if c.naturaleza == Naturaleza::Partida {
-                ui.label(RichText::new("Partida sin descomposición: precio 0,00.").weak());
+                ui.horizontal(|ui| {
+                    ui.label("Precio directo (sin descomponer):");
+                    if let Some(v) = self
+                        .edicion
+                        .decimal(ui, &format!("pd|{hijo}"), c.precio, dec.precio, ANCHO_NUM)
+                    {
+                        acciones.push(Accion::Precio(hijo.clone(), v));
+                    }
+                    ui.label(RichText::new(format!("€/{}", c.unidad)).weak());
+                });
+                ui.label(RichText::new("O descompóngala:").weak());
                 if ui.button("+ Añadir línea…").clicked() {
                     acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
                 }
@@ -1260,7 +1605,7 @@ impl Aplicacion {
                     }
                 }
                 let parcial = parciales.get(i).copied().unwrap_or_default();
-                let txt = RichText::new(num(parcial, dec.medicion));
+                let txt = RichText::new(cant(parcial, dec.medicion));
                 ui.label(if subtotal { txt.italics() } else { txt });
                 if ui.small_button("✖").on_hover_text("Quitar línea").clicked() {
                     quitar = Some(i);
@@ -1272,7 +1617,7 @@ impl Aplicacion {
             }
             ui.label(RichText::new("Total").strong());
             let total = res.as_ref().map(|r| r.total).unwrap_or_default();
-            ui.label(RichText::new(format!("{} {unidad}", num(total, dec.medicion))).strong());
+            ui.label(RichText::new(format!("{} {unidad}", cant(total, dec.medicion))).strong());
             ui.end_row();
         });
         if let Err(e) = &res {
@@ -1770,6 +2115,38 @@ impl eframe::App for Aplicacion {
         }
 
         let mut acciones = Vec::new();
+        // Ctrl+Z / Ctrl+Y (o Ctrl+Mayús+Z): deshacer / rehacer, salvo mientras
+        // se escribe en un campo (allí deshace el propio campo).
+        if !ui.ctx().egui_wants_keyboard_input() {
+            let (rehacer, deshacer) = ui.ctx().input_mut(|i| {
+                let r = i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Z)
+                    || i.consume_key(egui::Modifiers::CTRL, egui::Key::Y);
+                (r, i.consume_key(egui::Modifiers::CTRL, egui::Key::Z))
+            });
+            if deshacer {
+                self.deshacer();
+            }
+            if rehacer {
+                self.rehacer();
+            }
+        }
+        // Ctrl+↓ / Ctrl+↑: partida siguiente / anterior; Ctrl+Mayús+↓: siguiente sin precio
+        let (sin_precio, bajar, subir) = ui.ctx().input_mut(|i| {
+            let sin_precio = i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::ArrowDown);
+            (
+                sin_precio,
+                i.consume_key(egui::Modifiers::CTRL, egui::Key::ArrowDown),
+                i.consume_key(egui::Modifiers::CTRL, egui::Key::ArrowUp),
+            )
+        });
+        if sin_precio {
+            acciones.push(Accion::SiguienteSinPrecio);
+        } else if bajar {
+            acciones.push(Accion::Navegar(1));
+        }
+        if subir {
+            acciones.push(Accion::Navegar(-1));
+        }
         egui::Panel::top("barra").show(ui, |ui| {
             ui.add_space(4.0);
             self.barra_superior(ui);
@@ -1818,6 +2195,7 @@ impl eframe::App for Aplicacion {
         let ctx = ui.ctx().clone();
         self.ventana_informe(&ctx, &mut acciones);
         self.ventana_alta(&ctx, &mut acciones);
+        self.ventana_pdf(&ctx);
         if !acciones.is_empty() {
             self.aplicar(acciones);
         }
@@ -2073,5 +2451,240 @@ mod pruebas {
         app.aplicar(vec![Accion::Alta(TipoAlta::Capitulo { padre: "C01".into() })]);
         assert_eq!(app.alta.as_ref().unwrap().codigo, "C01.01");
         pintar(&mut app);
+    }
+
+    #[test]
+    fn precio_directo_de_partida_sin_descomponer() {
+        // Como al valorar un ciego: 12 m a 15,50 €/m = 186,00
+        let mut app = Aplicacion::sin_ventana();
+        app.nuevo_presupuesto();
+        app.aplicar(vec![
+            Accion::NuevoCapitulo {
+                padre: "OBRA".into(),
+                codigo: "C01".into(),
+                resumen: "Cap".into(),
+            },
+            Accion::NuevaPartida {
+                capitulo: "C01".into(),
+                codigo: "P1".into(),
+                unidad: "m".into(),
+                resumen: "Tubería".into(),
+            },
+            Accion::Rendimiento("C01".into(), "P1".into(), dec!(12)),
+            Accion::Precio("P1".into(), dec!(15.50)),
+        ]);
+        assert_eq!(app.calc.pem, dec!(186.00));
+        pintar(&mut app);
+    }
+
+    #[test]
+    fn navegar_entre_partidas() {
+        // Ejemplo: SR.M2 y SR.COL8 en C01; se añade C02 con P9 sin precio
+        let mut app = Aplicacion::sin_ventana();
+        app.aplicar(vec![
+            Accion::NuevoCapitulo {
+                padre: app.p.raiz.clone(),
+                codigo: "C02".into(),
+                resumen: "Otro".into(),
+            },
+            Accion::NuevaPartida {
+                capitulo: "C02".into(),
+                codigo: "P9".into(),
+                unidad: "u".into(),
+                resumen: "Sin precio".into(),
+            },
+        ]);
+        assert_eq!(
+            app.orden_partidas(),
+            [
+                ("C01".to_owned(), "SR.M2".to_owned()),
+                ("C01".into(), "SR.COL8".into()),
+                ("C02".into(), "P9".into())
+            ]
+        );
+        app.aplicar(vec![Accion::Seleccionar("C01".into(), "SR.M2".into())]);
+        app.aplicar(vec![Accion::Navegar(1)]);
+        assert_eq!(app.sel, Some(("C01".into(), "SR.COL8".into())));
+        app.aplicar(vec![Accion::Navegar(5)]);
+        assert_eq!(app.sel, Some(("C02".into(), "P9".into())), "no se pasa del final");
+        app.aplicar(vec![Accion::Navegar(-1)]);
+        assert_eq!(app.sel, Some(("C01".into(), "SR.COL8".into())));
+        app.aplicar(vec![Accion::SiguienteSinPrecio]);
+        assert_eq!(app.sel, Some(("C02".into(), "P9".into())));
+        assert!(app.desplazar_arbol);
+        pintar(&mut app);
+        app.buscar = "colector".into();
+        pintar(&mut app);
+    }
+
+    /// Clic real con el ratón en una partida del árbol (regresión: el
+    /// arrastre no debe anular el clic).
+    #[test]
+    fn clic_en_partida_del_arbol() {
+        use eframe::egui::{Event, PointerButton, Pos2};
+        let mut elegidas = std::collections::BTreeSet::new();
+        for y in (60..420).step_by(6) {
+            let mut app = Aplicacion::sin_ventana();
+            app.sel = None;
+            let ctx = Context::default();
+            let mut acciones = Vec::new();
+            let pos = Pos2::new(90.0, y as f32);
+            let boton = |pressed| Event::PointerButton {
+                pos,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            };
+            for e in [
+                vec![],
+                vec![Event::PointerMoved(pos)],
+                vec![boton(true)],
+                vec![boton(false)],
+                vec![],
+            ] {
+                let entrada = RawInput {
+                    events: e,
+                    screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 800.0))),
+                    ..Default::default()
+                };
+                let mut out = ctx.run_ui(entrada, |ui| {
+                    egui::Panel::left("a")
+                        .default_size(330.0)
+                        .show(ui, |ui| app.arbol(ui, &mut acciones));
+                });
+                out.textures_delta.clear();
+            }
+            for a in acciones {
+                if let Accion::Seleccionar(_, h) = a {
+                    elegidas.insert(h);
+                }
+            }
+        }
+        assert_eq!(elegidas.into_iter().collect::<Vec<_>>(), ["SR.COL8", "SR.M2"]);
+    }
+
+    /// Arrastrar con el ratón SR.COL8 encima de SR.M2 la coloca delante.
+    #[test]
+    fn arrastre_con_raton() {
+        use eframe::egui::{Event, PointerButton, Pos2};
+        // Posiciones de las dos partidas (clic de prueba en cada y)
+        let mut pos_de = std::collections::BTreeMap::new();
+        for y in (60..420).step_by(6) {
+            let mut app = Aplicacion::sin_ventana();
+            let ctx = Context::default();
+            let mut acc = Vec::new();
+            let p = Pos2::new(90.0, y as f32);
+            let b = |pressed| Event::PointerButton {
+                pos: p,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            };
+            for e in [vec![], vec![Event::PointerMoved(p)], vec![b(true)], vec![b(false)]] {
+                let entrada = RawInput {
+                    events: e,
+                    screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 800.0))),
+                    ..Default::default()
+                };
+                let mut out = ctx.run_ui(entrada, |ui| {
+                    egui::Panel::left("a")
+                        .default_size(330.0)
+                        .show(ui, |ui| app.arbol(ui, &mut acc));
+                });
+                out.textures_delta.clear();
+            }
+            for a in acc {
+                if let Accion::Seleccionar(_, h) = a {
+                    pos_de.entry(h).or_insert(y as f32);
+                }
+            }
+        }
+        let (desde, hasta) = (pos_de["SR.COL8"], pos_de["SR.M2"]);
+        let mut app = Aplicacion::sin_ventana();
+        let ctx = Context::default();
+        let mut acc = Vec::new();
+        let p0 = Pos2::new(90.0, desde);
+        let mut eventos = vec![
+            vec![],
+            vec![Event::PointerMoved(p0)],
+            vec![Event::PointerButton {
+                pos: p0,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            }],
+        ];
+        for k in 1..=10 {
+            eventos.push(vec![Event::PointerMoved(Pos2::new(
+                90.0,
+                desde + (hasta - desde) * k as f32 / 10.0,
+            ))]);
+        }
+        let p1 = Pos2::new(90.0, hasta);
+        eventos.push(vec![Event::PointerButton {
+            pos: p1,
+            button: PointerButton::Primary,
+            pressed: false,
+            modifiers: Default::default(),
+        }]);
+        for e in eventos {
+            let entrada = RawInput {
+                events: e,
+                screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 800.0))),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(entrada, |ui| {
+                egui::Panel::left("a")
+                    .default_size(330.0)
+                    .show(ui, |ui| app.arbol(ui, &mut acc));
+            });
+            out.textures_delta.clear();
+        }
+        assert!(
+            acc.iter().any(|a| matches!(a, Accion::Trasladar(o, h, d, Some(antes)) if o == "C01" && h == "SR.COL8" && d == "C01" && antes == "SR.M2")),
+            "no hubo traslado"
+        );
+        assert!(
+            !acc.iter().any(|a| matches!(a, Accion::Seleccionar(..))),
+            "arrastrar no debe contar como clic"
+        );
+    }
+
+    #[test]
+    fn deshacer_y_rehacer() {
+        // Ejemplo: PEM 7.005,15. Tubo 1,10 → 1,25: 7.229,85. Quitar SR.COL8: 6.501,60.
+        let mut app = Aplicacion::sin_ventana();
+        app.aplicar(vec![Accion::Precio("MT.TUBO16".into(), dec!(1.25))]);
+        assert_eq!(app.calc.pem, dec!(7229.85));
+        app.aplicar(vec![Accion::QuitarLinea("C01".into(), "SR.COL8".into(), true)]);
+        assert_eq!(app.calc.pem, dec!(6501.60));
+        app.deshacer();
+        assert_eq!(app.calc.pem, dec!(7229.85));
+        assert!(app.p.conceptos.contains_key("SR.COL8"), "vuelve con su descompuesto");
+        app.deshacer();
+        assert_eq!(app.calc.pem, dec!(7005.15));
+        app.deshacer(); // nada más que deshacer
+        assert_eq!(app.calc.pem, dec!(7005.15));
+        app.rehacer();
+        app.rehacer();
+        assert_eq!(app.calc.pem, dec!(6501.60));
+        // Un cambio nuevo borra lo que se podía rehacer
+        app.deshacer();
+        app.aplicar(vec![Accion::Ci(dec!(10))]);
+        assert!(app.historial.rehacer.is_empty());
+        // Escribir un resumen letra a letra se deshace de una vez
+        let antes = app.p.conceptos["SR.M2"].resumen.clone();
+        for t in ["S", "Su", "Sue"] {
+            app.aplicar(vec![Accion::Resumen("SR.M2".into(), t.into())]);
+        }
+        app.deshacer();
+        assert_eq!(app.p.conceptos["SR.M2"].resumen, antes);
+        // Un error no deja copia en el historial
+        let n = app.historial.deshacer.len();
+        app.aplicar(vec![Accion::AnadirLinea("C01".into(), "SR.M2".into(), dec!(1))]);
+        assert_eq!(app.historial.deshacer.len(), n);
+        // Abrir otro presupuesto empieza un historial nuevo
+        app.nuevo_presupuesto();
+        assert!(app.historial.deshacer.is_empty());
     }
 }

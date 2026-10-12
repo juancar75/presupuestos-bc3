@@ -1,0 +1,27 @@
+[package]
+name = "ppto-pdf"
+description = "Presupuesto en PDF con maquetación tipográfica (Typst): portada, partidas con texto justificado y partición silábica, mediciones, resumen y observaciones"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ppto-core.workspace = true
+rust_decimal.workspace = true
+serde = { workspace = true }
+serde_json = "1.0"
+thiserror.workspace = true
+typst = "0.15"
+typst-pdf = "0.15"
+typst-layout = "0.15"
+typst-assets = { version = "0.15", features = ["fonts"] }
+typst-as-lib = "0.17"
+
+[dev-dependencies]
+rust_decimal_macros.workspace = true
+
+[lints]
+workspace = true

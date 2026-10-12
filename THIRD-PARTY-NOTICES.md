@@ -22,3 +22,17 @@ que las fuentes no se vendan por separado y se conserven sus avisos.
 ## Portapapeles en Windows
 
 `clipboard-win` y `error-code` (Boost Software License 1.0), compatible con GPL.
+
+## Maquetación PDF (`ppto-pdf`)
+
+El PDF se compone con [Typst](https://github.com/typst/typst) (Apache-2.0),
+incluido como librería. A través de `typst-assets` se incrustan las fuentes:
+
+| Fuente | Licencia |
+|---|---|
+| New Computer Modern (texto del presupuesto) | GUST Font License (LPPL) |
+| Libertinus Serif | SIL Open Font License 1.1 |
+| DejaVu Sans Mono | Licencia Bitstream Vera / dominio público |
+
+Se distribuyen sin modificar y los PDF generados solo incluyen el subconjunto
+de glifos usado, como permiten esas licencias. `roman-numerals-rs` (0BSD).

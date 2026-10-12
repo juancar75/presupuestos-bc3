@@ -71,6 +71,56 @@ Seis hojas: resumen por capítulos (coste directo, indirectos, PEM, GG, BI,
 IVA), presupuesto, descompuestos, mediciones, recursos y horas por oficio.
 También con el botón «Excel…» de la interfaz.
 
+## Presupuestos ciegos en Excel
+
+El listado «Presupuesto y mediciones» de Presto exportado a Excel (columnas
+Código, Nat, Ud, Resumen, Comentario, N, Longitud, Anchura, Altura, Parcial,
+CanPres, PrPres, ImpPres) con los precios a cero:
+
+1. **📋 Ciego → Abrir Excel ciego…** lo importa: capítulos y subcapítulos,
+   partidas con su texto y sus líneas de medición, tal como las calcula el
+   Excel (dimensión 0 = 1; parciales fijos de líneas con fórmula).
+2. Se valora: **precio directo** en la partida, descomponiéndola, o
+   **Traer precios de un BC3…** (base de precios, obra anterior o el mismo
+   ciego valorado en Presto: trae el descompuesto completo).
+3. **Devolver Excel valorado…** guarda **el mismo fichero del cliente** con
+   los precios en la columna PrPres. No se toca nada más (formato, fórmulas,
+   textos) y Excel recalcula al abrir. El total del programa coincide al
+   céntimo con el del Excel.
+
+```console
+cargo run -p ppto-cli -- ciego ciego.xlsx --precios base.bc3 --valorado ciego-valorado.xlsx
+cargo run -p ppto-cli -- ciego ciego.xlsx --bc3 ciego.bc3     # para valorarlo en Presto
+```
+
+## Presupuesto en PDF
+
+Botón **PDF…** de la interfaz (o `--pdf presupuesto.pdf` en `ppto demo` e
+`ppto importar`). Maquetado con Typst, incluido en el programa:
+
+- **Portada** con logo (PNG, JPG o SVG), tipo de documento, título, cliente,
+  referencia, **revisión**, **fecha** e importe total.
+- Capítulos y subcapítulos; cada partida con su texto **justificado y con
+  partición silábica en castellano**, líneas de medición, cantidad, precio e
+  importe.
+- **Resumen** por capítulos con %, PEM, GG, BI, IVA, total y total en letra,
+  lugar, fecha y firma.
+- Hoja final de **observaciones al presupuesto** (editables; se proponen las
+  habituales).
+
+**Perfiles de empresa.** Cada perfil guarda su logo (se sube un PNG, JPG o
+SVG y se conserva una copia), empresa, firma, observaciones y tipo de resumen.
+Vienen dos de serie, y se pueden duplicar, renombrar y borrar:
+
+| Perfil | Resumen | Observaciones |
+|---|---|---|
+| **Instaladora** («Oferta») | Base imponible, IVA y total (sin PEM, GG ni BI) | Validez, alcance, exclusiones, garantía, pago |
+| **Ingeniería** («Presupuesto») | PEM, 13 % GG, 6 % BI, IVA y total | Validez, mediciones, exclusiones, plazos, pago |
+
+Se guardan en `%APPDATA%\presupuestos-bc3\perfiles.json`. El diseño está en `crates/ppto-pdf/plantillas/presupuesto.typ`:
+«Guardar copia de la plantilla…» la deja en una carpeta para retocarla y
+«Usar plantilla…» la aplica.
+
 ## Claude Desktop (MCP)
 
 `cargo build --release -p ppto-mcp` y añadir `target\release\ppto-mcp.exe` a
