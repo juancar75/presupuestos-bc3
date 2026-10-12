@@ -269,10 +269,9 @@ fn herramientas() -> Value {
         },
         {
             "name": "proponer",
-            "description": "Propone el precio de una partida de la obra activa: un descompuesto (lineas) o un precio directo (precio). NO modifica el presupuesto: queda pendiente hasta que el usuario la acepte en el programa. Reutilice los códigos de recursos que ya existen en la obra (se usan con su precio de la obra); para un recurso nuevo indique naturaleza, unidad, resumen y precio. Para material de catálogo de un fabricante, indique pvp (precio de tarifa) y fabricante en lugar de precio, y en descuentos el descuento estimado del instalador para ese fabricante: el neto se calcula con el descuento de la obra y el usuario lo ajusta después para todos los recursos del fabricante. Para usar una tarifa de subcontrata, código PROVEEDOR.REFERENCIA con naturaleza subcontrata y su precio. Una línea porcentual (medios auxiliares) lleva naturaleza porcentaje y los puntos como rendimiento.",
+            "description": "Propone el precio de una partida de la obra activa como DESCOMPUESTO (lineas): siempre material, mano de obra, maquinaria o subcontrata y medios auxiliares; no se admiten precios directos. NO modifica el presupuesto: queda pendiente hasta que el usuario la acepte en el programa. Reutilice los códigos de recursos que ya existen en la obra (se usan con su precio de la obra); para un recurso nuevo indique naturaleza, unidad, resumen y precio. Para material de catálogo de un fabricante, indique pvp (precio de tarifa) y fabricante en lugar de precio, y en descuentos el descuento estimado del instalador para ese fabricante: el neto se calcula con el descuento de la obra y el usuario lo ajusta después para todos los recursos del fabricante. Para usar una tarifa de subcontrata, código PROVEEDOR.REFERENCIA con naturaleza subcontrata y su precio. Una línea porcentual (medios auxiliares) lleva naturaleza porcentaje y los puntos como rendimiento.",
             "inputSchema": { "type": "object", "properties": {
                 "partida": { "type": "string" },
-                "precio": num,
                 "lineas": { "type": "array", "items": { "type": "object", "properties": {
                     "codigo": { "type": "string" },
                     "rendimiento": num,
@@ -287,7 +286,7 @@ fn herramientas() -> Value {
                 "descuentos": { "type": "array", "description": "Descuento estimado del instalador sobre tarifa por fabricante, o por grupo de producto con fabricante «S&P/E08» (solo se usa si la obra no tiene ya ese descuento)", "items": { "type": "object", "properties": { "fabricante": { "type": "string" }, "porcentaje": num }, "required": ["fabricante", "porcentaje"] } },
                 "confianza": { "type": "string", "enum": ["alta", "media", "baja"] },
                 "justificacion": { "type": "string", "description": "De dónde salen precios y rendimientos (obra anterior, tarifa, estimación…)" }
-            }, "required": ["partida", "confianza", "justificacion"] }
+            }, "required": ["partida", "lineas", "confianza", "justificacion"] }
         },
         {
             "name": "ver_propuestas",
@@ -966,8 +965,13 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
     let confianza = Confianza::leer(texto(a, "confianza")?).ok_or("confianza: alta, media o baja")?;
     let justificacion = texto(a, "justificacion")?.trim().to_owned();
     let contenido = match (a.get("lineas").and_then(Value::as_array), dec_campo(a, "precio")?) {
-        (Some(_), Some(_)) => return Err("indique lineas o precio, no ambos".into()),
-        (None, Some(precio)) => Contenido::PrecioDirecto(precio),
+        (_, Some(_)) => {
+            return Err(
+                "no se admiten precios directos: proponga siempre un descompuesto (lineas) con material, \
+                 mano de obra, maquinaria o subcontrata y medios auxiliares"
+                    .into(),
+            );
+        }
         (Some(ls), None) => {
             let mut v = Vec::new();
             for l in ls {
@@ -1001,7 +1005,7 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
             }
             Contenido::Descompuesto(v)
         }
-        (None, None) => return Err("indique lineas (descompuesto) o precio (precio directo)".into()),
+        (None, None) => return Err("indique lineas (el descompuesto de la partida)".into()),
     };
     let mut prop = Propuesta {
         id: 0,

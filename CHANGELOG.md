@@ -5,6 +5,11 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Cambiado
+- MCP `proponer`: solo admite descompuestos (material, mano de obra,
+  maquinaria o subcontrata y medios auxiliares); los precios directos se
+  rechazan.
+
 ### Añadido — descuentos por fabricante
 - Recursos con **PVP de tarifa y fabricante** (`PrecioTarifa`): el neto es
   PVP × (1 − descuento del fabricante). `Presupuesto::descuentos`,

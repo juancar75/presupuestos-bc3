@@ -296,13 +296,20 @@ fn propuestas_a_la_obra_activa() {
         !err && t.contains("349,10") && t.contains("Descuento KOOLAIR 45"),
         "{t}"
     );
-    // Una propuesta imposible se rechaza sin guardarse
+    // Sin descompuesto no se admite (siempre hay que descomponer), y no se guarda
     let (t, err) = llamar(
         &mut e,
         "proponer",
-        json!({"partida":"SR.M2","precio":5,"confianza":"baja","justificacion":"x"}),
+        json!({"partida":"P.VAL","precio":5,"confianza":"baja","justificacion":"x"}),
     );
     assert!(err && t.contains("descompuesto"), "{t}");
+    // Una propuesta imposible tampoco
+    let (t, err) = llamar(
+        &mut e,
+        "proponer",
+        json!({"partida":"P.VAL","lineas":[{"codigo":"NO.EXISTE","rendimiento":1}],"confianza":"baja","justificacion":"x"}),
+    );
+    assert!(err && t.contains("no válida"), "{t}");
     let b = ppto_propuestas::Bandeja::cargar(&dir.join("propuestas.json"));
     assert_eq!(
         b.entradas.len(),
