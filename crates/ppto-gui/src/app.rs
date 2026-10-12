@@ -4,6 +4,7 @@
 
 mod alta;
 mod ciego;
+mod dificultad;
 mod pdf;
 mod ratio;
 mod tarifas;
@@ -77,6 +78,11 @@ enum Accion {
     Trasladar(String, String, String, Option<String>),
     Alta(TipoAlta),
     AplicarRatio(ppto_core::ratio::PaqueteRatio),
+    Dificultad {
+        ambito: String,
+        coeficiente: Decimal,
+        motivo: String,
+    },
     /// Ir a la partida anterior (-1) o siguiente (+1) del presupuesto.
     Navegar(i32),
     SiguienteSinPrecio,
@@ -180,6 +186,9 @@ pub struct Aplicacion {
     /// Tarifas de subcontratas del usuario (fuera del repositorio).
     tarifas: ppto_tarifas::Biblioteca,
     ventana_tarifas: Option<tarifas::VentanaTarifas>,
+    dificultad: dificultad::FormDificultad,
+    /// Cambios que se anotan en la auditoría al guardar la revisión.
+    notas_revision: Vec<String>,
 }
 
 /// Deshacer / rehacer: copias completas del presupuesto antes de cada cambio.
@@ -233,6 +242,11 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::Mover(p, h, _) => (format!("mover {h} en {p}"), None),
         Accion::Trasladar(o, h, d, _) => (format!("mover {h} de {o} a {d}"), None),
         Accion::AplicarRatio(p) => (format!("subcontrata {}", p.codigo), None),
+        Accion::Dificultad {
+            ambito,
+            coeficiente,
+            motivo,
+        } => (dificultad::describir(ambito, *coeficiente, motivo), None),
         _ => return None,
     })
 }
@@ -298,6 +312,8 @@ impl Aplicacion {
             ratio: ratio::FormRatio::default(),
             tarifas: ppto_tarifas::Biblioteca::default(),
             ventana_tarifas: None,
+            dificultad: dificultad::FormDificultad::default(),
+            notas_revision: Vec::new(),
         };
         app.recalcular();
         app
@@ -700,10 +716,14 @@ impl Aplicacion {
             };
             let etiqueta = a.siguiente_etiqueta(pid)?;
             let rev = a.guardar_revision(pid, &etiqueta, &autor, &self.p)?;
+            for n in &self.notas_revision {
+                a.anotar(rev, &autor, "dificultad", n)?;
+            }
             Ok((pid, rev, etiqueta, a.listar_revisiones()?))
         })();
         match r {
             Ok((pid, rev, etiqueta, revs)) => {
+                self.notas_revision.clear();
                 self.fichero = Some(ruta);
                 self.presupuesto_id = Some(pid);
                 self.revision_actual = Some(rev);
@@ -806,6 +826,26 @@ impl Aplicacion {
                         if a >= Decimal::ZERO { "ahorro" } else { "sobrecoste" },
                         eur(a.abs())
                     ));
+                }),
+                Accion::Dificultad {
+                    ambito,
+                    coeficiente,
+                    motivo,
+                } => self.p.aplicar_dificultad(&ambito, coeficiente).map(|inf| {
+                    let nota = dificultad::describir(&ambito, coeficiente, &motivo);
+                    self.info(format!(
+                        "Aplicado {nota}: {} h → {} h de mano de obra propia; coste directo {} → {} €.{}",
+                        num(inf.total_antes(), 2),
+                        num(inf.total_despues(), 2),
+                        eur(inf.coste_antes),
+                        eur(inf.coste_despues),
+                        if inf.omitidas.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" Sin tocar (compartidas): {}.", inf.omitidas.join(", "))
+                        }
+                    ));
+                    self.notas_revision.push(nota);
                 }),
                 Accion::Navegar(d) => {
                     self.navegar(d, false);
@@ -914,6 +954,9 @@ impl Aplicacion {
     fn deshacer(&mut self) {
         if let Some((p, que)) = self.historial.deshacer.pop() {
             let actual = std::mem::replace(&mut self.p, p);
+            if let Some(i) = self.notas_revision.iter().rposition(|n| *n == que) {
+                self.notas_revision.remove(i);
+            }
             self.historial.rehacer.push((actual, que.clone()));
             self.tras_historial(format!("Deshecho: {que}."));
         }
@@ -922,6 +965,9 @@ impl Aplicacion {
     fn rehacer(&mut self) {
         if let Some((p, que)) = self.historial.rehacer.pop() {
             let actual = std::mem::replace(&mut self.p, p);
+            if que.starts_with("dificultad ") {
+                self.notas_revision.push(que.clone());
+            }
             self.historial.deshacer.push((actual, que.clone()));
             self.tras_historial(format!("Rehecho: {que}."));
         }
@@ -1697,6 +1743,9 @@ impl Aplicacion {
         let e = e.clone();
         let dec = self.p.decimales;
         ui.label("Cantidades totales necesarias para ejecutar el presupuesto. Los precios se pueden editar aquí.");
+        egui::CollapsingHeader::new(RichText::new("Coeficiente de dificultad (horas de mano de obra propia)").strong())
+            .id_salt("dificultad")
+            .show(ui, |ui| self.form_dificultad(ui, acciones));
         ui.add_space(4.0);
         egui::ScrollArea::vertical().show(ui, |ui| {
             for nat in [
@@ -2828,5 +2877,38 @@ mod pruebas {
             app.accion_tarifa("SR.COL8", e, dec!(1)),
             Some(Accion::AnadirLinea(..))
         ));
+    }
+    #[test]
+    fn coeficiente_de_dificultad() {
+        let mut app = Aplicacion::sin_ventana();
+        let pem = app.calc.pem;
+        app.aplicar(vec![Accion::Dificultad {
+            ambito: "OBRA".into(),
+            coeficiente: dec!(1.2),
+            motivo: "obra en altura".into(),
+        }]);
+        assert!(app.calc.pem > pem);
+        let mo = app.p.conceptos["SR.M2"]
+            .descomposicion
+            .iter()
+            .find(|l| l.hijo == "MO.OF1F")
+            .unwrap()
+            .rendimiento;
+        assert_eq!(mo, dec!(0.3), "0,25 × 1,20");
+        assert_eq!(app.notas_revision, ["dificultad ×1,20 en OBRA (obra en altura)"]);
+        app.deshacer();
+        assert_eq!(app.calc.pem, pem);
+        assert!(app.notas_revision.is_empty());
+        app.rehacer();
+        assert_eq!(app.notas_revision.len(), 1);
+        // La pestaña Recursos se pinta con el formulario
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let mut acc = Vec::new();
+                egui::CentralPanel::default_margins().show(ui, |ui| app.pestana_recursos(ui, &mut acc));
+            });
+            out.textures_delta.clear();
+        }
     }
 }
