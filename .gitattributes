@@ -3,3 +3,4 @@
 *.BC3 binary
 # Scripts de Windows con CRLF
 *.bat text eol=crlf
+*.ps1 text eol=crlf

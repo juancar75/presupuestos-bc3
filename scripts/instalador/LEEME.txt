@@ -1,0 +1,29 @@
+PRESUPUESTOS BC3 - Instalación en Windows
+=========================================
+
+1. Descomprima el .zip en cualquier carpeta (p. ej. Descargas).
+2. Doble clic en «instalar.bat».
+   - Si Windows avisa («Windows protegió su PC»): «Más información» > «Ejecutar de todas formas».
+     El programa no está firmado digitalmente; es normal.
+3. Abra «Presupuestos BC3» desde el escritorio.
+
+Se instala en %LOCALAPPDATA%\Programs\presupuestos-bc3 (solo para su usuario).
+Sus obras y ajustes se guardan en %APPDATA%\presupuestos-bc3.
+
+ACTUALIZAR: descargue la nueva versión y vuelva a ejecutar instalar.bat. No se pierden obras ni ajustes.
+
+CLAUDE (opcional)
+- El programa funciona sin Claude.
+- Asistente en modo «Encargo por MCP»: necesita Claude Desktop en este PC con su cuenta.
+  instalar.bat lo configura solo (guarda una copia del fichero anterior). Reinicie Claude Desktop.
+- Asistente en modo «Directo (API)»: no necesita Claude Desktop; ponga su clave de API en
+  Asistente > Ajustes.
+
+Configuración manual de Claude Desktop (si hiciera falta), en
+%APPDATA%\Claude\claude_desktop_config.json, dentro de "mcpServers":
+
+  "presupuestos": {
+    "command": "C:\\Users\\<usuario>\\AppData\\Local\\Programs\\presupuestos-bc3\\ppto-mcp.exe"
+  }
+
+Código fuente y licencia (GPL-3.0-or-later): https://github.com/juancar75/presupuestos-bc3

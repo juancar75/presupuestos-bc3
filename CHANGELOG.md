@@ -5,6 +5,14 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.2] - 2026-10-15
+
+### Añadido — instalador para Windows
+- Cada versión publica `presupuestos-bc3-<versión>-windows.zip` con
+  `ppto-gui.exe`, `ppto-mcp.exe`, `ppto.exe` e `instalar.bat`: instala para
+  el usuario sin administrador, crea accesos directos y configura Claude
+  Desktop (con copia de seguridad) si está instalado.
+
 ### Añadido — panel del asistente
 - **✨ Asistente**: conversación con la IA por obra, con adjuntos (ofertas,
   tarifas, mediciones) e informes. Modo *encargo por MCP* (gratis: «atiende
