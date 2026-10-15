@@ -23,11 +23,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
-      - run: cargo build --release -p ppto-cli -p ppto-gui
+      - run: cargo build --release -p ppto-cli -p ppto-gui -p ppto-mcp
+      - name: Paquete para Windows (zip con instalador)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $n = "presupuestos-bc3-${{ github.ref_name }}-windows"
+          New-Item -ItemType Directory $n | Out-Null
+          Copy-Item target/release/ppto-gui.exe, target/release/ppto-mcp.exe, target/release/ppto.exe $n
+          Copy-Item scripts/instalador/* $n
+          Copy-Item LICENSE, THIRD-PARTY-NOTICES.md $n
+          Compress-Archive -Path $n -DestinationPath "$n.zip"
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             target/release/${{ matrix.exe }}
             target/release/${{ matrix.gui }}
+            presupuestos-bc3-*.zip
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
