@@ -7,6 +7,12 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [0.1.0-alpha.3] - 2026-10-16
 
+### Añadido
+- MCP `proponer_lote`: hasta 40 propuestas por llamada, con los recursos
+  comunes definidos una vez, líneas abreviadas y medios auxiliares
+  automáticos. Valorar una obra entera pasa de una llamada por partida a
+  unas pocas.
+
 ### Corregido
 - BC3 ciegos de Presto: las unidades de obra sin tipo (0) y sin
   descompuesto que cuelgan de un capítulo se importan como partidas (antes
