@@ -472,6 +472,14 @@ impl Lector {
         let mut conceptos: BTreeMap<String, Concepto> = BTreeMap::new();
         let mut es_pct: BTreeSet<String> = BTreeSet::new();
         let mut avisos = Vec::new();
+        // Hijos directos de un capítulo: en los ciegos de Presto las unidades
+        // de obra llegan sin tipo (0) y sin descompuesto, pero son partidas.
+        let en_capitulo: BTreeSet<String> = self
+            .desc
+            .iter()
+            .filter(|(padre, _)| self.conceptos.get(*padre).is_some_and(|c| c.capitulo))
+            .flat_map(|(_, lineas)| lineas.iter().map(|l| l.hijo.clone()))
+            .collect();
         for codigo in &self.orden {
             let c = &self.conceptos[codigo];
             let tiene_desc = self.desc.get(codigo).is_some_and(|v| !v.is_empty());
@@ -488,6 +496,8 @@ impl Lector {
                     ));
                 }
                 Naturaleza::Partida
+            } else if en_capitulo.contains(codigo) && !matches!(c.tipo.as_str(), "1" | "2" | "3") {
+                Naturaleza::Partida
             } else {
                 match c.tipo.as_str() {
                     "1" => Naturaleza::ManoObra,
@@ -496,7 +506,8 @@ impl Lector {
                     _ => Naturaleza::Otros,
                 }
             };
-            let precio = if naturaleza.es_basico() {
+            // Una partida sin descompuesto conserva su precio como precio directo.
+            let precio = if naturaleza.es_basico() || (naturaleza == Naturaleza::Partida && !tiene_desc) {
                 c.precio.unwrap_or_default()
             } else {
                 Decimal::ZERO

@@ -52,6 +52,10 @@ ignore = [
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz vía krilla/typst-pdf; Typst lo sustituirá" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser vía Typst" },
     { id = "RUSTSEC-2024-0320", reason = "yaml-rust vía syntect de Typst" },
+    # zip retiró (yanked) toda la serie 8.x en crates.io; calamine 0.36 y
+    # rust_xlsxwriter 0.99 aún piden ^8. Sin aviso de seguridad publicado.
+    # Quitar al actualizar a versiones que usen zip 9.
+    { crate = "zip@8.6.0", reason = "serie 8.x retirada; dependientes aún sin zip 9" },
     { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml vía serde_yaml de hayagriva (bibliografía de Typst), no usado" },
 ]
 

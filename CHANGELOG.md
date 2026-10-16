@@ -5,6 +5,14 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.3] - 2026-10-16
+
+### Corregido
+- BC3 ciegos de Presto: las unidades de obra sin tipo (0) y sin
+  descompuesto que cuelgan de un capítulo se importan como partidas (antes
+  como «otros», y la IA no podía proponer su precio). Las obras ya abiertas
+  se corrigen al aceptar la propuesta.
+
 ## [0.1.0-alpha.2] - 2026-10-15
 
 ### Añadido — instalador para Windows

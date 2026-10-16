@@ -223,3 +223,28 @@ fn descuento_por_grupo_de_producto() {
     assert_eq!(p.concepto("MT.PANEL").unwrap().tarifa.as_ref().unwrap().grupo, None);
     assert_eq!(p.concepto("MT.PANEL").unwrap().precio, dec!(5.50));
 }
+
+/// Obra ya importada con las unidades de obra como «otros» (ciego de Presto
+/// leído con una versión anterior): la propuesta la convierte en partida.
+#[test]
+fn propuesta_sobre_unidad_de_obra_otros_en_capitulo() {
+    let mut p = suelo_radiante();
+    p.nueva_partida("C01", "U.TUBO", "m", "Tubo").unwrap();
+    p.conceptos.get_mut("U.TUBO").unwrap().naturaleza = N::Otros;
+    let prop = propuesta(
+        "U.TUBO",
+        Contenido::Descompuesto(vec![LineaPropuesta {
+            naturaleza: Some(N::Material),
+            unidad: "m".into(),
+            resumen: "Tubo".into(),
+            precio: Some(dec!(4)),
+            ..linea("MT.TUBO", dec!(1))
+        }]),
+    );
+    p.aplicar_propuesta(&prop).unwrap();
+    assert_eq!(p.conceptos["U.TUBO"].naturaleza, N::Partida);
+    assert_eq!(p.precio("U.TUBO").unwrap(), dec!(4));
+    // Un recurso básico que no cuelga de un capítulo sigue sin admitirse
+    let mal = propuesta("MO.OF1F", Contenido::Descompuesto(vec![linea("MT.TUBO", dec!(1))]));
+    assert!(p.aplicar_propuesta(&mal).is_err());
+}
