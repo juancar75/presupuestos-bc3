@@ -305,3 +305,26 @@ fn redondeos_de_presto_8_8_en_porcentajes_y_factores() {
     assert!(imp.discrepancias.is_empty(), "{:?}", imp.discrepancias);
     assert_eq!(imp.presupuesto.pem().unwrap(), dec!(70.92));
 }
+
+/// Ciego de Presto: las unidades de obra llegan con tipo 0 y sin
+/// descompuesto. Son partidas (para poder valorarlas), no recursos «otros».
+#[test]
+fn unidades_de_obra_sin_tipo_de_un_ciego_son_partidas() {
+    use ppto_core::concepto::Naturaleza;
+    let bc3 = "~V|SINTETICO|FIEBDC-3/2002|Prueba|\r\n\
+~C|OBRA##||Obra ciega sintetica|0|010126|0|\r\n\
+~C|CAP01#||Capitulo|0|010126|0|\r\n\
+~C|U01|m|Tubo de prueba|0|010126|0|\r\n\
+~C|U02|ud|Unidad con precio|12.5|010126|0|\r\n\
+~C|MT01|m|Material suelto|3|010126|3|\r\n\
+~D|OBRA##|CAP01#\\1\\1\\|\r\n\
+~D|CAP01#|U01\\1\\10\\U02\\1\\2\\MT01\\1\\1\\|\r\n";
+    let imp = ppto_bc3::importar(bc3.as_bytes()).unwrap();
+    let p = &imp.presupuesto;
+    assert_eq!(p.conceptos["U01"].naturaleza, Naturaleza::Partida);
+    assert_eq!(p.conceptos["U02"].naturaleza, Naturaleza::Partida);
+    // Precio directo conservado
+    assert_eq!(p.precio("U02").unwrap(), rust_decimal::Decimal::new(125, 1));
+    // Un material directamente en el capítulo sigue siendo material
+    assert_eq!(p.conceptos["MT01"].naturaleza, Naturaleza::Material);
+}

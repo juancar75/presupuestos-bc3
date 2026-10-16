@@ -139,7 +139,21 @@ impl Presupuesto {
         let partida = prop.partida.as_str();
         let c = self.concepto(partida)?;
         if c.naturaleza != Naturaleza::Partida {
-            return Err(ErrorMotor::ValorInvalido(format!("«{partida}» no es una partida")));
+            // Unidad de obra importada sin tipo (p. ej. un ciego de Presto):
+            // un concepto «otros» sin descompuesto colgado de un capítulo.
+            let en_capitulo = self
+                .conceptos
+                .values()
+                .any(|p| p.naturaleza == Naturaleza::Capitulo && p.descomposicion.iter().any(|l| l.hijo == partida));
+            if c.naturaleza == Naturaleza::Otros && c.descomposicion.is_empty() && en_capitulo {
+                let c = self
+                    .conceptos
+                    .get_mut(partida)
+                    .ok_or_else(|| ErrorMotor::ValorInvalido(format!("«{partida}» no existe")))?;
+                c.naturaleza = Naturaleza::Partida;
+            } else {
+                return Err(ErrorMotor::ValorInvalido(format!("«{partida}» no es una partida")));
+            }
         }
         let mut out = Aplicada {
             precio_antes: self.precio(partida)?,
