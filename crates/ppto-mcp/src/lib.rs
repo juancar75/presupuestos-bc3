@@ -165,7 +165,7 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                     Abre un presupuesto con abrir_presupuesto y consulta o simula. Las herramientas no \
                     modifican el presupuesto. Para valorar la obra que el usuario tiene abierta en el \
                     programa: abrir_obra_activa, partidas_sin_precio, ver_concepto/buscar/buscar_tarifas \
-                    para reutilizar recursos y precios existentes, y proponer (una propuesta por partida, \
+                    para reutilizar recursos y precios existentes, y proponer (una propuesta por partida; para varias partidas, proponer_lote, que acepta hasta 40 en una llamada), \
                     con confianza y justificación de cada precio y rendimiento). El usuario acepta o \
                     rechaza cada propuesta en el programa; consulte ver_propuestas. Si el usuario \
                     pide «atiende el asistente» o similar, lea los encargos que dejó en el panel del \
@@ -296,6 +296,32 @@ fn herramientas() -> Value {
             }, "required": ["partida", "lineas", "confianza", "justificacion"] }
         },
         {
+            "name": "proponer_lote",
+            "description": "Igual que proponer, pero para muchas partidas en UNA llamada (recomendado a partir de 3 partidas; hasta 40 por llamada). Los recursos comunes (mano de obra, materiales, fabricante, pvp) se definen una vez en «recursos» y en cada propuesta las líneas solo llevan código y rendimiento, como objeto {codigo, rendimiento} o como par [\"CODIGO\", rendimiento]. «medios_auxiliares» (puntos de %) añade la línea %MA a las propuestas que no la traigan. «confianza» y «justificacion» del lote valen para las propuestas que no indiquen las suyas. Cada propuesta se valida por separado: las que fallan se informan y el resto se guarda.",
+            "inputSchema": { "type": "object", "properties": {
+                "recursos": { "type": "array", "description": "Definición de recursos nuevos usados en el lote", "items": { "type": "object", "properties": {
+                    "codigo": { "type": "string" },
+                    "naturaleza": { "type": "string", "enum": ["mano_obra", "material", "maquinaria", "subcontrata", "otros", "porcentaje"] },
+                    "unidad": { "type": "string" },
+                    "resumen": { "type": "string" },
+                    "precio": num,
+                    "pvp": num,
+                    "fabricante": { "type": "string" },
+                    "grupo": { "type": "string" }
+                }, "required": ["codigo"] } },
+                "descuentos": { "type": "array", "items": { "type": "object", "properties": { "fabricante": { "type": "string" }, "porcentaje": num }, "required": ["fabricante", "porcentaje"] } },
+                "medios_auxiliares": num,
+                "confianza": { "type": "string", "enum": ["alta", "media", "baja"] },
+                "justificacion": { "type": "string" },
+                "propuestas": { "type": "array", "items": { "type": "object", "properties": {
+                    "partida": { "type": "string" },
+                    "lineas": { "type": "array", "items": {} },
+                    "confianza": { "type": "string", "enum": ["alta", "media", "baja"] },
+                    "justificacion": { "type": "string" }
+                }, "required": ["partida", "lineas"] } }
+            }, "required": ["propuestas"] }
+        },
+        {
             "name": "ver_propuestas",
             "description": "Propuestas hechas para la obra activa y su estado (pendiente, aceptada o rechazada por el usuario).",
             "inputSchema": { "type": "object", "properties": {} }
@@ -389,6 +415,7 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         }
         "buscar_tarifas" => buscar_tarifas(estado, texto(a, "texto")?),
         "proponer" => proponer(estado, a),
+        "proponer_lote" => proponer_lote(estado, a),
         "ver_propuestas" => ver_propuestas(estado),
         "leer_mensajes" => asistente::leer_mensajes(estado),
         "responder" => asistente::responder(estado, a),
@@ -1119,6 +1146,102 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
             eur(*obra),
             eur(*propuesto)
         );
+    }
+    Ok(t)
+}
+
+/// Máximo de propuestas por llamada a `proponer_lote`.
+const MAX_LOTE: usize = 40;
+
+/// Varias propuestas en una llamada: recursos comunes definidos una vez y
+/// líneas abreviadas. Cada propuesta pasa por `proponer` (misma validación).
+fn proponer_lote(estado: &mut Estado, a: &Value) -> Result<String, String> {
+    let props = a
+        .get("propuestas")
+        .and_then(Value::as_array)
+        .filter(|v| !v.is_empty())
+        .ok_or("indique propuestas (lista de {partida, lineas})")?;
+    if props.len() > MAX_LOTE {
+        return Err(format!(
+            "{} propuestas: como mucho {MAX_LOTE} por llamada; divida el lote",
+            props.len()
+        ));
+    }
+    let mut defs: std::collections::BTreeMap<String, Value> = std::collections::BTreeMap::new();
+    for r in a.get("recursos").and_then(Value::as_array).into_iter().flatten() {
+        let c = texto(r, "codigo")?.trim().to_owned();
+        defs.insert(c, r.clone());
+    }
+    let ma = dec_campo(a, "medios_auxiliares")?;
+    let (mut bien, mut mal) = (Vec::new(), Vec::new());
+    for (i, pr) in props.iter().enumerate() {
+        let partida = pr
+            .get("partida")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or("")
+            .to_owned();
+        let r = (|| -> Result<String, String> {
+            if partida.is_empty() {
+                return Err(format!("propuesta {} sin partida", i + 1));
+            }
+            let mut lineas = Vec::new();
+            for l in pr.get("lineas").and_then(Value::as_array).ok_or("sin lineas")? {
+                let mut obj = match l {
+                    Value::Array(par) if par.len() == 2 => {
+                        json!({ "codigo": par[0].as_str().ok_or("par sin código")?, "rendimiento": par[1] })
+                    }
+                    Value::Object(_) => l.clone(),
+                    _ => return Err("cada línea es {codigo, rendimiento} o [\"CODIGO\", rendimiento]".into()),
+                };
+                let codigo = texto(&obj, "codigo")?.trim().to_owned();
+                if let Some(d) = defs.get(&codigo)
+                    && let (Some(o), Some(dd)) = (obj.as_object_mut(), d.as_object())
+                {
+                    for (k, v) in dd {
+                        o.entry(k.clone()).or_insert_with(|| v.clone());
+                    }
+                }
+                lineas.push(obj);
+            }
+            if let Some(ma) = ma
+                && !lineas
+                    .iter()
+                    .any(|l| l["codigo"].as_str().is_some_and(|c| c.starts_with('%')))
+            {
+                lineas.push(json!({
+                    "codigo": "%MA", "rendimiento": ma.to_string(),
+                    "naturaleza": "porcentaje", "resumen": "Medios auxiliares"
+                }));
+            }
+            let mut uno = json!({
+                "partida": partida,
+                "lineas": lineas,
+                "confianza": pr.get("confianza").or_else(|| a.get("confianza")).cloned().unwrap_or(Value::Null),
+                "justificacion": pr.get("justificacion").or_else(|| a.get("justificacion")).cloned().unwrap_or(Value::Null),
+            });
+            if let Some(d) = a.get("descuentos") {
+                uno["descuentos"] = d.clone();
+            }
+            proponer(estado, &uno)
+        })();
+        match r {
+            Ok(t) => bien.push(t.lines().next().unwrap_or("").to_owned()),
+            Err(e) => mal.push(format!("{partida}: {e}")),
+        }
+    }
+    let mut t = format!("{} propuestas guardadas, {} con error.", bien.len(), mal.len());
+    for b in &bien {
+        let _ = write!(t, "\n- {b}");
+    }
+    if !mal.is_empty() {
+        t.push_str("\nCon error (corríjalas y vuelva a enviarlas):");
+        for m in &mal {
+            let _ = write!(t, "\n- {m}");
+        }
+    }
+    if bien.is_empty() {
+        return Err(t);
     }
     Ok(t)
 }

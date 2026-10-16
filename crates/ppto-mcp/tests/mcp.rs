@@ -382,3 +382,67 @@ fn encargos_del_panel_del_asistente() {
     assert!(h.iter().any(|h| h["name"] == "proponer"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn proponer_lote_con_recursos_comunes() {
+    let dir = std::env::temp_dir().join(format!("mcp-lote-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut p = ppto_core::ejemplos::suelo_radiante();
+    p.nueva_partida("C01", "P.A", "m", "Tubo A").unwrap();
+    p.nueva_partida("C01", "P.B", "m", "Tubo B").unwrap();
+    let activa = dir.join("obra-activa.json");
+    ppto_propuestas::ObraActiva::guardar(&p, &activa).unwrap();
+    let bandeja = dir.join("propuestas.json");
+    let mut e = Estado {
+        ruta_obra_activa: Some(activa),
+        ruta_bandeja: Some(bandeja.clone()),
+        ruta_tarifas: Some(dir.join("tarifas.json")),
+        ruta_conversaciones: Some(dir.join("asistente.json")),
+        ..Estado::default()
+    };
+    llamar(&mut e, "abrir_obra_activa", json!({}));
+    let (t, err) = llamar(
+        &mut e,
+        "proponer_lote",
+        json!({
+            "recursos": [
+                { "codigo": "MT.TUBO", "naturaleza": "material", "unidad": "m", "resumen": "Tubo", "precio": 4 },
+                { "codigo": "MO.OF1F", "naturaleza": "mano_obra", "unidad": "h", "resumen": "Oficial", "precio": 24.5 }
+            ],
+            "medios_auxiliares": 2,
+            "confianza": "media",
+            "justificacion": "estimación",
+            "propuestas": [
+                { "partida": "P.A", "lineas": [["MT.TUBO", 1.1], ["MO.OF1F", 0.2]] },
+                { "partida": "P.B", "lineas": [{ "codigo": "MT.TUBO", "rendimiento": 1 }], "confianza": "alta" },
+                { "partida": "NO.EXISTE", "lineas": [["MT.TUBO", 1]] }
+            ]
+        }),
+    );
+    assert!(!err, "{t}");
+    assert!(
+        t.contains("2 propuestas guardadas, 1 con error") && t.contains("NO.EXISTE"),
+        "{t}"
+    );
+    let b = ppto_propuestas::Bandeja::cargar(&bandeja);
+    assert_eq!(b.entradas.len(), 2);
+    // %MA añadido y confianza propia respetada
+    let pa = &b.entradas[0].propuesta;
+    let ppto_core::propuesta::Contenido::Descompuesto(l) = &pa.contenido else {
+        panic!()
+    };
+    assert!(l.iter().any(|x| x.codigo == "%MA"));
+    assert_eq!(b.entradas[1].propuesta.confianza, ppto_core::propuesta::Confianza::Alta);
+    // Más de 40: se rechaza entero
+    let muchas: Vec<_> = (0..41)
+        .map(|_| json!({ "partida": "P.A", "lineas": [["MT.TUBO", 1]] }))
+        .collect();
+    let (t, err) = llamar(
+        &mut e,
+        "proponer_lote",
+        json!({ "confianza": "baja", "justificacion": "x", "propuestas": muchas }),
+    );
+    assert!(err && t.contains("como mucho 40"), "{t}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -41,6 +41,7 @@ ese presupuesto al arrancar.
 | `partidas_sin_precio` | Partidas a 0 € con unidad, cantidad, capítulo y texto | No |
 | `buscar_tarifas` | Busca en las tarifas de subcontratas del usuario | No |
 | `proponer` | Propone el descompuesto de una partida (no se admiten precios directos) | No: queda **pendiente** en la bandeja |
+| `proponer_lote` | Hasta 40 propuestas en una llamada: recursos comunes definidos una vez, líneas `["CÓDIGO", rendimiento]` y medios auxiliares automáticos | No: quedan **pendientes** |
 | `ver_propuestas` | Estado de las propuestas (pendiente, aceptada, rechazada) | No |
 | `leer_mensajes` | Encargos pendientes del panel del asistente (con adjuntos) y conversación anterior | No |
 | `responder` | Contesta en el panel del asistente y marca los encargos como atendidos | No |
