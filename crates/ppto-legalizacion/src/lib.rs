@@ -6,19 +6,21 @@
 //! los costes:
 //!
 //! 1. **Mano de obra técnica** por perfil (senior, junior, técnico,
-//!    documentación) a su coste horario, para la tramitación (as-built,
-//!    cálculos, libro de uso y mantenimiento, documentación 3.1.5, CIE del
-//!    eléctrico, dirección de obra y gestión del expediente), la redacción del
-//!    proyecto propio y las justificaciones RITE y RSIF. Las horas salen del
-//!    honorario de baremo (% del PEM por tramos con mínimos), descontado el
-//!    margen.
+//!    documentación) a su coste horario: horas de cada tarea (fijas, por
+//!    10.000 € de PEM y por vivienda) para la memoria o la tramitación y
+//!    dirección de la instalación, la redacción del proyecto propio y las
+//!    justificaciones RITE y RSIF, y horas de las visitas a obra.
 //! 2. **Visitas de la OCA**: horas del técnico en la inspección.
 //! 3. **Desplazamientos**: horas de viaje, kilometraje, aparcamiento y dietas
 //!    de cada visita (dirección de obra y OCA).
-//! 4. **Costes indirectos, gestión y beneficio**: % sobre lo anterior.
+//! 4. **Costes indirectos, gestión y beneficio**: % sobre lo anterior, según
+//!    el tamaño del encargo (pequeño, mediano, grande).
 //! 5. **Repercutidos** sin margen: tasas de la Comunidad, EICI y visados.
 //!
-//! El baremo (honorarios, costes horarios y tablas) es del usuario y vive
+//! La tarifa sale de nuestros costes y nuestro margen; los honorarios en % del
+//! PEM se calculan solo como **referencia de mercado** para comparar.
+//!
+//! El baremo (horas, costes horarios, margen, referencias y tablas) es del usuario y vive
 //! fuera del repositorio, en `legalizacion.json` de la carpeta de
 //! configuración, con una versión por año. [`Baremo::ejemplo`] lleva valores
 //! **sintéticos** para pruebas y como plantilla.
@@ -140,7 +142,55 @@ fn reparto_redaccion() -> Reparto {
     }
 }
 
-/// Honorarios, costes y tablas de un año. Todos los importes sin IVA.
+/// Horas de una tarea: fijas + por cada 10.000 € de PEM + por vivienda.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Horas {
+    pub base: Decimal,
+    pub por_10k: Decimal,
+    pub por_vivienda: Decimal,
+}
+
+impl Horas {
+    fn de(&self, pem: Decimal, viviendas: Decimal) -> Decimal {
+        self.base + self.por_10k * pem / d(10_000) + self.por_vivienda * viviendas
+    }
+
+    fn texto(&self, viviendas: Decimal) -> String {
+        let mut t = format!("{} h", corto(self.base));
+        if !self.por_10k.is_zero() {
+            t.push_str(&format!(" + {} h por 10.000 € de PEM", corto(self.por_10k)));
+        }
+        if !self.por_vivienda.is_zero() && !viviendas.is_zero() {
+            t.push_str(&format!(" + {} h por vivienda", corto(self.por_vivienda)));
+        }
+        t
+    }
+}
+
+/// Tamaño del encargo: decide el margen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Tamano {
+    Pequeno,
+    Mediano,
+    Grande,
+}
+
+impl Tamano {
+    pub fn nombre(self) -> &'static str {
+        match self {
+            Self::Pequeno => "pequeño",
+            Self::Mediano => "mediano",
+            Self::Grande => "grande",
+        }
+    }
+}
+
+/// Costes, horas, margen y tablas de un año. Todos los importes sin IVA.
+///
+/// La tarifa se forma con **nuestros costes**: horas de cada tarea por su
+/// coste horario, desplazamientos y el margen. Los honorarios en % del PEM
+/// son solo la **referencia de mercado** con la que se compara.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Baremo {
@@ -148,7 +198,7 @@ pub struct Baremo {
     /// Procedencia de los datos (p. ej. «Tablas PRMEM 2026, honorarios AIDESEGI»).
     pub nota: String,
 
-    // --- honorarios de baremo (precio de venta, margen incluido)
+    // --- referencia de mercado (honorarios en % del PEM; no forman el precio)
     /// Proyectos: tramitación y dirección de la instalación, % del PEM de la
     /// disciplina por tramos acumulativos.
     pub tramitacion: Vec<Tramo>,
@@ -175,13 +225,30 @@ pub struct Baremo {
     pub rsif_repetido: Decimal,
     pub rsif_minimo: Decimal,
 
+    // --- horas por tarea (forman el precio)
+    pub horas_memoria: Horas,
+    pub horas_tramitacion: Horas,
+    pub horas_redaccion: Horas,
+    pub horas_justif_rite: Horas,
+    pub rsif_horas_modelo: Decimal,
+    pub rsif_horas_repetido: Decimal,
+    /// Horas del técnico en cada visita a obra.
+    pub horas_visita_obra: Decimal,
+    /// Margen (costes indirectos, gestión y beneficio) según tamaño del
+    /// encargo: `margen` para pequeños; 0 en mediano o grande = el de pequeño.
+    pub margen_mediano: Decimal,
+    pub margen_grande: Decimal,
+    /// Horas a partir de las que el encargo es mediano o grande.
+    pub horas_mediano: Decimal,
+    pub horas_grande: Decimal,
+
     // --- costes
     /// Coste horario de cada perfil (€/h).
     pub coste_senior: Decimal,
     pub coste_junior: Decimal,
     pub coste_tecnico: Decimal,
     pub coste_documentacion: Decimal,
-    /// Costes indirectos, gestión y beneficio (%) sobre mano de obra y desplazamientos.
+    /// Costes indirectos, gestión y beneficio (%) de los encargos pequeños.
     pub margen: Decimal,
     /// Reparto de horas de la tramitación de proyectos y de memorias.
     pub reparto_tramitacion: Reparto,
@@ -269,6 +336,17 @@ impl Default for Baremo {
             coste_documentacion: z,
             margen: z,
             reparto_tramitacion: reparto_tramitacion(),
+            horas_memoria: Horas::default(),
+            horas_tramitacion: Horas::default(),
+            horas_redaccion: Horas::default(),
+            horas_justif_rite: Horas::default(),
+            rsif_horas_modelo: z,
+            rsif_horas_repetido: z,
+            horas_visita_obra: z,
+            margen_mediano: z,
+            margen_grande: z,
+            horas_mediano: z,
+            horas_grande: z,
             reparto_memoria: reparto_memoria(),
             visitas_memoria: 1,
             visitas_proyecto: 2,
@@ -339,6 +417,33 @@ impl Baremo {
             coste_tecnico: d(40),
             coste_documentacion: d(30),
             margen: d(25),
+            margen_mediano: d(30),
+            margen_grande: d(35),
+            horas_mediano: d(20),
+            horas_grande: d(80),
+            horas_memoria: Horas {
+                base: d(4),
+                por_10k: Decimal::new(4, 1),
+                por_vivienda: d(1),
+            },
+            horas_tramitacion: Horas {
+                base: d(8),
+                por_10k: d(1),
+                por_vivienda: Decimal::new(5, 1),
+            },
+            horas_redaccion: Horas {
+                base: d(12),
+                por_10k: Decimal::new(15, 1),
+                por_vivienda: Decimal::ZERO,
+            },
+            horas_justif_rite: Horas {
+                base: d(2),
+                por_10k: Decimal::new(1, 1),
+                por_vivienda: Decimal::ZERO,
+            },
+            rsif_horas_modelo: Decimal::new(15, 1),
+            rsif_horas_repetido: Decimal::new(25, 2),
+            horas_visita_obra: d(2),
             oca_horas: d(2),
             viaje_km: d(40),
             viaje_horas: d(1),
@@ -372,6 +477,27 @@ impl Baremo {
             eici_if_proyecto_sala: d(350),
             tasa_if: d(35),
             ..Self::default()
+        }
+    }
+
+    /// Margen del tamaño de encargo.
+    pub fn margen_de(&self, t: Tamano) -> Decimal {
+        let m = match t {
+            Tamano::Pequeno => self.margen,
+            Tamano::Mediano => self.margen_mediano,
+            Tamano::Grande => self.margen_grande,
+        };
+        if m.is_zero() { self.margen } else { m }
+    }
+
+    /// Tamaño según las horas de mano de obra.
+    pub fn tamano_por_horas(&self, horas: Decimal) -> Tamano {
+        if !self.horas_grande.is_zero() && horas >= self.horas_grande {
+            Tamano::Grande
+        } else if !self.horas_mediano.is_zero() && horas >= self.horas_mediano {
+            Tamano::Mediano
+        } else {
+            Tamano::Pequeno
         }
     }
 
@@ -525,6 +651,8 @@ pub struct Expediente {
     pub horas_viaje: Decimal,
     /// Repercutir tasas, EICI y visado (si no, los paga la propiedad).
     pub repercutir: bool,
+    /// Tamaño del encargo para el margen (`None` = según las horas).
+    pub tamano: Option<Tamano>,
 }
 
 impl Expediente {
@@ -560,6 +688,7 @@ impl Expediente {
             km: Decimal::ZERO,
             horas_viaje: Decimal::ZERO,
             repercutir: true,
+            tamano: None,
         }
     }
 
@@ -583,6 +712,16 @@ impl Expediente {
         } else {
             Some(None)
         }
+    }
+
+    /// Circuitos RSIF de modelos distintos y repetidos.
+    pub fn rsif_modelos_repetidos(&self) -> (u32, u32) {
+        let m = if self.modelos_rsif == 0 {
+            self.circuitos_rsif
+        } else {
+            self.modelos_rsif.min(self.circuitos_rsif)
+        };
+        (m, self.circuitos_rsif - m)
     }
 
     /// Justificación RITE aparte por defecto: en memorias RITE y en proyectos
@@ -707,6 +846,11 @@ pub struct Calculo {
     pub repercutidos: Decimal,
     /// Horas de mano de obra (incluidas las de viaje).
     pub horas: Decimal,
+    /// Tamaño aplicado y su margen (%).
+    pub tamano: Option<Tamano>,
+    pub pct_margen: Decimal,
+    /// Honorarios de referencia de mercado (baremo en % del PEM), para comparar.
+    pub referencia: Decimal,
     pub avisos: Vec<String>,
 }
 
@@ -746,18 +890,8 @@ fn por_pem(tramos: &[Tramo], pem: Decimal) -> (Decimal, String) {
     (importe, txt)
 }
 
-/// Convierte un honorario de baremo (con margen) en horas por perfil a coste.
-fn horas_de(b: &Baremo, que: &str, honorario: Decimal, r: &Reparto) -> Vec<Linea> {
-    let tarifa: Decimal = Perfil::TODOS.iter().map(|p| p.parte(r) * b.coste(*p)).sum::<Decimal>() / CIEN;
-    if tarifa <= Decimal::ZERO {
-        return vec![importe_fijo(
-            format!("{que} (sin costes horarios en el baremo)"),
-            honorario,
-            Tipo::ManoObra,
-        )];
-    }
-    let coste = honorario * CIEN / (CIEN + b.margen);
-    let horas = coste / tarifa;
+/// Líneas de mano de obra: `horas` repartidas por perfil a su coste.
+fn horas_perfil(b: &Baremo, que: &str, horas: Decimal, r: &Reparto) -> Vec<Linea> {
     Perfil::TODOS
         .iter()
         .filter(|p| !p.parte(r).is_zero())
@@ -773,15 +907,10 @@ fn horas_de(b: &Baremo, que: &str, honorario: Decimal, r: &Reparto) -> Vec<Linea
         .collect()
 }
 
-/// Calcula la partida de legalización de un expediente con un baremo.
-pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
-    let mut c = Calculo::default();
+/// Honorarios de referencia de mercado (baremo en % del PEM con mínimos).
+pub fn referencia(b: &Baremo, e: &Expediente) -> Decimal {
     let proyecto = e.proyecto();
-    let doc = if proyecto { "proyecto" } else { "memoria técnica" };
-    let viviendas = e.n_viviendas();
-    let n_viv = d(viviendas);
-
-    // 1. Tramitación
+    let n_viv = d(e.n_viviendas());
     let minimo = if !proyecto && !b.tramitacion_minimo_memoria.is_zero() {
         b.tramitacion_minimo_memoria
     } else {
@@ -792,101 +921,108 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     } else {
         &b.tramitacion
     };
-    let (pct, txt) = por_pem(tramos, e.pem);
-    let suelo_viv = b.minimo_vivienda * n_viv;
-    let (mut honorario, mut regla) = if suelo_viv > pct && suelo_viv >= minimo {
-        (
-            suelo_viv,
-            format!("mínimo por vivienda: {viviendas} × {}", eur(b.minimo_vivienda)),
-        )
-    } else if minimo > pct {
-        (minimo, format!("mínimo por expediente {}", eur(minimo)))
-    } else {
-        (pct, format!("{txt} del PEM"))
-    };
-    if e.ajeno && !b.recargo_ajeno.is_zero() {
-        honorario = redondear(honorario * (CIEN + b.recargo_ajeno) / CIEN, 2);
-        regla.push_str(&format!(", +{} % por proyecto de otro técnico", corto(b.recargo_ajeno)));
+    let mut r = por_pem(tramos, e.pem).0.max(minimo).max(b.minimo_vivienda * n_viv);
+    if e.ajeno {
+        r = redondear(r * (CIEN + b.recargo_ajeno) / CIEN, 2);
     }
-    let (titulo, que, reparto) = if proyecto {
+    if proyecto && !e.ajeno && !b.redaccion.is_empty() {
+        r += por_pem(&b.redaccion, e.pem).0.max(b.redaccion_minimo);
+    }
+    if e.disciplina == Disciplina::Rite && e.justificar_rite {
+        r += redondear(e.pem * b.justif_rite_pct / CIEN, 2).max(b.justif_rite_minimo);
+    }
+    if e.circuitos_rsif > 0 {
+        let (m, rep) = e.rsif_modelos_repetidos();
+        let p_rep = if b.rsif_repetido.is_zero() {
+            b.rsif_circuito
+        } else {
+            b.rsif_repetido
+        };
+        r += (d(m) * b.rsif_circuito + d(rep) * p_rep).max(b.rsif_minimo);
+    }
+    r
+}
+
+/// Calcula la partida de legalización de un expediente con un baremo:
+/// nuestras horas a nuestro coste, desplazamientos y margen, y los
+/// repercutidos sin margen.
+pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
+    let mut c = Calculo::default();
+    let proyecto = e.proyecto();
+    let doc = if proyecto { "proyecto" } else { "memoria técnica" };
+    let viviendas = e.n_viviendas();
+    let n_viv = d(viviendas);
+
+    // 1. Memoria técnica, o tramitación y dirección de la instalación
+    let (titulo, que, horas, reparto) = if proyecto {
         (
             "Tramitación y dirección de la instalación",
             "tramitación, as-built y dirección de la instalación",
+            &b.horas_tramitacion,
             &b.reparto_tramitacion,
         )
     } else {
         (
             "Elaboración y tramitación de la memoria técnica",
             "memoria técnica, as-built y tramitación",
+            &b.horas_memoria,
             &b.reparto_memoria,
         )
     };
+    let mut h = horas.de(e.pem, n_viv);
+    let mut regla = horas.texto(n_viv);
+    if e.ajeno && !b.recargo_ajeno.is_zero() {
+        h = h * (CIEN + b.recargo_ajeno) / CIEN;
+        regla.push_str(&format!(
+            ", +{} % por revisar el proyecto de otro técnico",
+            corto(b.recargo_ajeno)
+        ));
+    }
     c.bloques.push(Bloque {
         titulo: titulo.into(),
-        regla: format!("Honorario {} ({regla})", eur(honorario)),
-        lineas: horas_de(b, que, honorario, reparto),
+        regla: format!("{} h ({regla})", num(h, 1)),
+        lineas: horas_perfil(b, que, h, reparto),
     });
 
     // 2. Redacción del proyecto propio
-    if proyecto && !e.ajeno && !b.redaccion.is_empty() {
-        let (pct, txt) = por_pem(&b.redaccion, e.pem);
-        let (h, regla) = if b.redaccion_minimo > pct {
-            (b.redaccion_minimo, format!("mínimo {}", eur(b.redaccion_minimo)))
-        } else {
-            (pct, format!("{txt} del PEM"))
-        };
-        c.bloques.push(Bloque {
-            titulo: "Redacción del proyecto".into(),
-            regla: format!("Honorario {} ({regla})", eur(h)),
-            lineas: horas_de(b, "redacción del proyecto", h, &b.reparto_redaccion),
-        });
+    if proyecto && !e.ajeno {
+        let h = b.horas_redaccion.de(e.pem, n_viv);
+        if h > Decimal::ZERO {
+            c.bloques.push(Bloque {
+                titulo: "Redacción del proyecto".into(),
+                regla: format!("{} h ({})", num(h, 1), b.horas_redaccion.texto(n_viv)),
+                lineas: horas_perfil(b, "redacción del proyecto", h, &b.reparto_redaccion),
+            });
+        }
     }
 
     // 3. Justificaciones
     if e.disciplina == Disciplina::Rite && e.justificar_rite {
-        let pct = redondear(e.pem * b.justif_rite_pct / CIEN, 2);
-        let (h, regla) = if b.justif_rite_minimo > pct {
-            (b.justif_rite_minimo, format!("mínimo {}", eur(b.justif_rite_minimo)))
-        } else {
-            (pct, format!("{} % del PEM", corto(b.justif_rite_pct)))
-        };
-        c.bloques.push(Bloque {
-            titulo: "Justificación RITE".into(),
-            regla: format!("Honorario {} ({regla})", eur(h)),
-            lineas: horas_de(b, "justificación RITE", h, &b.reparto_justificacion),
-        });
+        let h = b.horas_justif_rite.de(e.pem, n_viv);
+        if h > Decimal::ZERO {
+            c.bloques.push(Bloque {
+                titulo: "Justificación RITE".into(),
+                regla: format!("{} h ({})", num(h, 1), b.horas_justif_rite.texto(n_viv)),
+                lineas: horas_perfil(b, "justificación RITE", h, &b.reparto_justificacion),
+            });
+        }
     }
     let mut rep_if = Vec::new();
     if e.circuitos_rsif > 0 {
-        let modelos = if e.modelos_rsif == 0 {
-            e.circuitos_rsif
-        } else {
-            e.modelos_rsif.min(e.circuitos_rsif)
-        };
-        let repetidos = e.circuitos_rsif - modelos;
-        let p_rep = if b.rsif_repetido.is_zero() {
-            b.rsif_circuito
-        } else {
-            b.rsif_repetido
-        };
-        let importe = d(modelos) * b.rsif_circuito + d(repetidos) * p_rep;
-        let (h, regla) = if b.rsif_minimo > importe {
-            (b.rsif_minimo, format!("mínimo {}", eur(b.rsif_minimo)))
-        } else {
-            (
-                importe,
-                format!(
-                    "{modelos} modelos × {} + {repetidos} repetidos × {}",
-                    eur(b.rsif_circuito),
-                    eur(p_rep)
+        let (modelos, repetidos) = e.rsif_modelos_repetidos();
+        let h = d(modelos) * b.rsif_horas_modelo + d(repetidos) * b.rsif_horas_repetido;
+        if h > Decimal::ZERO {
+            c.bloques.push(Bloque {
+                titulo: format!("Justificación RSIF ({} circuitos)", e.circuitos_rsif),
+                regla: format!(
+                    "{} h ({modelos} modelos × {} h + {repetidos} repetidos × {} h)",
+                    num(h, 1),
+                    corto(b.rsif_horas_modelo),
+                    corto(b.rsif_horas_repetido)
                 ),
-            )
-        };
-        c.bloques.push(Bloque {
-            titulo: format!("Justificación RSIF ({} circuitos)", e.circuitos_rsif),
-            regla: format!("Honorario {} ({regla})", eur(h)),
-            lineas: horas_de(b, "justificación RSIF", h, &b.reparto_justificacion),
-        });
+                lineas: horas_perfil(b, "justificación RSIF", h, &b.reparto_justificacion),
+            });
+        }
         if e.repercutir
             && let Some(nivel) = e.registro_if
         {
@@ -911,7 +1047,28 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         }
     }
 
-    // 4. Visitas de la OCA
+    // 4. Visitas: de obra y de la OCA
+    if e.visitas_obra > 0 && !b.horas_visita_obra.is_zero() {
+        c.bloques.push(Bloque {
+            titulo: format!("Visitas a obra ({})", e.visitas_obra),
+            regla: format!("{} h por visita", corto(b.horas_visita_obra)),
+            lineas: vec![por_unidad(
+                format!(
+                    "{}: {} en obra",
+                    Perfil::Tecnico.nombre(),
+                    if proyecto {
+                        "dirección de la instalación"
+                    } else {
+                        "comprobación"
+                    }
+                ),
+                "h",
+                b.horas_visita_obra * d(e.visitas_obra),
+                b.coste_tecnico,
+                Tipo::ManoObra,
+            )],
+        });
+    }
     let visitas_oca = u32::from(proyecto) + e.segundas_visitas;
     if visitas_oca > 0 && !b.oca_horas.is_zero() {
         c.bloques.push(Bloque {
@@ -969,7 +1126,7 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
             c.bloques.push(Bloque {
                 titulo: format!("Desplazamientos ({viajes} viajes)"),
                 regla: format!(
-                    "{} visitas de obra + {visitas_oca} de la OCA; {} km y {} h por viaje",
+                    "{} visitas a obra + {visitas_oca} de la OCA; {} km y {} h por viaje",
                     e.visitas_obra,
                     corto(km),
                     corto(horas)
@@ -979,22 +1136,28 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         }
     }
 
-    // 6. Costes indirectos, gestión y beneficio
+    // 6. Costes indirectos, gestión y beneficio (según tamaño del encargo)
+    let horas_mo: Decimal = c.lineas().filter(|l| l.unidad == "h").map(|l| l.cantidad).sum();
+    let tamano = e.tamano.unwrap_or_else(|| b.tamano_por_horas(horas_mo));
+    let pct = b.margen_de(tamano);
+    c.tamano = Some(tamano);
+    c.pct_margen = pct;
     let base: Decimal = c.lineas().map(Linea::importe).sum();
-    if !b.margen.is_zero() {
+    if !pct.is_zero() {
         let precio = redondear(base / CIEN, 3);
         c.bloques.push(Bloque {
             titulo: "Costes indirectos, gestión y beneficio".into(),
-            regla: format!("{} % sobre {}", corto(b.margen), eur(base)),
+            regla: format!("{} % (encargo {}) sobre {}", corto(pct), tamano.nombre(), eur(base)),
             lineas: vec![Linea {
                 resumen: "Costes indirectos, gestión y beneficio de ingeniería".into(),
                 unidad: "%".into(),
-                cantidad: b.margen,
+                cantidad: pct,
                 precio,
                 tipo: Tipo::Margen,
             }],
         });
     }
+    c.referencia = referencia(b, e);
 
     // 7. Repercutidos
     if e.repercutir {
@@ -1348,126 +1511,86 @@ mod tests {
         c.bloques.iter().find(|b| b.titulo.starts_with(titulo))
     }
 
-    /// El honorario de baremo se reproduce (al céntimo de redondeo) con
-    /// horas a coste + margen.
-    fn honorario_bloque(c: &Calculo, titulo: &str) -> Decimal {
-        let coste = bloque(c, titulo).unwrap().importe();
-        redondear(coste * (CIEN + b().margen) / CIEN, 0)
+    fn horas(c: &Calculo, titulo: &str) -> Decimal {
+        bloque(c, titulo).unwrap().lineas.iter().map(|l| l.cantidad).sum()
     }
 
     #[test]
-    fn tramos_acumulativos_en_horas_por_perfil() {
-        // Proyecto: 1 % hasta 100.000 y 0,5 % del exceso: 150.000 → 1.250.
-        let e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(150000));
-        let c = calcular(&b(), &e);
-        let tram = bloque(&c, "Tramitación").unwrap();
-        assert!(tram.regla.contains("1.250,00"));
-        assert_eq!(tram.lineas.len(), 4); // senior, junior, técnico, documentación
-        assert!(tram.lineas.iter().all(|l| l.unidad == "h" && l.tipo == Tipo::ManoObra));
-        assert_eq!(honorario_bloque(&c, "Tramitación"), dec!(1250));
-    }
-
-    #[test]
-    fn memorias_con_tramos_reparto_y_texto_propios() {
-        // Memoria: 1,5 % hasta 50.000 y 0,75 % del exceso: 150.000 → 1.500.
+    fn horas_por_tarea_a_coste_por_perfil() {
+        // Memoria: 4 h + 0,4 h por 10.000 € → 150.000 € = 10 h.
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(150000));
-        assert_eq!(e.visitas_obra, 1);
+        e.justificar_rite = false;
+        e.circuitos_rsif = 0;
+        e.visitas_obra = 0;
         let c = calcular(&b(), &e);
-        let m = bloque(&c, "Elaboración y tramitación de la memoria").unwrap();
-        assert!(m.regla.contains("1.500,00"));
-        assert_eq!(honorario_bloque(&c, "Elaboración"), dec!(1500));
-        // Reparto propio: 10 % senior.
-        let horas: Decimal = m.lineas.iter().map(|l| l.cantidad).sum();
-        assert_eq!(redondear(m.lineas[0].cantidad / horas * CIEN, 0), dec!(10));
-        assert!(!c.texto.contains("dirección de la instalación"));
-        assert!(c.texto.contains("comprobación en obra"));
-        // Proyecto: sus tramos, su reparto y la dirección de la instalación.
-        e.documento = Documento::Proyecto;
-        let c = calcular(&b(), &e);
-        assert!(bloque(&c, "Tramitación y dirección").is_some());
-        assert!(c.texto.contains("dirección de la instalación"));
-        // Sin tramos de memoria se usan los de proyecto.
-        let mut bm = b();
-        bm.tramitacion_memoria.clear();
-        e.documento = Documento::Memoria;
-        assert_eq!(honorario_bloque(&calcular(&bm, &e), "Elaboración"), dec!(1250));
+        let m = bloque(&c, "Elaboración").unwrap();
+        assert_eq!(horas(&c, "Elaboración"), dec!(10));
+        // Reparto de memorias: 10 % senior a 50 €/h, 50 % junior a 40…
+        assert_eq!(m.lineas[0].cantidad, dec!(1));
+        assert_eq!(m.lineas[0].precio, dec!(50));
+        // Coste = Σ horas × coste; margen de encargo pequeño (25 %).
+        assert_eq!(
+            c.coste,
+            dec!(1) * dec!(50) + dec!(5) * dec!(40) + dec!(1) * dec!(40) + dec!(3) * dec!(30)
+        );
+        assert_eq!(c.tamano, Some(Tamano::Pequeno));
+        assert_eq!(c.margen, redondear(redondear(c.coste / CIEN, 3) * dec!(25), 2));
+        // El baremo en % del PEM solo es referencia: 1,5 % de 50.000 + 0,75 % de 100.000.
+        assert_eq!(c.referencia, dec!(1500));
     }
 
     #[test]
-    fn minimos_de_memoria_proyecto_y_vivienda() {
-        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(20000));
-        assert_eq!(honorario_bloque(&calcular(&b(), &e), "Elaboración"), dec!(300));
-        e.documento = Documento::Proyecto;
-        assert_eq!(honorario_bloque(&calcular(&b(), &e), "Tramitación"), dec!(500));
-        e.documento = Documento::Memoria;
-        e.pem = dec!(80000);
-        e.viviendas = 40;
-        // En terciario el nº de viviendas no cuenta: 1,5 % de 50.000 + 0,75 % de 30.000.
-        assert_eq!(honorario_bloque(&calcular(&b(), &e), "Elaboración"), dec!(975));
-        e.uso = Uso::Viviendas;
+    fn proyecto_tramitacion_redaccion_y_ajeno() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(200000));
+        e.potencia_calor_kw = dec!(250);
         let c = calcular(&b(), &e);
-        assert_eq!(honorario_bloque(&c, "Elaboración"), dec!(2000));
-        // Repercutidos por vivienda: tasa 3 + EICI 60, sin margen.
-        assert_eq!(c.repercutidos, dec!(40) * dec!(63));
-    }
-
-    #[test]
-    fn proyecto_propio_redaccion_y_ajeno_recargo() {
-        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Proyecto, dec!(10000));
-        let c = calcular(&b(), &e);
-        assert_eq!(honorario_bloque(&c, "Redacción"), dec!(600));
+        assert_eq!(horas(&c, "Tramitación"), dec!(28)); // 8 + 1 × 20
+        assert_eq!(horas(&c, "Redacción"), dec!(42)); // 12 + 1,5 × 20
+        assert!(bloque(&c, "Justificación RITE").is_none());
         e.ajeno = true;
+        e.justificar_rite = e.justificar_rite_por_defecto();
         let c = calcular(&b(), &e);
         assert!(bloque(&c, "Redacción").is_none());
-        assert_eq!(honorario_bloque(&c, "Tramitación"), dec!(600)); // 500 + 20 %
+        assert_eq!(horas(&c, "Tramitación"), dec!(33.6)); // 28 + 20 %
+        assert_eq!(horas(&c, "Justificación RITE"), dec!(4)); // 2 + 0,1 × 20
     }
 
     #[test]
-    fn visitas_oca_y_desplazamientos_a_coste_con_margen() {
-        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(50000));
-        e.potencia_calor_kw = dec!(120);
-        e.segundas_visitas = 1;
+    fn viviendas_suman_horas_por_vivienda() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
+        e.viviendas = 10;
+        let terciario = horas(&calcular(&b(), &e), "Elaboración");
+        e.uso = Uso::Viviendas;
         let c = calcular(&b(), &e);
-        // 2 visitas OCA × 2 h × 40.
-        assert_eq!(bloque(&c, "Visitas").unwrap().importe(), dec!(160));
-        // 4 viajes (2 de obra + 2 OCA): 4 h × 40 + 160 km × 0,25 + 4 × 10; sin dietas.
-        assert_eq!(
-            bloque(&c, "Desplazamientos").unwrap().importe(),
-            dec!(160) + dec!(40) + dec!(40)
-        );
-        // Lejos: dietas.
-        e.km = dec!(250);
-        e.horas_viaje = dec!(3);
+        assert_eq!(horas(&c, "Elaboración"), terciario + dec!(10));
+        // Repercutidos por vivienda: tasa 3 + EICI 60, sin margen.
+        assert_eq!(c.repercutidos, dec!(10) * dec!(63));
+    }
+
+    #[test]
+    fn margen_segun_tamano_del_encargo() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(400000));
+        e.potencia_calor_kw = dec!(300);
         let c = calcular(&b(), &e);
-        let desp = bloque(&c, "Desplazamientos").unwrap();
-        assert_eq!(
-            desp.importe(),
-            dec!(12) * dec!(40) + dec!(1000) * dec!(0.25) + dec!(40) + dec!(120)
-        );
-        // Margen: 25 % sobre todo lo que no es repercutido.
-        let base: Decimal = c
-            .lineas()
-            .filter(|l| matches!(l.tipo, Tipo::ManoObra | Tipo::Indirecto))
-            .map(Linea::importe)
-            .sum();
-        assert_eq!(c.coste, base);
-        assert_eq!(c.margen, redondear(redondear(base / CIEN, 3) * dec!(25), 2));
-        // La EICI de segunda visita se repercute sin margen.
-        let rep = bloque(&c, "Tasas").unwrap();
-        assert!(
-            rep.lineas
-                .iter()
-                .any(|l| l.resumen.contains("segunda visita") && l.importe() == dec!(300))
-        );
+        assert!(c.horas >= dec!(80));
+        assert_eq!(c.tamano, Some(Tamano::Grande));
+        assert_eq!(c.pct_margen, dec!(35));
+        e.tamano = Some(Tamano::Mediano);
+        assert_eq!(calcular(&b(), &e).pct_margen, dec!(30));
+        // Sin márgenes por tamaño se usa el general.
+        let mut b0 = b();
+        b0.margen_grande = Decimal::ZERO;
+        e.tamano = None;
+        assert_eq!(calcular(&b0, &e).pct_margen, dec!(25));
     }
 
     #[test]
     fn memoria_rite_lleva_justificacion_rite_y_rsif() {
-        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(7000));
+        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(10000));
         assert!(e.justificar_rite && e.circuitos_rsif == 1);
         let c = calcular(&b(), &e);
-        assert_eq!(honorario_bloque(&c, "Justificación RITE"), dec!(200)); // mínimo
-        assert_eq!(honorario_bloque(&c, "Justificación RSIF"), dec!(100)); // 1 modelo
+        assert_eq!(horas(&c, "Justificación RITE"), dec!(2.1));
+        assert_eq!(horas(&c, "Justificación RSIF"), dec!(1.5));
         let pci = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(7000));
         assert!(!pci.justificar_rite && pci.circuitos_rsif == 0);
         let mut p = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(7000));
@@ -1477,10 +1600,64 @@ mod tests {
     }
 
     #[test]
+    fn rsif_por_modelo_y_repetido_con_registro() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
+        e.circuitos_rsif = 40;
+        e.modelos_rsif = 2;
+        e.registro_if = Some(RegistroIf::MemoriaA2l);
+        let c = calcular(&b(), &e);
+        assert_eq!(horas(&c, "Justificación RSIF"), dec!(3) + dec!(9.5));
+        assert!(
+            c.lineas()
+                .any(|l| l.tipo == Tipo::Repercutido && l.importe() == dec!(120))
+        );
+        assert!(
+            c.lineas()
+                .any(|l| l.tipo == Tipo::Repercutido && l.importe() == dec!(35))
+        );
+    }
+
+    #[test]
+    fn visitas_y_desplazamientos() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(50000));
+        e.potencia_calor_kw = dec!(120);
+        e.segundas_visitas = 1;
+        let c = calcular(&b(), &e);
+        // 2 visitas a obra × 2 h × 40; 2 de la OCA × 2 h × 40.
+        assert_eq!(bloque(&c, "Visitas a obra").unwrap().importe(), dec!(160));
+        assert_eq!(bloque(&c, "Visitas de inspección").unwrap().importe(), dec!(160));
+        // 4 viajes: 4 h × 40 + 160 km × 0,25 + 4 × 10; sin dietas.
+        assert_eq!(
+            bloque(&c, "Desplazamientos").unwrap().importe(),
+            dec!(160) + dec!(40) + dec!(40)
+        );
+        e.km = dec!(250);
+        e.horas_viaje = dec!(3);
+        let c = calcular(&b(), &e);
+        let desp = bloque(&c, "Desplazamientos").unwrap();
+        assert_eq!(
+            desp.importe(),
+            dec!(12) * dec!(40) + dec!(1000) * dec!(0.25) + dec!(40) + dec!(120)
+        );
+        // La EICI de segunda visita se repercute sin margen.
+        let rep = bloque(&c, "Tasas").unwrap();
+        assert!(
+            rep.lineas
+                .iter()
+                .any(|l| l.resumen.contains("segunda visita") && l.importe() == dec!(300))
+        );
+        let base: Decimal = c
+            .lineas()
+            .filter(|l| matches!(l.tipo, Tipo::ManoObra | Tipo::Indirecto))
+            .map(Linea::importe)
+            .sum();
+        assert_eq!(c.coste, base);
+    }
+
+    #[test]
     fn documentacion_segun_potencia_rite_art_15() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(300000));
         assert_eq!(e.documento_exigido(), None);
-        // 40 viviendas con 4,5 kW de frío cada una: 180 kW → proyecto.
         e.uso = Uso::Viviendas;
         e.viviendas = 40;
         e.potencia_calor_kw = dec!(160);
@@ -1493,12 +1670,10 @@ mod tests {
                 .iter()
                 .any(|a| a.contains("hace falta proyecto"))
         );
-        // En proyecto, EICI de edificio de viviendas (sin sala de máquinas).
         e.documento = Documento::Proyecto;
         let c = calcular(&b(), &e);
         assert!(c.avisos.is_empty());
         assert!(c.lineas().any(|l| l.resumen.contains("edificio de 40 viviendas")));
-        // Con sala de máquinas, por potencia.
         e.sala_maquinas = true;
         assert!(calcular(&b(), &e).lineas().any(|l| l.resumen.contains("(180 kW)")));
         e.potencia_calor_kw = dec!(12);
@@ -1507,16 +1682,6 @@ mod tests {
         e.potencia_calor_kw = dec!(4);
         e.potencia_frio_kw = dec!(3.5);
         assert_eq!(e.documento_exigido(), Some(None));
-    }
-
-    #[test]
-    fn memoria_sin_visitas_oca() {
-        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(30000));
-        e.visitas_obra = 0;
-        let c = calcular(&b(), &e);
-        assert!(bloque(&c, "Visitas").is_none());
-        assert!(bloque(&c, "Desplazamientos").is_none());
-        assert!(!c.lineas().any(|l| l.resumen.contains("visado")));
     }
 
     #[test]
@@ -1532,7 +1697,6 @@ mod tests {
             c.lineas()
                 .any(|l| l.resumen.starts_with("EICI proyecto") && l.importe() == dec!(830))
         );
-        // PCI: tasa 10 × 30 bloques, EICI fila 2 col 2, presión, visado (200+50) × 2.
         let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Proyecto, dec!(150000));
         e.instalaciones_pci = 5;
         e.superficie = dec!(2000);
@@ -1541,24 +1705,12 @@ mod tests {
             calcular(&b(), &e).repercutidos,
             dec!(300) + dec!(550) + dec!(150) + dec!(500)
         );
-    }
-
-    #[test]
-    fn rsif_por_modelo_y_repetido_con_registro() {
-        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
-        e.circuitos_rsif = 40;
-        e.modelos_rsif = 2;
-        e.registro_if = Some(RegistroIf::MemoriaA2l);
+        // Memoria: sin visado ni OCA.
+        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(30000));
         let c = calcular(&b(), &e);
-        assert_eq!(honorario_bloque(&c, "Justificación RSIF"), dec!(200) + dec!(760));
-        assert!(
-            c.lineas()
-                .any(|l| l.tipo == Tipo::Repercutido && l.importe() == dec!(120))
-        );
-        assert!(
-            c.lineas()
-                .any(|l| l.tipo == Tipo::Repercutido && l.importe() == dec!(35))
-        );
+        assert!(bloque(&c, "Visitas de inspección").is_none());
+        assert!(!c.lineas().any(|l| l.resumen.contains("visado")));
+        assert!(c.texto.contains("comprobación en obra"));
     }
 
     #[test]
@@ -1579,9 +1731,8 @@ mod tests {
         assert_eq!(suma, pem_antes);
         let partida = p.concepto("LEG-RITE").unwrap();
         assert_eq!(partida.descomposicion.len(), c.lineas().count());
-        assert!(p.concepto("LEG-RITE%CI").unwrap().naturaleza == Naturaleza::Porcentaje);
+        assert_eq!(p.concepto("LEG-RITE%CI").unwrap().naturaleza, Naturaleza::Porcentaje);
         assert!(partida.texto.as_deref().unwrap().contains("as-built"));
-        // Las horas son mano de obra en el presupuesto.
         let h = &partida.descomposicion[0].hijo;
         assert_eq!(p.concepto(h).unwrap().naturaleza, Naturaleza::ManoObra);
     }
@@ -1589,20 +1740,22 @@ mod tests {
     #[test]
     fn baremo_por_anio() {
         let mut bs = Baremos::default();
-        bs.del_anio(2026).tramitacion_minimo = dec!(750);
+        bs.del_anio(2026).coste_senior = dec!(48.67);
         assert_eq!(bs.vigente(2027).unwrap().anio, 2026);
         let b27 = bs.del_anio(2027);
-        assert_eq!(b27.tramitacion_minimo, dec!(750)); // copia del anterior
-        b27.tramitacion_minimo = dec!(800);
-        assert_eq!(bs.vigente(2027).unwrap().tramitacion_minimo, dec!(800));
-        assert_eq!(bs.vigente(2026).unwrap().tramitacion_minimo, dec!(750));
+        assert_eq!(b27.coste_senior, dec!(48.67)); // copia del anterior
+        b27.coste_senior = dec!(50.62);
+        assert_eq!(bs.vigente(2027).unwrap().coste_senior, dec!(50.62));
+        assert_eq!(bs.vigente(2026).unwrap().coste_senior, dec!(48.67));
         let json = serde_json::to_string(&bs).unwrap();
         let de: Baremos = serde_json::from_str(&json).unwrap();
         assert_eq!(de, bs);
-        // Campos que faltan toman su valor por defecto (y los desconocidos se ignoran).
-        let parcial: Baremos =
-            serde_json::from_str(r#"{"versiones":[{"anio":2026,"km":"0.26","visita_oca":"200"}]}"#).unwrap();
+        let parcial: Baremos = serde_json::from_str(
+            r#"{"versiones":[{"anio":2026,"km":"0.26","visita_oca":"200","horas_memoria":{"base":"5"}}]}"#,
+        )
+        .unwrap();
         assert_eq!(parcial.versiones[0].km, dec!(0.26));
+        assert_eq!(parcial.versiones[0].horas_memoria.base, dec!(5));
         assert!(parcial.versiones[0].visado_direccion_obra);
         assert_eq!(parcial.versiones[0].reparto_tramitacion.tecnico, dec!(30));
     }

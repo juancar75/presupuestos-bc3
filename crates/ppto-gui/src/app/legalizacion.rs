@@ -12,66 +12,104 @@ use eframe::egui::{self, Color32, RichText};
 use ppto_core::Decimal;
 use ppto_core::formato::{eur, leer, num};
 use ppto_legalizacion::{
-    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, RegistroIf, Tipo, Tramo, Uso, aplicar, calcular,
-    capitulos,
+    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, RegistroIf, Tamano, Tipo, Tramo, Uso, aplicar,
+    calcular, capitulos,
 };
 use std::path::PathBuf;
 
-/// Honorarios y costes editables en la ventana (las tablas oficiales y los
-/// repartos de horas por perfil, en el JSON).
-const CAMPOS: [&str; 24] = [
-    "Mínimo tramitación proyecto (€)",
-    "Mínimo tramitación memoria (€)",
-    "Mínimo por vivienda (€)",
-    "Recargo proyecto ajeno (%)",
-    "Mínimo redacción proyecto propio (€)",
-    "Justificación RITE (% PEM)",
-    "Justificación RITE mínimo (€)",
-    "RSIF circuito de cada modelo (€)",
-    "RSIF circuito repetido (€)",
-    "RSIF mínimo (€)",
-    "Coste ingeniero senior (€/h)",
-    "Coste ingeniero junior (€/h)",
-    "Coste técnico (€/h)",
-    "Coste documentación (€/h)",
-    "Costes indirectos y beneficio (%)",
-    "Horas por visita OCA",
-    "Viaje habitual: km ida y vuelta",
-    "Viaje habitual: horas",
-    "Kilometraje (€/km)",
-    "Aparcamiento (€/viaje)",
-    "Dieta (€/viaje)",
-    "Dietas a partir de (km)",
-    "EICI 2ª visita (€)",
-    "Tasa registro frigorífica (€)",
+/// Costes, horas, margen y referencias editables en la ventana (los repartos
+/// por perfil y las tablas oficiales, en el JSON).
+const CAMPOS: [(&str, &str); 42] = [
+    ("Costes horarios (€/h)", "Ingeniero senior"),
+    ("Costes horarios (€/h)", "Ingeniero junior"),
+    ("Costes horarios (€/h)", "Técnico"),
+    ("Costes horarios (€/h)", "Documentación"),
+    ("Margen (%)", "Encargo pequeño"),
+    ("Margen (%)", "Encargo mediano"),
+    ("Margen (%)", "Encargo grande"),
+    ("Margen (%)", "Mediano desde (h)"),
+    ("Margen (%)", "Grande desde (h)"),
+    ("Horas por tarea", "Memoria: fijas"),
+    ("Horas por tarea", "Memoria: por 10.000 € PEM"),
+    ("Horas por tarea", "Memoria: por vivienda"),
+    ("Horas por tarea", "Tramitación proyecto: fijas"),
+    ("Horas por tarea", "Tramitación proyecto: por 10.000 €"),
+    ("Horas por tarea", "Tramitación proyecto: por vivienda"),
+    ("Horas por tarea", "Redacción: fijas"),
+    ("Horas por tarea", "Redacción: por 10.000 €"),
+    ("Horas por tarea", "Redacción: por vivienda"),
+    ("Horas por tarea", "Justificación RITE: fijas"),
+    ("Horas por tarea", "Justificación RITE: por 10.000 €"),
+    ("Horas por tarea", "RSIF: por modelo"),
+    ("Horas por tarea", "RSIF: por circuito repetido"),
+    ("Horas por tarea", "Visita a obra"),
+    ("Horas por tarea", "Visita de la OCA"),
+    ("Horas por tarea", "Proyecto ajeno: + % horas"),
+    ("Desplazamientos", "Viaje habitual: km ida y vuelta"),
+    ("Desplazamientos", "Viaje habitual: horas"),
+    ("Desplazamientos", "€/km"),
+    ("Desplazamientos", "Aparcamiento (€/viaje)"),
+    ("Desplazamientos", "Dieta (€/viaje)"),
+    ("Desplazamientos", "Dietas a partir de (km)"),
+    ("Repercutidos (€)", "EICI 2ª visita"),
+    ("Repercutidos (€)", "Tasa registro frigorífica"),
+    ("Referencia de mercado (€)", "Mínimo proyecto"),
+    ("Referencia de mercado (€)", "Mínimo memoria"),
+    ("Referencia de mercado (€)", "Mínimo por vivienda"),
+    ("Referencia de mercado (€)", "Mínimo redacción"),
+    ("Referencia de mercado (€)", "Justificación RITE (% PEM)"),
+    ("Referencia de mercado (€)", "Justificación RITE mínimo"),
+    ("Referencia de mercado (€)", "RSIF por modelo"),
+    ("Referencia de mercado (€)", "RSIF por repetido"),
+    ("Referencia de mercado (€)", "RSIF mínimo"),
 ];
 
 fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
     match i {
-        0 => &mut b.tramitacion_minimo,
-        1 => &mut b.tramitacion_minimo_memoria,
-        2 => &mut b.minimo_vivienda,
-        3 => &mut b.recargo_ajeno,
-        4 => &mut b.redaccion_minimo,
-        5 => &mut b.justif_rite_pct,
-        6 => &mut b.justif_rite_minimo,
-        7 => &mut b.rsif_circuito,
-        8 => &mut b.rsif_repetido,
-        9 => &mut b.rsif_minimo,
-        10 => &mut b.coste_senior,
-        11 => &mut b.coste_junior,
-        12 => &mut b.coste_tecnico,
-        13 => &mut b.coste_documentacion,
-        14 => &mut b.margen,
-        15 => &mut b.oca_horas,
-        16 => &mut b.viaje_km,
-        17 => &mut b.viaje_horas,
-        18 => &mut b.km,
-        19 => &mut b.aparcamiento,
-        20 => &mut b.dieta,
-        21 => &mut b.km_umbral,
-        22 => &mut b.eici_segunda_visita,
-        _ => &mut b.tasa_if,
+        0 => &mut b.coste_senior,
+        1 => &mut b.coste_junior,
+        2 => &mut b.coste_tecnico,
+        3 => &mut b.coste_documentacion,
+        4 => &mut b.margen,
+        5 => &mut b.margen_mediano,
+        6 => &mut b.margen_grande,
+        7 => &mut b.horas_mediano,
+        8 => &mut b.horas_grande,
+        9 => &mut b.horas_memoria.base,
+        10 => &mut b.horas_memoria.por_10k,
+        11 => &mut b.horas_memoria.por_vivienda,
+        12 => &mut b.horas_tramitacion.base,
+        13 => &mut b.horas_tramitacion.por_10k,
+        14 => &mut b.horas_tramitacion.por_vivienda,
+        15 => &mut b.horas_redaccion.base,
+        16 => &mut b.horas_redaccion.por_10k,
+        17 => &mut b.horas_redaccion.por_vivienda,
+        18 => &mut b.horas_justif_rite.base,
+        19 => &mut b.horas_justif_rite.por_10k,
+        20 => &mut b.rsif_horas_modelo,
+        21 => &mut b.rsif_horas_repetido,
+        22 => &mut b.horas_visita_obra,
+        23 => &mut b.oca_horas,
+        24 => &mut b.recargo_ajeno,
+        25 => &mut b.viaje_km,
+        26 => &mut b.viaje_horas,
+        27 => &mut b.km,
+        28 => &mut b.aparcamiento,
+        29 => &mut b.dieta,
+        30 => &mut b.km_umbral,
+        31 => &mut b.eici_segunda_visita,
+        32 => &mut b.tasa_if,
+        33 => &mut b.tramitacion_minimo,
+        34 => &mut b.tramitacion_minimo_memoria,
+        35 => &mut b.minimo_vivienda,
+        36 => &mut b.redaccion_minimo,
+        37 => &mut b.justif_rite_pct,
+        38 => &mut b.justif_rite_minimo,
+        39 => &mut b.rsif_circuito,
+        40 => &mut b.rsif_repetido,
+        41 => &mut b.rsif_minimo,
+
+        _ => unreachable!("campo fuera de rango"),
     }
 }
 
@@ -197,7 +235,7 @@ impl VentanaLegalizacion {
             match leer(t) {
                 Some(v) => valores.push(v),
                 None => {
-                    self.mensaje = Some((format!("Revise «{}».", CAMPOS[i]), true));
+                    self.mensaje = Some((format!("Revise «{}».", CAMPOS[i].1), true));
                     return;
                 }
             }
@@ -356,16 +394,30 @@ impl Aplicacion {
                     }
                     if v.editar {
                         ui.group(|ui| {
-                            ui.label(RichText::new(format!("Honorarios {}", v.anio)).strong());
+                            ui.label(RichText::new(format!("Costes y horas {}", v.anio)).strong());
                             egui::Grid::new("leg_campos").num_columns(4).show(ui, |ui| {
-                                for (i, (rotulo, t)) in CAMPOS.iter().zip(v.campos.iter_mut()).enumerate() {
+                                let mut seccion = "";
+                                let mut col = 0;
+                                for ((sec, rotulo), t) in CAMPOS.iter().zip(v.campos.iter_mut()) {
+                                    if *sec != seccion {
+                                        if col == 1 {
+                                            ui.end_row();
+                                        }
+                                        ui.label(RichText::new(*sec).strong());
+                                        ui.end_row();
+                                        seccion = sec;
+                                        col = 0;
+                                    }
                                     ui.label(*rotulo);
                                     caja(ui, t, 70.0);
-                                    if i % 2 == 1 {
+                                    col += 1;
+                                    if col == 2 {
                                         ui.end_row();
+                                        col = 0;
                                     }
                                 }
                             });
+                            ui.label(RichText::new("Referencia de mercado: % del PEM por tramos (no forma el precio)").weak());
                             ui.columns(2, |cols| {
                                 cols[0].label(RichText::new("Proyectos: % del PEM por tramos").strong());
                                 editar_tramos(&mut cols[0], &mut v.tramos);
@@ -567,7 +619,19 @@ impl Aplicacion {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(format!("Coste: {} € ({} h)", eur(c.coste), num(c.horas, 1)));
                         ui.separator();
-                        ui.label(format!("Indirectos y beneficio: {} €", eur(c.margen)));
+                        ui.label("Encargo");
+                        egui::ComboBox::from_id_salt("leg_tamano")
+                            .selected_text(match v.e.tamano {
+                                None => format!("automático ({})", c.tamano.map_or("—", |t| t.nombre())),
+                                Some(t) => t.nombre().to_owned(),
+                            })
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut v.e.tamano, None, "automático (por horas)");
+                                for t in [Tamano::Pequeno, Tamano::Mediano, Tamano::Grande] {
+                                    ui.selectable_value(&mut v.e.tamano, Some(t), t.nombre());
+                                }
+                            });
+                        ui.label(format!("Indirectos y beneficio {} %: {} €", texto(c.pct_margen), eur(c.margen)));
                         ui.separator();
                         ui.label(RichText::new(format!("Honorarios: {} €", eur(c.honorarios()))).strong());
                         ui.separator();
@@ -575,6 +639,19 @@ impl Aplicacion {
                         ui.separator();
                         ui.label(RichText::new(format!("Total partida: {} €", eur(c.total()))).strong());
                     });
+                    if c.referencia > Decimal::ZERO {
+                        let dif = (c.honorarios() - c.referencia) * Decimal::ONE_HUNDRED / c.referencia;
+                        ui.label(
+                            RichText::new(format!(
+                                "Referencia de mercado: {} € · nuestra tarifa {} € ({}{} %)",
+                                eur(c.referencia),
+                                eur(c.honorarios()),
+                                if dif >= Decimal::ZERO { "+" } else { "" },
+                                num(dif, 0)
+                            ))
+                            .weak(),
+                        );
+                    }
                     if let Some((m, error)) = &v.mensaje {
                         let col = if *error {
                             Color32::from_rgb(220, 80, 60)

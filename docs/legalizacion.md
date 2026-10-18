@@ -5,22 +5,26 @@ partida por disciplina (`LEG-RITE`, `LEG-PCI`) en el capítulo `LEG`, con
 **todos los costes en el descompuesto**. Volver a crearla la sustituye (y se
 puede deshacer).
 
-| Bloque del descompuesto | Cuándo | Cómo se calcula |
-|---|---|---|
-| Proyectos: tramitación y dirección de la instalación | proyectos | honorario de baremo: % del PEM por los tramos de proyectos; el mayor entre eso, el mínimo de proyecto y, con uso Viviendas, mínimo por vivienda × nº; + recargo si el proyecto es de otro técnico |
-| Memorias: elaboración y tramitación de la memoria técnica | memorias | igual, con los tramos, el mínimo y el reparto de horas de memorias (sin dirección de la instalación) |
-| Redacción del proyecto | proyectos propios | % del PEM por tramos con mínimo |
-| Justificación RITE | opcional (proyectos de otro técnico) | % del PEM con mínimo |
-| Justificación RSIF | si hay circuitos | por circuito de cada modelo + por circuito repetido, con mínimo |
-| Visitas de la OCA | proyectos y segundas visitas | horas del técnico por visita a su coste |
-| Desplazamientos | visitas de obra + de la OCA | horas de viaje, km, aparcamiento y, por encima de un umbral, dietas |
-| Costes indirectos, gestión y beneficio | siempre | % sobre todo lo anterior (línea porcentual) |
-| Tasas, inspección y visados | si se repercuten | tasa de la Comunidad, EICI, visado del proyecto y de la dirección de obra (proyectos), EICI de segundas visitas y registro frigorífico; sin margen |
+La **tarifa sale de nuestros costes y nuestro margen**:
 
-Los honorarios de baremo son **precio de venta**: se descuenta el margen y lo
-que queda se reparte en horas de cada perfil (senior, junior, técnico,
-documentación) a su coste horario, según el reparto de cada tarea (proyectos y memorias tienen el suyo, y también nº de visitas a obra por defecto). Así la
-partida muestra horas y costes reales y su importe coincide con el baremo.
+| Bloque del descompuesto | Cuándo | Cálculo |
+|---|---|---|
+| Elaboración y tramitación de la memoria técnica | memorias | horas fijas + por 10.000 € de PEM + por vivienda, repartidas por perfil a su coste |
+| Tramitación y dirección de la instalación | proyectos | igual, con las horas y el reparto de proyectos; + % de horas si el proyecto es de otro técnico |
+| Redacción del proyecto | proyectos propios | horas fijas + por 10.000 € de PEM (+ por vivienda) |
+| Justificación RITE | memorias RITE y proyectos de otro técnico | horas fijas + por 10.000 € de PEM |
+| Justificación RSIF | si hay circuitos | horas por modelo + horas por circuito repetido |
+| Visitas a obra / de la OCA | según nº de visitas | horas del técnico por visita |
+| Desplazamientos | por viaje | horas de viaje, km, aparcamiento y, por encima de un umbral, dietas |
+| Costes indirectos, gestión y beneficio | siempre | % según el tamaño del encargo (pequeño, mediano, grande por horas, o elegido) |
+| Tasas, inspección y visados | si se repercuten | tasa de la Comunidad, EICI, visados (proyectos), EICI de segundas visitas y registro frigorífico; sin margen |
+
+Los honorarios en **% del PEM** (tramos y mínimos) no forman el precio: se
+calculan como **referencia de mercado** y la ventana muestra la diferencia.
+
+En RITE la ventana aplica el art. 15: con la suma de potencias de los
+generadores de calor o, por separado, de frío por encima de 70 kW pasa a
+proyecto; de 5 a 70 kW basta memoria; por debajo de 5 kW no hace falta.
 
 ## Baremo
 

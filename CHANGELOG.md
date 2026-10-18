@@ -19,15 +19,16 @@ versionado [semántico](https://semver.org/lang/es/).
 ### Añadido — legalización
 - Crate `ppto-legalizacion` y ventana «Legalización…» (RITE o PCI, memoria o
   proyecto, terciario o viviendas): una partida por disciplina en el
-  capítulo `LEG` con todo el descompuesto: horas por perfil a su coste
-  (tramitación y dirección de obra, redacción del proyecto propio,
-  justificaciones RITE y RSIF), visitas de la OCA, desplazamientos (horas,
-  km, aparcamiento, dietas), costes indirectos y beneficio, y tasas, EICI y
-  visados repercutidos sin margen.
-- Los honorarios salen de un baremo por año (% del PEM por tramos con
-  mínimos por expediente y por vivienda, recargo por proyecto ajeno, RSIF
-  por modelo y circuito repetido) en `legalizacion.json`, fuera del
-  repositorio; honorarios y costes se editan en la ventana.
+  capítulo `LEG` con todo el descompuesto. La tarifa sale de nuestros
+  costes: horas por tarea (memoria, tramitación y dirección, redacción,
+  justificaciones RITE y RSIF, visitas a obra y de la OCA) por el coste de
+  cada perfil, desplazamientos (horas, km, aparcamiento, dietas) y margen
+  según el tamaño del encargo; tasas, EICI y visados se repercuten sin
+  margen. Los honorarios en % del PEM quedan como referencia de mercado.
+- RITE art. 15: documento exigido según la suma de potencias de calor o de
+  frío (proyecto por encima de 70 kW).
+- Baremo por año en `legalizacion.json`, fuera del repositorio; costes,
+  horas y margen se editan en la ventana.
 
 ## [0.1.0-alpha.3] - 2026-10-16
 
