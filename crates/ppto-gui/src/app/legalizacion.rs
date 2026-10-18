@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 /// Costes, horas, margen y referencias editables en la ventana (los repartos
 /// por perfil y las tablas oficiales, en el JSON).
-const CAMPOS: [(&str, &str); 50] = [
+const CAMPOS: [(&str, &str); 51] = [
     ("Costes horarios (€/h)", "Ingeniero senior"),
     ("Costes horarios (€/h)", "Ingeniero junior"),
     ("Costes horarios (€/h)", "Técnico"),
@@ -42,6 +42,7 @@ const CAMPOS: [(&str, &str); 50] = [
     ("Horas por tarea", "Planos as-built: fijas"),
     ("Horas por tarea", "Planos as-built: por 10.000 €"),
     ("Horas por tarea", "Planos as-built: por vivienda"),
+    ("Horas por tarea", "Planos: % por revisión de arquitectura"),
     ("Horas por tarea", "Cálculos: fijas"),
     ("Horas por tarea", "Cálculos: por 10.000 €"),
     ("Horas por tarea", "Justificación RITE: fijas"),
@@ -96,34 +97,35 @@ fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
         19 => &mut b.horas_planos.base,
         20 => &mut b.horas_planos.por_10k,
         21 => &mut b.horas_planos.por_vivienda,
-        22 => &mut b.horas_calculos.base,
-        23 => &mut b.horas_calculos.por_10k,
-        24 => &mut b.horas_justif_rite.base,
-        25 => &mut b.horas_justif_rite.por_10k,
-        26 => &mut b.rsif_horas_base,
-        27 => &mut b.rsif_horas_modelo,
-        28 => &mut b.rsif_horas_repetido,
-        29 => &mut b.horas_visita_obra,
-        30 => &mut b.oca_horas,
-        31 => &mut b.recargo_ajeno,
-        32 => &mut b.horas_jornada,
-        33 => &mut b.viaje_km,
-        34 => &mut b.viaje_horas,
-        35 => &mut b.km,
-        36 => &mut b.aparcamiento,
-        37 => &mut b.dieta,
-        38 => &mut b.km_umbral,
-        39 => &mut b.eici_segunda_visita,
-        40 => &mut b.tasa_if,
-        41 => &mut b.tramitacion_minimo,
-        42 => &mut b.tramitacion_minimo_memoria,
-        43 => &mut b.minimo_vivienda,
-        44 => &mut b.redaccion_minimo,
-        45 => &mut b.justif_rite_pct,
-        46 => &mut b.justif_rite_minimo,
-        47 => &mut b.rsif_circuito,
-        48 => &mut b.rsif_repetido,
-        49 => &mut b.rsif_minimo,
+        22 => &mut b.pct_revision_planos,
+        23 => &mut b.horas_calculos.base,
+        24 => &mut b.horas_calculos.por_10k,
+        25 => &mut b.horas_justif_rite.base,
+        26 => &mut b.horas_justif_rite.por_10k,
+        27 => &mut b.rsif_horas_base,
+        28 => &mut b.rsif_horas_modelo,
+        29 => &mut b.rsif_horas_repetido,
+        30 => &mut b.horas_visita_obra,
+        31 => &mut b.oca_horas,
+        32 => &mut b.recargo_ajeno,
+        33 => &mut b.horas_jornada,
+        34 => &mut b.viaje_km,
+        35 => &mut b.viaje_horas,
+        36 => &mut b.km,
+        37 => &mut b.aparcamiento,
+        38 => &mut b.dieta,
+        39 => &mut b.km_umbral,
+        40 => &mut b.eici_segunda_visita,
+        41 => &mut b.tasa_if,
+        42 => &mut b.tramitacion_minimo,
+        43 => &mut b.tramitacion_minimo_memoria,
+        44 => &mut b.minimo_vivienda,
+        45 => &mut b.redaccion_minimo,
+        46 => &mut b.justif_rite_pct,
+        47 => &mut b.justif_rite_minimo,
+        48 => &mut b.rsif_circuito,
+        49 => &mut b.rsif_repetido,
+        50 => &mut b.rsif_minimo,
         _ => unreachable!("campo fuera de rango"),
     }
 }
@@ -572,6 +574,13 @@ impl Aplicacion {
                                 );
                             });
                         ui.end_row();
+                        if v.e.documento == Documento::Proyecto {
+                            ui.label("Revisiones de arquitectura").on_hover_text(
+                                "Veces que hay que rehacer los planos as-built por cambios en los planos de arquitectura",
+                            );
+                            numero(ui, &mut v.e.revisiones_arquitectura);
+                            ui.end_row();
+                        }
                         ui.label("Visitas de dirección de obra");
                         numero(ui, &mut v.e.visitas_obra);
                         ui.label("Segundas visitas OCA");
