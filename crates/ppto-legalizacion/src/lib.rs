@@ -122,6 +122,15 @@ fn reparto_tramitacion() -> Reparto {
     }
 }
 
+fn reparto_memoria() -> Reparto {
+    Reparto {
+        senior: d(10),
+        junior: d(50),
+        tecnico: d(10),
+        documentacion: d(30),
+    }
+}
+
 fn reparto_redaccion() -> Reparto {
     Reparto {
         senior: d(40),
@@ -140,8 +149,12 @@ pub struct Baremo {
     pub nota: String,
 
     // --- honorarios de baremo (precio de venta, margen incluido)
-    /// Tramitación: % del PEM de la disciplina por tramos acumulativos.
+    /// Proyectos: tramitación y dirección de la instalación, % del PEM de la
+    /// disciplina por tramos acumulativos.
     pub tramitacion: Vec<Tramo>,
+    /// Memorias técnicas: elaboración y tramitación, % del PEM por tramos
+    /// acumulativos (vacío = los de proyectos).
+    pub tramitacion_memoria: Vec<Tramo>,
     /// Mínimo por expediente en proyectos (y en memorias si el de memoria es cero).
     pub tramitacion_minimo: Decimal,
     /// Mínimo por expediente en memorias técnicas (0 = el de proyectos).
@@ -170,8 +183,13 @@ pub struct Baremo {
     pub coste_documentacion: Decimal,
     /// Costes indirectos, gestión y beneficio (%) sobre mano de obra y desplazamientos.
     pub margen: Decimal,
+    /// Reparto de horas de la tramitación de proyectos y de memorias.
     pub reparto_tramitacion: Reparto,
+    pub reparto_memoria: Reparto,
     pub reparto_redaccion: Reparto,
+    /// Visitas a obra que se proponen por defecto en memorias y en proyectos.
+    pub visitas_memoria: u32,
+    pub visitas_proyecto: u32,
     pub reparto_justificacion: Reparto,
     /// Horas del técnico en cada visita de la OCA.
     pub oca_horas: Decimal,
@@ -251,6 +269,10 @@ impl Default for Baremo {
             coste_documentacion: z,
             margen: z,
             reparto_tramitacion: reparto_tramitacion(),
+            reparto_memoria: reparto_memoria(),
+            visitas_memoria: 1,
+            visitas_proyecto: 2,
+            tramitacion_memoria: Vec::new(),
             reparto_redaccion: reparto_redaccion(),
             reparto_justificacion: Reparto::default(),
             oca_horas: z,
@@ -302,6 +324,7 @@ impl Baremo {
             tramitacion: vec![t(m(100_000), d(1)), t(None, Decimal::new(5, 1))],
             tramitacion_minimo: d(500),
             tramitacion_minimo_memoria: d(300),
+            tramitacion_memoria: vec![t(m(50_000), Decimal::new(15, 1)), t(None, Decimal::new(75, 2))],
             minimo_vivienda: d(50),
             recargo_ajeno: d(20),
             redaccion: vec![t(m(100_000), Decimal::new(15, 1)), t(None, d(1))],
@@ -525,7 +548,7 @@ impl Expediente {
             circuitos_rsif: 0,
             modelos_rsif: 0,
             registro_if: None,
-            visitas_obra: 1,
+            visitas_obra: if documento == Documento::Proyecto { 2 } else { 1 },
             segundas_visitas: 0,
             km: Decimal::ZERO,
             horas_viaje: Decimal::ZERO,
@@ -729,7 +752,12 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     } else {
         b.tramitacion_minimo
     };
-    let (pct, txt) = por_pem(&b.tramitacion, e.pem);
+    let tramos = if !proyecto && !b.tramitacion_memoria.is_empty() {
+        &b.tramitacion_memoria
+    } else {
+        &b.tramitacion
+    };
+    let (pct, txt) = por_pem(tramos, e.pem);
     let suelo_viv = b.minimo_vivienda * n_viv;
     let (mut honorario, mut regla) = if suelo_viv > pct && suelo_viv >= minimo {
         (
@@ -745,15 +773,23 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         honorario = redondear(honorario * (CIEN + b.recargo_ajeno) / CIEN, 2);
         regla.push_str(&format!(", +{} % por proyecto de otro técnico", corto(b.recargo_ajeno)));
     }
-    c.bloques.push(Bloque {
-        titulo: "Tramitación y dirección de obra".into(),
-        regla: format!("Honorario {} ({regla})", eur(honorario)),
-        lineas: horas_de(
-            b,
-            "tramitación, as-built y dirección de obra",
-            honorario,
+    let (titulo, que, reparto) = if proyecto {
+        (
+            "Tramitación y dirección de la instalación",
+            "tramitación, as-built y dirección de la instalación",
             &b.reparto_tramitacion,
-        ),
+        )
+    } else {
+        (
+            "Elaboración y tramitación de la memoria técnica",
+            "memoria técnica, as-built y tramitación",
+            &b.reparto_memoria,
+        )
+    };
+    c.bloques.push(Bloque {
+        titulo: titulo.into(),
+        regla: format!("Honorario {} ({regla})", eur(honorario)),
+        lineas: horas_de(b, que, honorario, reparto),
     });
 
     // 2. Redacción del proyecto propio
@@ -966,39 +1002,52 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     }
 
     c.resumen = format!("Legalización de {} mediante {doc}", e.disciplina.nombre());
-    c.texto = match e.disciplina {
-        Disciplina::Rite => format!(
-            "Legalización de las instalaciones térmicas (RITE) mediante {doc}{}. Incluye planos as-built, \
-             cálculos justificativos, libro de uso y mantenimiento, cumplimentación de la documentación \
-             3.1.5, aportación del CIE del instalador eléctrico, dirección de obra, asistencia a las visitas \
-             de inspección, desplazamientos y gestión del expediente ante el órgano competente de la \
-             Comunidad Autónoma{}.",
-            if proyecto && !e.ajeno {
+    let tasas = if e.repercutir {
+        if proyecto {
+            ", con tasas, inspección de la EICI y visados"
+        } else {
+            ", con tasas e inspección de la EICI"
+        }
+    } else {
+        ""
+    };
+    c.texto = match (e.disciplina, proyecto) {
+        (Disciplina::Rite, true) => format!(
+            "Legalización de las instalaciones térmicas (RITE) mediante proyecto{}. Incluye dirección de la \
+             instalación y certificado final, planos as-built, cálculos justificativos, libro de uso y \
+             mantenimiento, cumplimentación de la documentación 3.1.5, aportación del CIE del instalador \
+             eléctrico, asistencia a la inspección de la OCA, desplazamientos y gestión del expediente ante \
+             el órgano competente de la Comunidad Autónoma{tasas}.",
+            if e.ajeno {
+                " de otro técnico"
+            } else {
                 ", incluida su redacción"
-            } else {
-                ""
-            },
-            if e.repercutir {
-                ", con tasas, inspección de la EICI y visados"
-            } else {
-                ""
             }
         ),
-        Disciplina::Pci => format!(
-            "Legalización de las instalaciones de protección contra incendios (RIPCI) mediante {doc}{}. \
-             Incluye planos as-built, cálculos justificativos, manual de uso y mantenimiento, dirección de \
-             obra, asistencia a las visitas de inspección, desplazamientos y gestión del expediente ante el \
-             órgano competente de la Comunidad Autónoma{}.",
-            if proyecto && !e.ajeno {
+        (Disciplina::Rite, false) => format!(
+            "Legalización de las instalaciones térmicas (RITE) mediante memoria técnica. Incluye elaboración \
+             de la memoria con su justificación del RITE, comprobación en obra, planos as-built, libro de uso \
+             y mantenimiento, cumplimentación de la documentación 3.1.5, aportación del CIE del instalador \
+             eléctrico, desplazamientos y gestión del expediente ante el órgano competente de la Comunidad \
+             Autónoma{tasas}."
+        ),
+        (Disciplina::Pci, true) => format!(
+            "Legalización de las instalaciones de protección contra incendios (RIPCI) mediante proyecto{}. \
+             Incluye dirección de la instalación y certificado final, planos as-built, cálculos \
+             justificativos, manual de uso y mantenimiento, asistencia a la inspección de la OCA, \
+             desplazamientos y gestión del expediente ante el órgano competente de la Comunidad \
+             Autónoma{tasas}.",
+            if e.ajeno {
+                " de otro técnico"
+            } else {
                 ", incluida su redacción"
-            } else {
-                ""
-            },
-            if e.repercutir {
-                ", con tasas, inspección de la EICI y visados"
-            } else {
-                ""
             }
+        ),
+        (Disciplina::Pci, false) => format!(
+            "Legalización de las instalaciones de protección contra incendios (RIPCI) mediante memoria \
+             técnica. Incluye elaboración de la memoria, comprobación en obra, planos as-built, manual de \
+             uso y mantenimiento, desplazamientos y gestión del expediente ante el órgano competente de la \
+             Comunidad Autónoma{tasas}."
         ),
     };
     c
@@ -1261,8 +1310,8 @@ mod tests {
 
     #[test]
     fn tramos_acumulativos_en_horas_por_perfil() {
-        // 1 % hasta 100.000 y 0,5 % del exceso: 150.000 → 1.250.
-        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(150000));
+        // Proyecto: 1 % hasta 100.000 y 0,5 % del exceso: 150.000 → 1.250.
+        let e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(150000));
         let c = calcular(&b(), &e);
         let tram = bloque(&c, "Tramitación").unwrap();
         assert!(tram.regla.contains("1.250,00"));
@@ -1272,19 +1321,45 @@ mod tests {
     }
 
     #[test]
+    fn memorias_con_tramos_reparto_y_texto_propios() {
+        // Memoria: 1,5 % hasta 50.000 y 0,75 % del exceso: 150.000 → 1.500.
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(150000));
+        assert_eq!(e.visitas_obra, 1);
+        let c = calcular(&b(), &e);
+        let m = bloque(&c, "Elaboración y tramitación de la memoria").unwrap();
+        assert!(m.regla.contains("1.500,00"));
+        assert_eq!(honorario_bloque(&c, "Elaboración"), dec!(1500));
+        // Reparto propio: 10 % senior.
+        let horas: Decimal = m.lineas.iter().map(|l| l.cantidad).sum();
+        assert_eq!(redondear(m.lineas[0].cantidad / horas * CIEN, 0), dec!(10));
+        assert!(!c.texto.contains("dirección de la instalación"));
+        assert!(c.texto.contains("comprobación en obra"));
+        // Proyecto: sus tramos, su reparto y la dirección de la instalación.
+        e.documento = Documento::Proyecto;
+        let c = calcular(&b(), &e);
+        assert!(bloque(&c, "Tramitación y dirección").is_some());
+        assert!(c.texto.contains("dirección de la instalación"));
+        // Sin tramos de memoria se usan los de proyecto.
+        let mut bm = b();
+        bm.tramitacion_memoria.clear();
+        e.documento = Documento::Memoria;
+        assert_eq!(honorario_bloque(&calcular(&bm, &e), "Elaboración"), dec!(1250));
+    }
+
+    #[test]
     fn minimos_de_memoria_proyecto_y_vivienda() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(20000));
-        assert_eq!(honorario_bloque(&calcular(&b(), &e), "Tramitación"), dec!(300));
+        assert_eq!(honorario_bloque(&calcular(&b(), &e), "Elaboración"), dec!(300));
         e.documento = Documento::Proyecto;
         assert_eq!(honorario_bloque(&calcular(&b(), &e), "Tramitación"), dec!(500));
         e.documento = Documento::Memoria;
         e.pem = dec!(80000);
         e.viviendas = 40;
-        // En terciario el nº de viviendas no cuenta: 1 % de 80.000.
-        assert_eq!(honorario_bloque(&calcular(&b(), &e), "Tramitación"), dec!(800));
+        // En terciario el nº de viviendas no cuenta: 1,5 % de 50.000 + 0,75 % de 30.000.
+        assert_eq!(honorario_bloque(&calcular(&b(), &e), "Elaboración"), dec!(975));
         e.uso = Uso::Viviendas;
         let c = calcular(&b(), &e);
-        assert_eq!(honorario_bloque(&c, "Tramitación"), dec!(2000));
+        assert_eq!(honorario_bloque(&c, "Elaboración"), dec!(2000));
         // Repercutidos por vivienda: tasa 3 + EICI 60, sin margen.
         assert_eq!(c.repercutidos, dec!(40) * dec!(63));
     }
@@ -1308,10 +1383,10 @@ mod tests {
         let c = calcular(&b(), &e);
         // 2 visitas OCA × 2 h × 40.
         assert_eq!(bloque(&c, "Visitas").unwrap().importe(), dec!(160));
-        // 3 viajes (1 de obra + 2 OCA): 3 h × 40 + 120 km × 0,25 + 3 × 10; sin dietas.
+        // 4 viajes (2 de obra + 2 OCA): 4 h × 40 + 160 km × 0,25 + 4 × 10; sin dietas.
         assert_eq!(
             bloque(&c, "Desplazamientos").unwrap().importe(),
-            dec!(120) + dec!(30) + dec!(30)
+            dec!(160) + dec!(40) + dec!(40)
         );
         // Lejos: dietas.
         e.km = dec!(250);
@@ -1320,7 +1395,7 @@ mod tests {
         let desp = bloque(&c, "Desplazamientos").unwrap();
         assert_eq!(
             desp.importe(),
-            dec!(9) * dec!(40) + dec!(750) * dec!(0.25) + dec!(30) + dec!(90)
+            dec!(12) * dec!(40) + dec!(1000) * dec!(0.25) + dec!(40) + dec!(120)
         );
         // Margen: 25 % sobre todo lo que no es repercutido.
         let base: Decimal = c

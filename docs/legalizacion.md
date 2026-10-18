@@ -7,7 +7,8 @@ puede deshacer).
 
 | Bloque del descompuesto | Cuándo | Cómo se calcula |
 |---|---|---|
-| Tramitación y dirección de obra | siempre | honorario de baremo: % del PEM por tramos acumulativos; el mayor entre eso, el mínimo por expediente (memoria o proyecto) y, con uso Viviendas, mínimo por vivienda × nº; + recargo si el proyecto es de otro técnico |
+| Proyectos: tramitación y dirección de la instalación | proyectos | honorario de baremo: % del PEM por los tramos de proyectos; el mayor entre eso, el mínimo de proyecto y, con uso Viviendas, mínimo por vivienda × nº; + recargo si el proyecto es de otro técnico |
+| Memorias: elaboración y tramitación de la memoria técnica | memorias | igual, con los tramos, el mínimo y el reparto de horas de memorias (sin dirección de la instalación) |
 | Redacción del proyecto | proyectos propios | % del PEM por tramos con mínimo |
 | Justificación RITE | opcional (proyectos de otro técnico) | % del PEM con mínimo |
 | Justificación RSIF | si hay circuitos | por circuito de cada modelo + por circuito repetido, con mínimo |
@@ -18,7 +19,7 @@ puede deshacer).
 
 Los honorarios de baremo son **precio de venta**: se descuenta el margen y lo
 que queda se reparte en horas de cada perfil (senior, junior, técnico,
-documentación) a su coste horario, según el reparto de cada tarea. Así la
+documentación) a su coste horario, según el reparto de cada tarea (proyectos y memorias tienen el suyo, y también nº de visitas a obra por defecto). Así la
 partida muestra horas y costes reales y su importe coincide con el baremo.
 
 ## Baremo

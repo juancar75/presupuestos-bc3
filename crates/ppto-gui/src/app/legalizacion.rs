@@ -96,6 +96,7 @@ pub(super) struct VentanaLegalizacion {
     editar: bool,
     campos: Vec<String>,
     tramos: Vec<(String, String)>,
+    tramos_memoria: Vec<(String, String)>,
     mensaje: Option<(String, bool)>,
 }
 
@@ -118,6 +119,7 @@ impl VentanaLegalizacion {
             editar: false,
             campos: Vec::new(),
             tramos: Vec::new(),
+            tramos_memoria: Vec::new(),
             mensaje: None,
         };
         v.recargar();
@@ -141,11 +143,17 @@ impl VentanaLegalizacion {
     fn cargar_edicion(&mut self) {
         let mut b = self.baremo().clone();
         self.campos = (0..CAMPOS.len()).map(|i| texto(*campo(&mut b, i))).collect();
-        self.tramos = b
-            .tramitacion
-            .iter()
-            .map(|t| (t.hasta.map(texto).unwrap_or_default(), texto(t.valor)))
-            .collect();
+        let a_texto = |v: &[Tramo]| {
+            v.iter()
+                .map(|t| (t.hasta.map(texto).unwrap_or_default(), texto(t.valor)))
+                .collect()
+        };
+        self.tramos = a_texto(&b.tramitacion);
+        self.tramos_memoria = a_texto(&b.tramitacion_memoria);
+        self.e.visitas_obra = match self.e.documento {
+            Documento::Memoria => b.visitas_memoria,
+            Documento::Proyecto => b.visitas_proyecto,
+        };
     }
 
     fn leer_capitulos(&mut self, p: &ppto_core::Presupuesto) {
@@ -191,14 +199,21 @@ impl VentanaLegalizacion {
                 }
             }
         }
-        let mut tramos = Vec::new();
-        for (h, p) in &self.tramos {
-            let Some(valor) = leer(p) else {
-                self.mensaje = Some(("Revise los % de los tramos de tramitación.".into(), true));
-                return;
-            };
-            tramos.push(Tramo { hasta: leer(h), valor });
-        }
+        let leer_tramos = |v: &[(String, String)]| -> Option<Vec<Tramo>> {
+            v.iter()
+                .map(|(h, p)| {
+                    Some(Tramo {
+                        hasta: leer(h),
+                        valor: leer(p)?,
+                    })
+                })
+                .collect()
+        };
+        let (Some(tramos), Some(tramos_memoria)) = (leer_tramos(&self.tramos), leer_tramos(&self.tramos_memoria))
+        else {
+            self.mensaje = Some(("Revise los % de los tramos de tramitación.".into(), true));
+            return;
+        };
         // Se relee el fichero para no pisar cambios hechos desde otro equipo.
         let mut bs = match Baremos::cargar(&r) {
             Ok(b) => b,
@@ -212,6 +227,7 @@ impl VentanaLegalizacion {
             *campo(b, i) = v;
         }
         b.tramitacion = tramos;
+        b.tramitacion_memoria = tramos_memoria;
         match bs.guardar(&r) {
             Ok(()) => {
                 self.baremos = bs;
@@ -239,6 +255,33 @@ impl VentanaLegalizacion {
             }
             Err(e) => self.mensaje = Some((e.to_string(), true)),
         }
+    }
+}
+
+/// Lista editable de tramos «hasta € · %» (el último, sin límite).
+fn editar_tramos(ui: &mut egui::Ui, tramos: &mut Vec<(String, String)>) {
+    let mut quitar = None;
+    for (i, (h, p)) in tramos.iter_mut().enumerate() {
+        ui.horizontal(|ui| {
+            ui.label("hasta");
+            ui.add(
+                egui::TextEdit::singleline(h)
+                    .hint_text("sin límite")
+                    .desired_width(90.0),
+            );
+            ui.label("€ ·");
+            caja(ui, p, 50.0);
+            ui.label("%");
+            if ui.small_button("✕").clicked() {
+                quitar = Some(i);
+            }
+        });
+    }
+    if let Some(i) = quitar {
+        tramos.remove(i);
+    }
+    if ui.small_button("Añadir tramo").clicked() {
+        tramos.push((String::new(), String::new()));
     }
 }
 
@@ -320,31 +363,13 @@ impl Aplicacion {
                                     }
                                 }
                             });
-                            ui.label("Tramitación por tramos acumulativos (hasta € · %; el último sin límite):");
-                            let mut quitar = None;
-                            for (i, (h, p)) in v.tramos.iter_mut().enumerate() {
-                                ui.horizontal(|ui| {
-                                    ui.label("hasta");
-                                    ui.add(
-                                        egui::TextEdit::singleline(h)
-                                            .hint_text("sin límite")
-                                            .desired_width(90.0),
-                                    );
-                                    ui.label("€ ·");
-                                    caja(ui, p, 50.0);
-                                    ui.label("%");
-                                    if ui.small_button("✕").clicked() {
-                                        quitar = Some(i);
-                                    }
-                                });
-                            }
-                            if let Some(i) = quitar {
-                                v.tramos.remove(i);
-                            }
+                            ui.columns(2, |cols| {
+                                cols[0].label(RichText::new("Proyectos: % del PEM por tramos").strong());
+                                editar_tramos(&mut cols[0], &mut v.tramos);
+                                cols[1].label(RichText::new("Memorias: % del PEM por tramos").strong());
+                                editar_tramos(&mut cols[1], &mut v.tramos_memoria);
+                            });
                             ui.horizontal(|ui| {
-                                if ui.button("Añadir tramo").clicked() {
-                                    v.tramos.push((String::new(), String::new()));
-                                }
                                 if ui.button(format!("Guardar baremo {}", v.anio)).clicked() {
                                     v.guardar_baremo();
                                 }
@@ -359,8 +384,15 @@ impl Aplicacion {
                         ui.radio_value(&mut v.e.disciplina, Disciplina::Rite, "RITE");
                         ui.radio_value(&mut v.e.disciplina, Disciplina::Pci, "PCI");
                         ui.separator();
+                        let antes = v.e.documento;
                         ui.radio_value(&mut v.e.documento, Documento::Memoria, "Memoria técnica");
                         ui.radio_value(&mut v.e.documento, Documento::Proyecto, "Proyecto");
+                        if v.e.documento != antes {
+                            v.e.visitas_obra = match v.e.documento {
+                                Documento::Memoria => baremo.visitas_memoria,
+                                Documento::Proyecto => baremo.visitas_proyecto,
+                            };
+                        }
                         ui.separator();
                         ui.checkbox(&mut v.e.ajeno, "Proyecto de otro técnico");
                     });
