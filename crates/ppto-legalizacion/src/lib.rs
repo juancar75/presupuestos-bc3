@@ -233,9 +233,13 @@ pub struct Baremo {
     // --- horas por tarea (forman el precio)
     pub horas_memoria: Horas,
     pub horas_tramitacion: Horas,
-    /// Redacción del proyecto: memoria, presupuesto, pliego de condiciones,
-    /// seguridad y salud y anexos (certificados, fichas, manuales de usuario).
+    /// Redacción del proyecto: memoria, presupuesto, pliego de condiciones y
+    /// seguridad y salud.
     pub horas_redaccion: Horas,
+    /// Anexos del proyecto (certificados, fichas técnicas, manuales de
+    /// usuario): iguales en RITE y PCI.
+    pub horas_anexos: Horas,
+    pub reparto_anexos: Reparto,
     /// Redacción del proyecto PCI (menos documento); sin datos, la de RITE.
     pub horas_redaccion_pci: Horas,
     /// Proyectos: planos as-built y cálculos justificativos, aparte.
@@ -362,6 +366,13 @@ impl Default for Baremo {
             horas_tramitacion: Horas::default(),
             horas_redaccion: Horas::default(),
             horas_redaccion_pci: Horas::default(),
+            horas_anexos: Horas::default(),
+            reparto_anexos: Reparto {
+                senior: Decimal::ZERO,
+                junior: d(20),
+                tecnico: Decimal::ZERO,
+                documentacion: d(80),
+            },
             horas_planos: Horas::default(),
             pct_revision_planos: z,
             horas_calculos: Horas::default(),
@@ -1053,7 +1064,7 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         if !e.ajeno {
             tareas.push((
                 "Redacción del proyecto de legalización (as-built)",
-                "redacción: memoria, presupuesto, pliego, seguridad y salud y anexos",
+                "redacción: memoria, presupuesto, pliego y seguridad y salud",
                 if e.disciplina == Disciplina::Pci && b.horas_redaccion_pci != Horas::default() {
                     &b.horas_redaccion_pci
                 } else {
@@ -1062,6 +1073,12 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
                 &b.reparto_redaccion,
             ));
         }
+        tareas.push((
+            "Anexos: certificados, fichas técnicas y manuales",
+            "anexos: certificados, fichas y manuales",
+            &b.horas_anexos,
+            &b.reparto_anexos,
+        ));
         let revisiones = e.revisiones_arquitectura;
         tareas.push(("Planos as-built", "planos as-built", &b.horas_planos, &b.reparto_planos));
         if !e.ajeno {
@@ -1678,6 +1695,25 @@ mod tests {
         assert_eq!(h.de(dec!(400000), Decimal::ZERO), dec!(32));
         assert_eq!(h.de(dec!(1000000), Decimal::ZERO), dec!(44));
         assert!(h.texto(Decimal::ZERO).contains("mínimo 32 h"));
+    }
+
+    #[test]
+    fn anexos_iguales_en_rite_y_pci() {
+        let mut bp = b();
+        bp.horas_anexos = Horas {
+            base: d(8),
+            por_10k: Decimal::ZERO,
+            por_vivienda: Decimal::ZERO,
+            minimo: Decimal::ZERO,
+        };
+        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Proyecto, dec!(85000));
+        assert_eq!(horas(&calcular(&bp, &e), "Anexos"), dec!(8));
+        e.disciplina = Disciplina::Rite;
+        e.ajeno = true;
+        assert_eq!(horas(&calcular(&bp, &e), "Anexos"), dec!(8));
+        // Las memorias no llevan el bloque.
+        e.documento = Documento::Memoria;
+        assert!(bloque(&calcular(&bp, &e), "Anexos").is_none());
     }
 
     #[test]
