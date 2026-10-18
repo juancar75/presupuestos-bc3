@@ -7,6 +7,7 @@ mod asistente;
 mod biblioteca;
 mod ciego;
 mod dificultad;
+mod legalizacion;
 mod pdf;
 mod propuestas;
 mod ratio;
@@ -203,6 +204,7 @@ pub struct Aplicacion {
     tarifas: ppto_tarifas::Biblioteca,
     ventana_tarifas: Option<tarifas::VentanaTarifas>,
     ventana_biblioteca: Option<biblioteca::VentanaBiblioteca>,
+    ventana_legalizacion: Option<legalizacion::VentanaLegalizacion>,
     dificultad: dificultad::FormDificultad,
     /// Cambios que se anotan en la auditoría al guardar la revisión.
     notas_revision: Vec<String>,
@@ -342,6 +344,7 @@ impl Aplicacion {
             tarifas: ppto_tarifas::Biblioteca::default(),
             ventana_tarifas: None,
             ventana_biblioteca: None,
+            ventana_legalizacion: None,
             dificultad: dificultad::FormDificultad::default(),
             notas_revision: Vec::new(),
             enlace: propuestas::Enlace::sin_disco(),
@@ -1184,6 +1187,13 @@ impl Aplicacion {
                 .clicked()
             {
                 self.ventana_biblioteca = Some(biblioteca::VentanaBiblioteca::abrir());
+            }
+            if ui
+                .button("Legalización…")
+                .on_hover_text("Coste de tramitación, visitas de la OCA, justificación RITE/RSIF, desplazamientos y tasas, EICI y visado repercutidos")
+                .clicked()
+            {
+                self.ventana_legalizacion = Some(legalizacion::VentanaLegalizacion::abrir(&self.p));
             }
             if ui
                 .button("📄 PDF…")
@@ -2459,6 +2469,7 @@ impl eframe::App for Aplicacion {
         self.ventana_pdf(&ctx);
         self.ventana_tarifas(&ctx);
         self.ventana_biblioteca(&ctx);
+        self.ventana_legalizacion(&ctx);
         self.ventana_propuestas(&ctx, &mut acciones);
         if !acciones.is_empty() {
             self.aplicar(acciones);

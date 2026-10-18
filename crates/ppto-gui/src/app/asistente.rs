@@ -206,7 +206,7 @@ impl PanelAsistente {
 }
 
 /// Abre un fichero o carpeta con el programa del sistema.
-fn abrir_en_sistema(ruta: &Path) {
+pub(super) fn abrir_en_sistema(ruta: &Path) {
     #[cfg(target_os = "windows")]
     let r = std::process::Command::new("explorer").arg(ruta).spawn();
     #[cfg(target_os = "macos")]

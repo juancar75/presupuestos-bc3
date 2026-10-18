@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.4] - 2026-10-18
+
 ### Añadido — biblioteca de precios (paso 1)
 - Crate `ppto-biblioteca`: partidas con descompuesto y versiones; por
   fabricante, descuentos (general y por grupo), tarifas por año con
@@ -15,6 +17,24 @@ versionado [semántico](https://semver.org/lang/es/).
   IA consulta la biblioteca antes de estimar.
 - Interfaz: ventana «Biblioteca…» (guardar la obra, fabricantes, cargar
   tarifa de un año, descuentos y búsqueda de partidas).
+
+### Añadido — legalización
+- Crate `ppto-legalizacion` y ventana «Legalización…» (RITE o PCI, memoria o
+  proyecto, terciario o viviendas): una partida por disciplina en el
+  capítulo `LEG` con todo el descompuesto. La tarifa sale de nuestros
+  costes: horas por tarea (memoria, tramitación y dirección, redacción,
+  justificaciones RITE y RSIF, visitas a obra y de la OCA) por el coste de
+  cada perfil, desplazamientos (horas, km, aparcamiento, dietas) y margen
+  según el tamaño del encargo; tasas, EICI y visados se repercuten sin
+  margen. Los honorarios en % del PEM quedan como referencia de mercado.
+- RITE art. 15: documento exigido según la suma de potencias de calor o de
+  frío (proyecto por encima de 70 kW).
+- Avisos de proyecto o memoria en PCI (DB SI 4) y frigoríficas (RSIF nivel 2).
+- «Rellenar desde el presupuesto»: propone potencias, circuitos RSIF,
+  refrigerante, instalación frigorífica, sistemas PCI, BIE y detección a
+  partir de las mediciones, con la partida de la que sale cada dato.
+- Baremo por año en `legalizacion.json`, fuera del repositorio; costes,
+  horas y margen se editan en la ventana.
 
 ## [0.1.0-alpha.3] - 2026-10-16
 
