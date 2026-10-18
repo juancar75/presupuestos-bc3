@@ -687,16 +687,6 @@ impl Aplicacion {
                         ui.separator();
                         ui.label(RichText::new(format!("Total partida: {} €", eur(c.total()))).strong());
                     });
-                    if !c.incrementos_revision.is_empty() {
-                        ui.label(format!(
-                            "Revisiones de arquitectura adicionales: {}",
-                            c.incrementos_revision
-                                .iter()
-                                .map(|(t, p)| format!("{t} +{} %", num(*p, 0)))
-                                .collect::<Vec<_>>()
-                                .join(" · ")
-                        ));
-                    }
                     if c.referencia > Decimal::ZERO {
                         let dif = (c.honorarios() - c.referencia) * Decimal::ONE_HUNDRED / c.referencia;
                         ui.label(

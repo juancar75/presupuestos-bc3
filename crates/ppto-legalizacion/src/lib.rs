@@ -947,9 +947,6 @@ pub struct Calculo {
     pub pct_margen: Decimal,
     /// Honorarios de referencia de mercado (baremo en % del PEM), para comparar.
     pub referencia: Decimal,
-    /// Proyectos: incremento (%) del precio con más revisiones de arquitectura
-    /// que las incluidas: `(etiqueta, %)` para 2, 3 y cada una por encima de 3.
-    pub incrementos_revision: Vec<(String, Decimal)>,
     pub avisos: Vec<String>,
 }
 
@@ -1047,34 +1044,12 @@ pub fn referencia(b: &Baremo, e: &Expediente) -> Decimal {
 /// repercutidos sin margen.
 pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     let mut c = calcular_sin_revisiones(b, e);
-    if e.proyecto() && !b.horas_revision_plano.is_zero() && c.total() > Decimal::ZERO {
-        let precio = |r: u32| {
-            let mut x = e.clone();
-            x.revisiones_arquitectura = r;
-            calcular_sin_revisiones(b, &x).total()
-        };
-        let base = c.total();
-        let pct = |p: Decimal| redondear((p - base) * CIEN / base, 0);
-        let incluidas = e.revisiones_arquitectura;
-        for r in [2u32, 3] {
-            if r > incluidas {
-                c.incrementos_revision.push((format!("{r} revisiones"), pct(precio(r))));
-            }
-        }
-        let tope = incluidas.max(3);
-        let cada = redondear((precio(tope + 1) - precio(tope)) * CIEN / base, 0);
-        c.incrementos_revision
-            .push((format!("cada revisión más allá de {tope}"), cada));
-        let lista = c
-            .incrementos_revision
-            .iter()
-            .map(|(t, p)| format!("{t}: +{} %", num(*p, 0)))
-            .collect::<Vec<_>>()
-            .join("; ");
+    if e.proyecto() {
         c.texto.push_str(&format!(
-            " Incluye {} de los planos de arquitectura. Incremento del precio por revisiones adicionales: {lista}.",
-            match incluidas {
-                0 => "la versión de arquitectura vigente, sin revisiones".to_owned(),
+            " Incluye {} de los planos de arquitectura; las revisiones adicionales se valorarán aparte por \
+             horas de oficina técnica.",
+            match e.revisiones_arquitectura {
+                0 => "la versión vigente".to_owned(),
                 1 => "1 revisión".to_owned(),
                 n => format!("{n} revisiones"),
             }
@@ -1792,23 +1767,15 @@ mod tests {
     }
 
     #[test]
-    fn la_partida_refleja_el_incremento_por_revisiones() {
+    fn revisiones_adicionales_por_horas_de_oficina_tecnica() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(200000));
-        e.potencia_calor_kw = dec!(250);
         e.revisiones_arquitectura = 1;
         let c = calcular(&b(), &e);
-        let etiquetas: Vec<&str> = c.incrementos_revision.iter().map(|x| x.0.as_str()).collect();
-        assert_eq!(
-            etiquetas,
-            ["2 revisiones", "3 revisiones", "cada revisión más allá de 3"]
-        );
-        assert!(c.incrementos_revision.iter().all(|x| x.1 > Decimal::ZERO));
-        assert!(c.incrementos_revision[1].1 > c.incrementos_revision[0].1);
-        assert!(c.texto.contains("Incluye 1 revisión"));
-        assert!(c.texto.contains("3 revisiones: +"));
-        // Las memorias no lo llevan.
+        assert!(c.texto.contains("Incluye 1 revisión de los planos de arquitectura"));
+        assert!(c.texto.contains("se valorarán aparte por horas de oficina técnica"));
+        assert!(!c.texto.contains('%'));
         e.documento = Documento::Memoria;
-        assert!(calcular(&b(), &e).incrementos_revision.is_empty());
+        assert!(!calcular(&b(), &e).texto.contains("oficina técnica"));
     }
 
     #[test]
