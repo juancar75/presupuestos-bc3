@@ -264,6 +264,10 @@ pub struct Baremo {
     pub horas_calc_bie: Decimal,
     pub horas_calc_deteccion: Decimal,
     pub horas_justif_rite: Horas,
+    /// Memorias PCI: horas propias (sin datos, las de memoria) y horas por
+    /// cada instalación (extintores, BIE, detección, alarma…).
+    pub horas_memoria_pci: Horas,
+    pub horas_pci_instalacion: Decimal,
     /// RSIF: horas fijas, que cubren hasta `rsif_circuitos_base` circuitos;
     /// a partir de ahí, por modelo distinto y por circuito repetido.
     pub rsif_horas_base: Decimal,
@@ -403,6 +407,8 @@ impl Default for Baremo {
             rsif_horas_base: z,
             rsif_circuitos_base: z,
             horas_justif_rite: Horas::default(),
+            horas_memoria_pci: Horas::default(),
+            horas_pci_instalacion: z,
             rsif_horas_modelo: z,
             rsif_horas_repetido: z,
             horas_visita_obra: z,
@@ -736,6 +742,9 @@ pub struct Expediente {
     /// PCI: superficie (m²) para la EICI de proyecto.
     pub superficie: Decimal,
     pub presion_diferencial: bool,
+    /// PCI: memoria inspeccionable (aumenta recorridos de evacuación o
+    /// superficie de sectorización): EICI con tarifa de proyecto y visita.
+    pub pci_inspeccionable: bool,
     /// PCI: hay BIE (cálculo hidráulico) y detección (cobertura y baterías).
     pub pci_bie: bool,
     pub pci_deteccion: bool,
@@ -792,6 +801,7 @@ impl Expediente {
             instalaciones_pci: 1,
             superficie: Decimal::ZERO,
             presion_diferencial: false,
+            pci_inspeccionable: false,
             pci_bie: false,
             pci_deteccion: false,
             justificar_rite: disciplina == Disciplina::Rite && documento == Documento::Memoria,
@@ -1105,8 +1115,19 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
             &b.reparto_memoria,
         )
     };
+    let pci_memoria = !proyecto && e.disciplina == Disciplina::Pci;
+    let horas = if pci_memoria && b.horas_memoria_pci != Horas::default() {
+        &b.horas_memoria_pci
+    } else {
+        horas
+    };
     let mut h = horas.de(e.pem, n_viv);
     let mut regla = horas.texto(n_viv);
+    if pci_memoria && !b.horas_pci_instalacion.is_zero() {
+        let n = e.instalaciones_pci.max(1);
+        h += d(n) * b.horas_pci_instalacion;
+        regla.push_str(&format!(" + {n} instalaciones × {} h", corto(b.horas_pci_instalacion)));
+    }
     if e.ajeno && !b.recargo_ajeno.is_zero() {
         h = h * (CIEN + b.recargo_ajeno) / CIEN;
         regla.push_str(&format!(
@@ -1301,7 +1322,8 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
             )],
         });
     }
-    let visitas_oca = u32::from(proyecto) + e.segundas_visitas;
+    let inspeccion = proyecto || (e.disciplina == Disciplina::Pci && e.pci_inspeccionable);
+    let visitas_oca = u32::from(inspeccion) + e.segundas_visitas;
     if visitas_oca > 0 && !b.oca_horas.is_zero() {
         c.bloques.push(Bloque {
             titulo: format!("Visitas de inspección de la OCA ({visitas_oca})"),
@@ -1535,6 +1557,20 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     c
 }
 
+/// EICI de la tabla de proyectos PCI (nº de instalaciones × superficie).
+fn eici_pci_proyecto(b: &Baremo, e: &Expediente) -> Option<Decimal> {
+    let fila = (e.instalaciones_pci.max(1) as usize - 1).min(b.eici_pci_proyecto.len().saturating_sub(1));
+    let col = b
+        .eici_pci_superficies
+        .iter()
+        .position(|&s| e.superficie < s)
+        .unwrap_or(b.eici_pci_superficies.len());
+    b.eici_pci_proyecto
+        .get(fila)
+        .and_then(|f| f.get(col.min(f.len().saturating_sub(1))))
+        .copied()
+}
+
 fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Linea> {
     let mut r = Vec::new();
     let proyecto = e.documento == Documento::Proyecto;
@@ -1653,21 +1689,33 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
                 format!("Tasa de registro PCI, proyecto (inversión {})", eur(e.pem)),
                 v,
             );
-            let fila = (e.instalaciones_pci.max(1) as usize - 1).min(b.eici_pci_proyecto.len().saturating_sub(1));
-            let col = b
-                .eici_pci_superficies
-                .iter()
-                .position(|&s| e.superficie < s)
-                .unwrap_or(b.eici_pci_superficies.len());
-            match b
-                .eici_pci_proyecto
-                .get(fila)
-                .and_then(|f| f.get(col.min(f.len().saturating_sub(1))))
-            {
-                Some(&v) => fijo(
+            match eici_pci_proyecto(b, e) {
+                Some(v) => fijo(
                     &mut r,
                     format!(
                         "EICI proyecto PCI ({} instalaciones, {} m²)",
+                        e.instalaciones_pci,
+                        num(e.superficie, 0)
+                    ),
+                    v,
+                ),
+                None => avisos.push("Falta la tabla EICI de proyectos PCI en el baremo.".into()),
+            }
+            if e.presion_diferencial {
+                fijo(
+                    &mut r,
+                    "EICI coste adicional por sistema de presión diferencial".into(),
+                    b.eici_pci_presion,
+                );
+            }
+        }
+        (Disciplina::Pci, false) if e.pci_inspeccionable => {
+            fijo(&mut r, "Tasa de registro PCI, memoria".into(), b.tasa_pci_memoria);
+            match eici_pci_proyecto(b, e) {
+                Some(v) => fijo(
+                    &mut r,
+                    format!(
+                        "EICI memoria inspeccionable PCI, tarifa de proyecto ({} instalaciones, {} m²)",
                         e.instalaciones_pci,
                         num(e.superficie, 0)
                     ),
@@ -1855,6 +1903,38 @@ mod tests {
         assert!(!c.texto.contains('%'));
         e.documento = Documento::Memoria;
         assert!(!calcular(&b(), &e).texto.contains("oficina técnica"));
+    }
+
+    #[test]
+    fn memoria_pci_por_instalaciones_e_inspeccionable() {
+        let mut bp = b();
+        bp.horas_memoria_pci = Horas {
+            base: d(1),
+            por_10k: Decimal::ZERO,
+            por_vivienda: Decimal::ZERO,
+            minimo: Decimal::ZERO,
+        };
+        bp.horas_pci_instalacion = d(1);
+        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(20000));
+        e.instalaciones_pci = 1;
+        assert_eq!(horas(&calcular(&bp, &e), "Elaboración"), dec!(2));
+        e.instalaciones_pci = 6;
+        let c = calcular(&bp, &e);
+        assert_eq!(horas(&c, "Elaboración"), dec!(7));
+        // No inspeccionable: EICI de memoria (3.ª fila y siguientes: 300), sin OCA.
+        assert!(bloque(&c, "Visitas de inspección").is_none());
+        assert!(
+            c.lineas()
+                .any(|l| l.resumen.starts_with("EICI memoria PCI") && l.importe() == dec!(300))
+        );
+        // Inspeccionable: EICI de proyecto (última fila, S < 1.000: 450) y visita de la OCA.
+        e.pci_inspeccionable = true;
+        let c = calcular(&bp, &e);
+        assert!(bloque(&c, "Visitas de inspección").is_some());
+        assert!(
+            c.lineas()
+                .any(|l| l.resumen.contains("inspeccionable") && l.importe() == dec!(450))
+        );
     }
 
     #[test]
