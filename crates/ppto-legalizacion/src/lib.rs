@@ -248,6 +248,11 @@ pub struct Baremo {
     /// de planos as-built.
     pub pct_revision_planos: Decimal,
     pub horas_calculos: Horas,
+    /// Cálculos PCI según los sistemas: fijas, hidráulico de BIE y
+    /// cobertura y baterías de detección.
+    pub horas_calc_pci_base: Decimal,
+    pub horas_calc_bie: Decimal,
+    pub horas_calc_deteccion: Decimal,
     pub horas_justif_rite: Horas,
     /// RSIF: horas fijas + por modelo + por circuito repetido.
     pub rsif_horas_base: Decimal,
@@ -376,6 +381,9 @@ impl Default for Baremo {
             horas_planos: Horas::default(),
             pct_revision_planos: z,
             horas_calculos: Horas::default(),
+            horas_calc_pci_base: z,
+            horas_calc_bie: z,
+            horas_calc_deteccion: z,
             rsif_horas_base: z,
             horas_justif_rite: Horas::default(),
             rsif_horas_modelo: z,
@@ -509,6 +517,9 @@ impl Baremo {
                 minimo: Decimal::ZERO,
             },
             pct_revision_planos: d(40),
+            horas_calc_pci_base: d(1),
+            horas_calc_bie: d(4),
+            horas_calc_deteccion: d(3),
             rsif_horas_base: d(1),
             rsif_horas_modelo: d(1),
             rsif_horas_repetido: Decimal::new(25, 2),
@@ -705,6 +716,9 @@ pub struct Expediente {
     /// PCI: superficie (m²) para la EICI de proyecto.
     pub superficie: Decimal,
     pub presion_diferencial: bool,
+    /// PCI: hay BIE (cálculo hidráulico) y detección (cobertura y baterías).
+    pub pci_bie: bool,
+    pub pci_deteccion: bool,
     /// Justificación RITE (memorias RITE y proyectos de otro técnico; en los
     /// proyectos propios va en la redacción).
     pub justificar_rite: bool,
@@ -752,6 +766,8 @@ impl Expediente {
             instalaciones_pci: 1,
             superficie: Decimal::ZERO,
             presion_diferencial: false,
+            pci_bie: false,
+            pci_deteccion: false,
             justificar_rite: disciplina == Disciplina::Rite && documento == Documento::Memoria,
             circuitos_rsif: 0,
             modelos_rsif: 0,
@@ -1081,7 +1097,7 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         ));
         let revisiones = e.revisiones_arquitectura;
         tareas.push(("Planos as-built", "planos as-built", &b.horas_planos, &b.reparto_planos));
-        if !e.ajeno {
+        if !e.ajeno && e.disciplina == Disciplina::Rite {
             tareas.push((
                 "Cálculos justificativos",
                 "cálculos justificativos",
@@ -1104,6 +1120,28 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
                     titulo: titulo.into(),
                     regla: format!("{} h ({regla})", num(h, 1)),
                     lineas: horas_perfil(b, que, h, reparto),
+                });
+            }
+        }
+        if !e.ajeno && e.disciplina == Disciplina::Pci {
+            let mut h = b.horas_calc_pci_base;
+            let mut partes = vec![format!("{} h", corto(b.horas_calc_pci_base))];
+            if e.pci_bie {
+                h += b.horas_calc_bie;
+                partes.push(format!("hidráulico de BIE {} h", corto(b.horas_calc_bie)));
+            }
+            if e.pci_deteccion {
+                h += b.horas_calc_deteccion;
+                partes.push(format!(
+                    "cobertura y baterías de detección {} h",
+                    corto(b.horas_calc_deteccion)
+                ));
+            }
+            if h > Decimal::ZERO {
+                c.bloques.push(Bloque {
+                    titulo: "Cálculos justificativos".into(),
+                    regla: format!("{} h ({})", num(h, 1), partes.join(" + ")),
+                    lineas: horas_perfil(b, "cálculos justificativos PCI", h, &b.reparto_calculos),
                 });
             }
         }
@@ -1695,6 +1733,18 @@ mod tests {
         assert_eq!(h.de(dec!(400000), Decimal::ZERO), dec!(32));
         assert_eq!(h.de(dec!(1000000), Decimal::ZERO), dec!(44));
         assert!(h.texto(Decimal::ZERO).contains("mínimo 32 h"));
+    }
+
+    #[test]
+    fn calculos_pci_segun_sistemas() {
+        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Proyecto, dec!(85000));
+        assert_eq!(horas(&calcular(&b(), &e), "Cálculos"), dec!(1));
+        e.pci_bie = true;
+        assert_eq!(horas(&calcular(&b(), &e), "Cálculos"), dec!(5));
+        e.pci_deteccion = true;
+        let c = calcular(&b(), &e);
+        assert_eq!(horas(&c, "Cálculos"), dec!(8));
+        assert!(bloque(&c, "Cálculos").unwrap().regla.contains("baterías"));
     }
 
     #[test]

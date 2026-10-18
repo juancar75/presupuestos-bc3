@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 /// Costes, horas, margen y referencias editables en la ventana (los repartos
 /// por perfil y las tablas oficiales, en el JSON).
-const CAMPOS: [(&str, &str); 56] = [
+const CAMPOS: [(&str, &str); 59] = [
     ("Costes horarios (€/h)", "Ingeniero senior"),
     ("Costes horarios (€/h)", "Ingeniero junior"),
     ("Costes horarios (€/h)", "Técnico"),
@@ -48,8 +48,11 @@ const CAMPOS: [(&str, &str); 56] = [
     ("Horas por tarea", "Planos as-built: por 10.000 €"),
     ("Horas por tarea", "Planos as-built: por vivienda"),
     ("Horas por tarea", "Planos: % por revisión de arquitectura"),
-    ("Horas por tarea", "Cálculos: fijas"),
-    ("Horas por tarea", "Cálculos: por 10.000 €"),
+    ("Horas por tarea", "Cálculos RITE: fijas"),
+    ("Horas por tarea", "Cálculos RITE: por 10.000 €"),
+    ("Horas por tarea", "Cálculos PCI: fijas"),
+    ("Horas por tarea", "Cálculos PCI: hidráulico BIE"),
+    ("Horas por tarea", "Cálculos PCI: cobertura y baterías"),
     ("Horas por tarea", "Justificación RITE: fijas"),
     ("Horas por tarea", "Justificación RITE: por 10.000 €"),
     ("Horas por tarea", "RSIF: fijas"),
@@ -110,32 +113,35 @@ fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
         27 => &mut b.pct_revision_planos,
         28 => &mut b.horas_calculos.base,
         29 => &mut b.horas_calculos.por_10k,
-        30 => &mut b.horas_justif_rite.base,
-        31 => &mut b.horas_justif_rite.por_10k,
-        32 => &mut b.rsif_horas_base,
-        33 => &mut b.rsif_horas_modelo,
-        34 => &mut b.rsif_horas_repetido,
-        35 => &mut b.horas_visita_obra,
-        36 => &mut b.oca_horas,
-        37 => &mut b.recargo_ajeno,
-        38 => &mut b.horas_jornada,
-        39 => &mut b.viaje_km,
-        40 => &mut b.viaje_horas,
-        41 => &mut b.km,
-        42 => &mut b.aparcamiento,
-        43 => &mut b.dieta,
-        44 => &mut b.km_umbral,
-        45 => &mut b.eici_segunda_visita,
-        46 => &mut b.tasa_if,
-        47 => &mut b.tramitacion_minimo,
-        48 => &mut b.tramitacion_minimo_memoria,
-        49 => &mut b.minimo_vivienda,
-        50 => &mut b.redaccion_minimo,
-        51 => &mut b.justif_rite_pct,
-        52 => &mut b.justif_rite_minimo,
-        53 => &mut b.rsif_circuito,
-        54 => &mut b.rsif_repetido,
-        55 => &mut b.rsif_minimo,
+        30 => &mut b.horas_calc_pci_base,
+        31 => &mut b.horas_calc_bie,
+        32 => &mut b.horas_calc_deteccion,
+        33 => &mut b.horas_justif_rite.base,
+        34 => &mut b.horas_justif_rite.por_10k,
+        35 => &mut b.rsif_horas_base,
+        36 => &mut b.rsif_horas_modelo,
+        37 => &mut b.rsif_horas_repetido,
+        38 => &mut b.horas_visita_obra,
+        39 => &mut b.oca_horas,
+        40 => &mut b.recargo_ajeno,
+        41 => &mut b.horas_jornada,
+        42 => &mut b.viaje_km,
+        43 => &mut b.viaje_horas,
+        44 => &mut b.km,
+        45 => &mut b.aparcamiento,
+        46 => &mut b.dieta,
+        47 => &mut b.km_umbral,
+        48 => &mut b.eici_segunda_visita,
+        49 => &mut b.tasa_if,
+        50 => &mut b.tramitacion_minimo,
+        51 => &mut b.tramitacion_minimo_memoria,
+        52 => &mut b.minimo_vivienda,
+        53 => &mut b.redaccion_minimo,
+        54 => &mut b.justif_rite_pct,
+        55 => &mut b.justif_rite_minimo,
+        56 => &mut b.rsif_circuito,
+        57 => &mut b.rsif_repetido,
+        58 => &mut b.rsif_minimo,
         _ => unreachable!("campo fuera de rango"),
     }
 }
@@ -551,6 +557,10 @@ impl Aplicacion {
                                 ui.label("Superficie (m²)");
                                 caja(ui, &mut v.superficie, 70.0);
                                 ui.checkbox(&mut v.e.presion_diferencial, "Presión diferencial");
+                                ui.end_row();
+                                ui.checkbox(&mut v.e.pci_bie, "BIE").on_hover_text("Cálculo hidráulico");
+                                ui.checkbox(&mut v.e.pci_deteccion, "Detección")
+                                    .on_hover_text("Cálculo de cobertura y de baterías");
                             }
                         }
                         ui.end_row();
