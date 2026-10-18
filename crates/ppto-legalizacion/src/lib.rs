@@ -236,6 +236,8 @@ pub struct Baremo {
     /// Redacción del proyecto: memoria, presupuesto, pliego de condiciones,
     /// seguridad y salud y anexos (certificados, fichas, manuales de usuario).
     pub horas_redaccion: Horas,
+    /// Redacción del proyecto PCI (menos documento); sin datos, la de RITE.
+    pub horas_redaccion_pci: Horas,
     /// Proyectos: planos as-built y cálculos justificativos, aparte.
     pub horas_planos: Horas,
     /// Cada revisión de los planos de arquitectura añade este % de las horas
@@ -359,6 +361,7 @@ impl Default for Baremo {
             horas_memoria: Horas::default(),
             horas_tramitacion: Horas::default(),
             horas_redaccion: Horas::default(),
+            horas_redaccion_pci: Horas::default(),
             horas_planos: Horas::default(),
             pct_revision_planos: z,
             horas_calculos: Horas::default(),
@@ -1051,7 +1054,11 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
             tareas.push((
                 "Redacción del proyecto de legalización (as-built)",
                 "redacción: memoria, presupuesto, pliego, seguridad y salud y anexos",
-                &b.horas_redaccion,
+                if e.disciplina == Disciplina::Pci && b.horas_redaccion_pci != Horas::default() {
+                    &b.horas_redaccion_pci
+                } else {
+                    &b.horas_redaccion
+                },
                 &b.reparto_redaccion,
             ));
         }
@@ -1671,6 +1678,23 @@ mod tests {
         assert_eq!(h.de(dec!(400000), Decimal::ZERO), dec!(32));
         assert_eq!(h.de(dec!(1000000), Decimal::ZERO), dec!(44));
         assert!(h.texto(Decimal::ZERO).contains("mínimo 32 h"));
+    }
+
+    #[test]
+    fn redaccion_pci_propia() {
+        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Proyecto, dec!(200000));
+        // Sin horas de PCI se usan las de RITE: 12 + 1,5 × 20.
+        assert_eq!(horas(&calcular(&b(), &e), "Redacción"), dec!(42));
+        let mut bp = b();
+        bp.horas_redaccion_pci = Horas {
+            base: d(10),
+            por_10k: Decimal::ZERO,
+            por_vivienda: Decimal::ZERO,
+            minimo: d(20),
+        };
+        assert_eq!(horas(&calcular(&bp, &e), "Redacción"), dec!(20));
+        e.disciplina = Disciplina::Rite;
+        assert_eq!(horas(&calcular(&bp, &e), "Redacción"), dec!(42));
     }
 
     #[test]
