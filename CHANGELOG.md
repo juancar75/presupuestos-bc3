@@ -20,10 +20,11 @@ versionado [semántico](https://semver.org/lang/es/).
 - Crate `ppto-legalizacion` y ventana «Legalización…» (uso terciario o
   viviendas): crea en el capítulo
   `LEG` las partidas descompuestas de una disciplina (RITE o PCI): coste de
-  tramitación (% del PEM por tramos con mínimo por expediente y por
-  vivienda, recargo por proyecto de otro técnico), visita de la OCA en
-  proyectos y segundas visitas, justificación RITE y RSIF (con registro
-  frigorífico), desplazamiento por km y horas, y tasas, EICI y visado
+  tramitación (% del PEM por tramos con mínimo de memoria, de proyecto y
+  por vivienda, recargo por proyecto de otro técnico), redacción del
+  proyecto propio, visita de la OCA en proyectos y segundas visitas,
+  justificación RITE aparte y RSIF por modelo y circuito repetido (con
+  registro frigorífico), desplazamiento por km y horas, y tasas, EICI y visado
   repercutidos (visado solo en proyectos, con el de dirección de obra).
 - Baremo por año en `legalizacion.json` (carpeta de configuración, fuera del
   repositorio); los honorarios se editan en la ventana. La vista previa

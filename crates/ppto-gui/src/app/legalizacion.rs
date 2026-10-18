@@ -16,15 +16,18 @@ use ppto_legalizacion::{
 use std::path::PathBuf;
 
 /// Honorarios propios editables en la ventana (las tablas oficiales, en el JSON).
-const CAMPOS: [&str; 14] = [
-    "Mínimo de tramitación (€)",
+const CAMPOS: [&str; 17] = [
+    "Mínimo tramitación proyecto (€)",
+    "Mínimo tramitación memoria (€)",
+    "Mínimo redacción proyecto propio (€)",
+    "RSIF circuito repetido (€)",
     "Mínimo por vivienda (€)",
     "Recargo proyecto ajeno (%)",
     "Visita de la OCA (€)",
     "Segunda visita (€)",
     "Justificación RITE (% PEM)",
     "Justificación RITE mínimo (€)",
-    "RSIF por circuito (€)",
+    "RSIF por circuito de cada modelo (€)",
     "RSIF mínimo (€)",
     "Kilometraje (€/km)",
     "Umbral desplazamiento (km)",
@@ -36,18 +39,21 @@ const CAMPOS: [&str; 14] = [
 fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
     match i {
         0 => &mut b.tramitacion_minimo,
-        1 => &mut b.minimo_vivienda,
-        2 => &mut b.recargo_ajeno,
-        3 => &mut b.visita_oca,
-        4 => &mut b.segunda_visita,
-        5 => &mut b.justif_rite_pct,
-        6 => &mut b.justif_rite_minimo,
-        7 => &mut b.rsif_circuito,
-        8 => &mut b.rsif_minimo,
-        9 => &mut b.km,
-        10 => &mut b.km_umbral,
-        11 => &mut b.hora_viaje,
-        12 => &mut b.hora_referencia,
+        1 => &mut b.tramitacion_minimo_memoria,
+        2 => &mut b.redaccion_minimo,
+        3 => &mut b.rsif_repetido,
+        4 => &mut b.minimo_vivienda,
+        5 => &mut b.recargo_ajeno,
+        6 => &mut b.visita_oca,
+        7 => &mut b.segunda_visita,
+        8 => &mut b.justif_rite_pct,
+        9 => &mut b.justif_rite_minimo,
+        10 => &mut b.rsif_circuito,
+        11 => &mut b.rsif_minimo,
+        12 => &mut b.km,
+        13 => &mut b.km_umbral,
+        14 => &mut b.hora_viaje,
+        15 => &mut b.hora_referencia,
         _ => &mut b.eici_segunda_visita,
     }
 }
@@ -367,7 +373,10 @@ impl Aplicacion {
                                 caja(ui, &mut v.potencia, 70.0);
                                 ui.end_row();
                                 ui.checkbox(&mut v.e.primario_frio, "Primario frigorífico");
-                                ui.checkbox(&mut v.e.justificar_rite, "Justificación RITE");
+                                ui.checkbox(&mut v.e.justificar_rite, "Justificación RITE aparte")
+                                    .on_hover_text(
+                                        "Para proyectos de otro técnico. En memorias y proyectos propios va incluida.",
+                                    );
                             }
                             Disciplina::Pci => {
                                 ui.label("Nº instalaciones PCI");
@@ -381,6 +390,9 @@ impl Aplicacion {
                         ui.end_row();
                         ui.label("Circuitos RSIF (0 = sin RSIF)");
                         numero(ui, &mut v.e.circuitos_rsif);
+                        ui.label("de ellos, modelos distintos");
+                        numero(ui, &mut v.e.modelos_rsif);
+                        ui.end_row();
                         ui.label("Registro frigorífico");
                         egui::ComboBox::from_id_salt("leg_if")
                             .selected_text(match v.e.registro_if {

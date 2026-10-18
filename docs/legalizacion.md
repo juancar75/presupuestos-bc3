@@ -7,11 +7,12 @@ crearlo sustituye el subcapítulo (y se puede deshacer).
 
 | Partida | Cuándo | Cálculo |
 |---|---|---|
-| `TRAM` Coste de tramitación | siempre | % del PEM de la disciplina por tramos acumulativos; se cobra el mayor entre eso, el mínimo por expediente y el mínimo por vivienda × nº de viviendas; + recargo si el proyecto es de otro técnico |
+| `TRAM` Coste de tramitación | siempre | % del PEM de la disciplina por tramos acumulativos; se cobra el mayor entre eso, el mínimo por expediente (uno para memorias y otro para proyectos) y, con uso Viviendas, el mínimo por vivienda × nº de viviendas; + recargo si el proyecto es de otro técnico |
+| `RED` Redacción del proyecto | proyectos propios | % del PEM por tramos acumulativos con mínimo |
 | `OCA` Visita de la OCA | proyectos | importe fijo |
 | `VIS2` Segundas visitas | si las hay | n × honorario + n × tarifa EICI (repercutida) |
-| `JRITE` Justificación RITE | RITE, opcional | % del PEM con mínimo |
-| `RSIF` Justificación RSIF | si hay circuitos | por circuito con mínimo; registro frigorífico (EICI + tasa) opcional |
+| `JRITE` Justificación RITE aparte | RITE, opcional (proyectos de otro técnico) | % del PEM con mínimo; en memorias y proyectos propios va incluida |
+| `RSIF` Justificación RSIF | si hay circuitos | por circuito de cada modelo distinto + por circuito repetido, con mínimo; registro frigorífico (EICI + tasa) opcional |
 | `DESP` Desplazamiento | km por viaje > umbral | km × €/km + horas de viaje × €/h, por viaje |
 | `REP` Repercutidos | si se repercuten | tasa de la Comunidad, EICI (memoria, potencia, bloque de viviendas, nº de instalaciones PCI y superficie) y visado del proyecto y de la dirección de obra (solo proyectos) |
 

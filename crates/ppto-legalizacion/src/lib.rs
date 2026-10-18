@@ -101,7 +101,13 @@ pub struct Baremo {
     // --- honorarios propios
     /// Tramitación: % del PEM de la disciplina por tramos acumulativos.
     pub tramitacion: Vec<Tramo>,
+    /// Mínimo por expediente en proyectos (y en memorias si el de memoria es cero).
     pub tramitacion_minimo: Decimal,
+    /// Mínimo por expediente en memorias técnicas (0 = el de proyectos).
+    pub tramitacion_minimo_memoria: Decimal,
+    /// Redacción del proyecto cuando es propio: % del PEM por tramos acumulativos.
+    pub redaccion: Vec<Tramo>,
+    pub redaccion_minimo: Decimal,
     /// Mínimo por vivienda en bloques (se cobra el mayor).
     pub minimo_vivienda: Decimal,
     /// Recargo (%) cuando el proyecto es de otro técnico.
@@ -111,8 +117,10 @@ pub struct Baremo {
     /// Justificación RITE: % del PEM RITE con mínimo.
     pub justif_rite_pct: Decimal,
     pub justif_rite_minimo: Decimal,
-    /// Justificación RSIF: por circuito frigorífico con mínimo.
+    /// Justificación RSIF: por circuito de cada modelo distinto, por circuito
+    /// repetido (0 = como uno distinto) y mínimo.
     pub rsif_circuito: Decimal,
+    pub rsif_repetido: Decimal,
     pub rsif_minimo: Decimal,
     /// Desplazamiento: €/km (ida y vuelta) y €/h de viaje, solo por encima del umbral de km.
     pub km: Decimal,
@@ -173,6 +181,9 @@ impl Default for Baremo {
             nota: String::new(),
             tramitacion: Vec::new(),
             tramitacion_minimo: Decimal::ZERO,
+            tramitacion_minimo_memoria: Decimal::ZERO,
+            redaccion: Vec::new(),
+            redaccion_minimo: Decimal::ZERO,
             minimo_vivienda: Decimal::ZERO,
             recargo_ajeno: Decimal::ZERO,
             visita_oca: Decimal::ZERO,
@@ -180,6 +191,7 @@ impl Default for Baremo {
             justif_rite_pct: Decimal::ZERO,
             justif_rite_minimo: Decimal::ZERO,
             rsif_circuito: Decimal::ZERO,
+            rsif_repetido: Decimal::ZERO,
             rsif_minimo: Decimal::ZERO,
             km: Decimal::ZERO,
             km_umbral: Decimal::ZERO,
@@ -226,6 +238,9 @@ impl Baremo {
             nota: "VALORES DE EJEMPLO: sustitúyalos por sus honorarios y las tablas oficiales del año".into(),
             tramitacion: vec![t(m(100_000), d(1)), t(None, Decimal::new(5, 1))],
             tramitacion_minimo: d(500),
+            tramitacion_minimo_memoria: d(300),
+            redaccion: vec![t(m(100_000), Decimal::new(15, 1)), t(None, d(1))],
+            redaccion_minimo: d(600),
             minimo_vivienda: d(50),
             recargo_ajeno: d(20),
             visita_oca: d(100),
@@ -233,6 +248,7 @@ impl Baremo {
             justif_rite_pct: Decimal::new(2, 1),
             justif_rite_minimo: d(200),
             rsif_circuito: d(100),
+            rsif_repetido: d(20),
             rsif_minimo: d(200),
             km: Decimal::new(25, 2),
             km_umbral: d(50),
@@ -387,8 +403,12 @@ pub struct Expediente {
     /// PCI: superficie (m²) para la EICI de proyecto.
     pub superficie: Decimal,
     pub presion_diferencial: bool,
-    /// Justificación RITE (solo disciplina RITE).
+    /// Justificación RITE aparte (solo RITE; en memorias y proyectos propios
+    /// suele ir incluida en la tramitación o la redacción).
     pub justificar_rite: bool,
+    /// Modelos (circuitos distintos) a justificar por RSIF; el resto de
+    /// `circuitos_rsif` son repetidos. 0 = todos distintos.
+    pub modelos_rsif: u32,
     /// Circuitos frigoríficos a justificar por RSIF (0 = sin RSIF).
     pub circuitos_rsif: u32,
     pub registro_if: Option<RegistroIf>,
@@ -423,7 +443,8 @@ impl Expediente {
             instalaciones_pci: 1,
             superficie: Decimal::ZERO,
             presion_diferencial: false,
-            justificar_rite: disciplina == Disciplina::Rite,
+            justificar_rite: false,
+            modelos_rsif: 0,
             circuitos_rsif: 0,
             registro_if: None,
             segundas_visitas: 0,
@@ -523,6 +544,25 @@ fn rango(desde: Decimal, hasta: Option<Decimal>) -> String {
     }
 }
 
+/// Líneas «<qué>: x % s/ PEM <tramo>» de una tabla acumulativa.
+fn pct_por_tramos(que: &str, tramos: &[Tramo], pem: Decimal) -> Vec<Linea> {
+    por_tramos(tramos, pem)
+        .into_iter()
+        .map(|(desde, hasta, pct, parte)| {
+            importe_fijo(
+                format!(
+                    "{que}: {} % s/ PEM {} ({})",
+                    corto(pct),
+                    rango(desde, hasta),
+                    eur(parte)
+                ),
+                parte * pct / CIEN,
+                true,
+            )
+        })
+        .collect()
+}
+
 /// Calcula las partidas de legalización de un expediente con un baremo.
 pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     let mut c = Calculo::default();
@@ -533,24 +573,15 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     let n_viv = d(viviendas);
 
     // 1. Tramitación
-    let mut lineas: Vec<Linea> = por_tramos(&b.tramitacion, e.pem)
-        .into_iter()
-        .map(|(desde, hasta, pct, parte)| {
-            importe_fijo(
-                format!(
-                    "Tramitación: {} % s/ PEM {} ({})",
-                    corto(pct),
-                    rango(desde, hasta),
-                    eur(parte)
-                ),
-                parte * pct / CIEN,
-                true,
-            )
-        })
-        .collect();
+    let minimo = if !proyecto && !b.tramitacion_minimo_memoria.is_zero() {
+        b.tramitacion_minimo_memoria
+    } else {
+        b.tramitacion_minimo
+    };
+    let mut lineas = pct_por_tramos("Tramitación", &b.tramitacion, e.pem);
     let por_pem: Decimal = lineas.iter().map(Linea::importe).sum();
     let suelo_viv = b.minimo_vivienda * n_viv;
-    if suelo_viv > por_pem && suelo_viv >= b.tramitacion_minimo {
+    if suelo_viv > por_pem && suelo_viv >= minimo {
         lineas = vec![por_unidad(
             format!("Tramitación: mínimo por vivienda ({viviendas} viv.)"),
             "viv",
@@ -558,10 +589,10 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
             b.minimo_vivienda,
             true,
         )];
-    } else if b.tramitacion_minimo > por_pem {
+    } else if minimo > por_pem {
         lineas = vec![importe_fijo(
             "Tramitación: importe mínimo por expediente".into(),
-            b.tramitacion_minimo,
+            minimo,
             true,
         )];
     }
@@ -596,6 +627,29 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         texto: texto_tram,
         lineas,
     });
+
+    // 1b. Redacción del proyecto propio
+    if proyecto && !e.ajeno && !b.redaccion.is_empty() {
+        let mut lineas = pct_por_tramos("Redacción", &b.redaccion, e.pem);
+        let por_pem: Decimal = lineas.iter().map(Linea::importe).sum();
+        if b.redaccion_minimo > por_pem {
+            lineas = vec![importe_fijo(
+                "Redacción: importe mínimo".into(),
+                b.redaccion_minimo,
+                true,
+            )];
+        }
+        c.partidas.push(PartidaLeg {
+            sufijo: "RED",
+            resumen: format!("Redacción del proyecto {sigla}"),
+            texto: format!(
+                "Redacción del proyecto de {} firmado por técnico competente: memoria, cálculos y \
+                 justificación reglamentaria, pliego, presupuesto y planos.",
+                e.disciplina.nombre()
+            ),
+            lineas,
+        });
+    }
 
     // 2. Visitas de la OCA
     if proyecto && !b.visita_oca.is_zero() {
@@ -664,21 +718,42 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         });
     }
     if e.circuitos_rsif > 0 {
-        let n = d(e.circuitos_rsif);
-        let mut lineas = if b.rsif_minimo > n * b.rsif_circuito {
+        let modelos = if e.modelos_rsif == 0 {
+            e.circuitos_rsif
+        } else {
+            e.modelos_rsif.min(e.circuitos_rsif)
+        };
+        let repetidos = e.circuitos_rsif - modelos;
+        let p_rep = if b.rsif_repetido.is_zero() {
+            b.rsif_circuito
+        } else {
+            b.rsif_repetido
+        };
+        let importe = d(modelos) * b.rsif_circuito + d(repetidos) * p_rep;
+        let mut lineas = if b.rsif_minimo > importe {
             vec![importe_fijo(
                 format!("Justificación RSIF: importe mínimo ({} circuitos)", e.circuitos_rsif),
                 b.rsif_minimo,
                 true,
             )]
         } else {
-            vec![por_unidad(
-                "Justificación RSIF por circuito frigorífico".into(),
+            let mut v = vec![por_unidad(
+                "Justificación RSIF por circuito de cada modelo".into(),
                 "circ",
-                n,
+                d(modelos),
                 b.rsif_circuito,
                 true,
-            )]
+            )];
+            if repetidos > 0 {
+                v.push(por_unidad(
+                    "Justificación RSIF por circuito repetido".into(),
+                    "circ",
+                    d(repetidos),
+                    p_rep,
+                    true,
+                ));
+            }
+            v
         };
         if e.repercutir
             && let Some(nivel) = e.registro_if
@@ -1034,7 +1109,11 @@ mod tests {
     #[test]
     fn minimo_por_expediente_y_por_vivienda() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(20000));
+        // Mínimo de memoria 300; en proyecto, 500.
+        assert_eq!(calcular(&b(), &e).partidas[0].importe(), dec!(300));
+        e.documento = Documento::Proyecto;
         assert_eq!(calcular(&b(), &e).partidas[0].importe(), dec!(500));
+        e.documento = Documento::Memoria;
         // 40 viviendas × 50 = 2.000 > 1 % de 80.000 = 800.
         e.pem = dec!(80000);
         e.viviendas = 40;
@@ -1051,10 +1130,20 @@ mod tests {
 
     #[test]
     fn recargo_proyecto_ajeno() {
-        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(10000));
+        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Proyecto, dec!(10000));
         e.ajeno = true;
-        // mínimo 500 + 20 %.
-        assert_eq!(calcular(&b(), &e).partidas[0].importe(), dec!(600));
+        // mínimo 500 + 20 %, y sin redacción.
+        let c = calcular(&b(), &e);
+        assert_eq!(c.partidas[0].importe(), dec!(600));
+        assert!(!c.partidas.iter().any(|p| p.sufijo == "RED"));
+        // Proyecto propio: redacción 1,5 % de 10.000 = 150 < mínimo 600.
+        e.ajeno = false;
+        let c = calcular(&b(), &e);
+        assert_eq!(c.partidas[0].importe(), dec!(500));
+        assert_eq!(
+            c.partidas.iter().find(|p| p.sufijo == "RED").unwrap().importe(),
+            dec!(600)
+        );
     }
 
     #[test]
@@ -1098,6 +1187,7 @@ mod tests {
     #[test]
     fn justificaciones_rsif_y_desplazamiento() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
+        e.justificar_rite = true;
         e.circuitos_rsif = 3;
         e.registro_if = Some(RegistroIf::MemoriaA2l);
         e.km = dec!(120);
@@ -1108,6 +1198,12 @@ mod tests {
         assert_eq!(j.importe(), dec!(200)); // 0,2 % de 50.000 = 100 < mínimo 200
         let rsif = c.partidas.iter().find(|p| p.sufijo == "RSIF").unwrap();
         assert_eq!(rsif.importe(), dec!(300) + dec!(120) + dec!(35));
+        // 40 circuitos de 2 modelos: 2 × 100 + 38 × 20.
+        e.circuitos_rsif = 40;
+        e.modelos_rsif = 2;
+        let c = calcular(&b(), &e);
+        let rsif = c.partidas.iter().find(|p| p.sufijo == "RSIF").unwrap();
+        assert_eq!(rsif.importe(), dec!(200) + dec!(760) + dec!(120) + dec!(35));
         let desp = c.partidas.iter().find(|p| p.sufijo == "DESP").unwrap();
         assert_eq!(desp.importe(), dec!(240) * dec!(0.25) + dec!(4) * dec!(40));
         // Por debajo del umbral no hay desplazamiento.
@@ -1132,8 +1228,9 @@ mod tests {
     fn horas_equivalentes_solo_cuentan_honorarios() {
         let e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(100000));
         let c = calcular(&b(), &e);
-        assert_eq!(c.honorarios, dec!(1000) + dec!(100) + dec!(200));
-        assert_eq!(c.horas, Some(dec!(32.5)));
+        // Tramitación 1.000 + redacción 1.500 + OCA 100 (justificación RITE incluida).
+        assert_eq!(c.honorarios, dec!(1000) + dec!(1500) + dec!(100));
+        assert_eq!(c.horas, Some(dec!(65)));
         assert!(c.repercutidos > Decimal::ZERO);
     }
 
