@@ -17,7 +17,8 @@ versionado [semántico](https://semver.org/lang/es/).
   tarifa de un año, descuentos y búsqueda de partidas).
 
 ### Añadido — legalización
-- Crate `ppto-legalizacion` y ventana «Legalización…»: crea en el capítulo
+- Crate `ppto-legalizacion` y ventana «Legalización…» (uso terciario o
+  viviendas): crea en el capítulo
   `LEG` las partidas descompuestas de una disciplina (RITE o PCI): coste de
   tramitación (% del PEM por tramos con mínimo por expediente y por
   vivienda, recargo por proyecto de otro técnico), visita de la OCA en

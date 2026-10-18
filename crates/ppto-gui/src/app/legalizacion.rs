@@ -11,7 +11,7 @@ use eframe::egui::{self, Color32, RichText};
 use ppto_core::Decimal;
 use ppto_core::formato::{eur, leer, num};
 use ppto_legalizacion::{
-    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, RegistroIf, Tramo, aplicar, calcular, capitulos,
+    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, RegistroIf, Tramo, Uso, aplicar, calcular, capitulos,
 };
 use std::path::PathBuf;
 
@@ -341,6 +341,15 @@ impl Aplicacion {
                         ui.separator();
                         ui.checkbox(&mut v.e.ajeno, "Proyecto de otro técnico");
                     });
+                    ui.horizontal(|ui| {
+                        ui.label("Uso:");
+                        ui.radio_value(&mut v.e.uso, Uso::Terciario, "Terciario");
+                        ui.radio_value(&mut v.e.uso, Uso::Viviendas, "Viviendas");
+                        if v.e.uso == Uso::Viviendas {
+                            ui.label("nº de viviendas");
+                            numero(ui, &mut v.e.viviendas);
+                        }
+                    });
                     ui.collapsing(format!("PEM de la disciplina: {} €", eur(v.pem())), |ui| {
                         ui.label("Marque los capítulos que forman la base (o escriba el PEM a mano):");
                         for c in &mut v.capitulos {
@@ -352,8 +361,6 @@ impl Aplicacion {
                         });
                     });
                     egui::Grid::new("leg_datos").num_columns(4).show(ui, |ui| {
-                        ui.label("Viviendas (0 si no es bloque)");
-                        numero(ui, &mut v.e.viviendas);
                         match v.e.disciplina {
                             Disciplina::Rite => {
                                 ui.label("Potencia (kW)");

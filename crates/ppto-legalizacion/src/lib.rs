@@ -349,6 +349,14 @@ pub enum Documento {
     Proyecto,
 }
 
+/// Uso del edificio: cambia la tasa y la EICI de las memorias, el mínimo por
+/// vivienda y la tabla EICI de bloques.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Uso {
+    Terciario,
+    Viviendas,
+}
+
 /// Registro de instalación frigorífica que acompaña a la justificación RSIF.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RegistroIf {
@@ -367,7 +375,8 @@ pub struct Expediente {
     pub pem: Decimal,
     /// Proyecto redactado por otro técnico.
     pub ajeno: bool,
-    /// Viviendas del bloque (0 si no es un bloque de viviendas).
+    pub uso: Uso,
+    /// Nº de viviendas (solo con uso Viviendas; 1 = unifamiliar).
     pub viviendas: u32,
     /// RITE: potencia térmica (kW) para la EICI de proyecto.
     pub potencia_kw: Decimal,
@@ -393,13 +402,22 @@ pub struct Expediente {
 }
 
 impl Expediente {
+    /// Viviendas que cuentan: 0 en terciario, al menos 1 en viviendas.
+    pub fn n_viviendas(&self) -> u32 {
+        match self.uso {
+            Uso::Terciario => 0,
+            Uso::Viviendas => self.viviendas.max(1),
+        }
+    }
+
     pub fn nuevo(disciplina: Disciplina, documento: Documento, pem: Decimal) -> Self {
         Self {
             disciplina,
             documento,
             pem,
             ajeno: false,
-            viviendas: 0,
+            uso: Uso::Terciario,
+            viviendas: 1,
             potencia_kw: Decimal::ZERO,
             primario_frio: false,
             instalaciones_pci: 1,
@@ -511,7 +529,8 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     let sigla = e.disciplina.sigla();
     let proyecto = e.documento == Documento::Proyecto;
     let doc = if proyecto { "proyecto" } else { "memoria técnica" };
-    let n_viv = d(e.viviendas);
+    let viviendas = e.n_viviendas();
+    let n_viv = d(viviendas);
 
     // 1. Tramitación
     let mut lineas: Vec<Linea> = por_tramos(&b.tramitacion, e.pem)
@@ -533,7 +552,7 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     let suelo_viv = b.minimo_vivienda * n_viv;
     if suelo_viv > por_pem && suelo_viv >= b.tramitacion_minimo {
         lineas = vec![por_unidad(
-            format!("Tramitación: mínimo por vivienda ({} viviendas)", e.viviendas),
+            format!("Tramitación: mínimo por vivienda ({viviendas} viv.)"),
             "viv",
             n_viv,
             b.minimo_vivienda,
@@ -766,7 +785,8 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
 fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Linea> {
     let mut r = Vec::new();
     let proyecto = e.documento == Documento::Proyecto;
-    let n_viv = d(e.viviendas);
+    let viviendas = e.n_viviendas();
+    let n_viv = d(viviendas);
     let fijo = |r: &mut Vec<Linea>, txt: String, v: Decimal| {
         if !v.is_zero() {
             r.push(importe_fijo(txt, v, false));
@@ -782,12 +802,12 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
                 ),
                 None => avisos.push("La tabla de tasas RITE de proyecto no cubre este PEM.".into()),
             }
-            if e.viviendas > 0 && e.potencia_kw < d(70) {
+            if viviendas > 0 && e.potencia_kw < d(70) {
                 let v = escalon(&b.eici_rite_viviendas, n_viv)
                     .unwrap_or(b.eici_rite_viviendas_base + b.eici_rite_por_vivienda * n_viv);
                 fijo(
                     &mut r,
-                    format!("EICI proyecto RITE, bloque de {} viviendas", e.viviendas),
+                    format!("EICI proyecto RITE, edificio de {viviendas} viviendas"),
                     v,
                 );
             } else {
@@ -814,7 +834,7 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
             }
         }
         (Disciplina::Rite, false) => {
-            if e.viviendas > 0 {
+            if viviendas > 0 {
                 if !b.tasa_rite_memoria_vivienda.is_zero() {
                     r.push(por_unidad(
                         "Tasa de registro RITE, memoria de vivienda".into(),
@@ -1018,6 +1038,9 @@ mod tests {
         // 40 viviendas × 50 = 2.000 > 1 % de 80.000 = 800.
         e.pem = dec!(80000);
         e.viviendas = 40;
+        // En terciario el nº de viviendas no cuenta.
+        assert_eq!(calcular(&b(), &e).partidas[0].importe(), dec!(800));
+        e.uso = Uso::Viviendas;
         let c = calcular(&b(), &e);
         assert_eq!(c.partidas[0].lineas[0].cantidad, dec!(40));
         assert_eq!(c.partidas[0].importe(), dec!(2000));
