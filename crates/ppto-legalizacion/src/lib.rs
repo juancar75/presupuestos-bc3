@@ -1549,9 +1549,16 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
         ),
         (Disciplina::Pci, false) => format!(
             "Legalización de las instalaciones de protección contra incendios (RIPCI) mediante memoria \
-             técnica. Incluye elaboración de la memoria, comprobación en obra, planos as-built, manual de \
-             uso y mantenimiento, desplazamientos y gestión del expediente ante el órgano competente de la \
-             Comunidad Autónoma{tasas}."
+             técnica{}. Incluye elaboración de la memoria, solicitud de conformidad de la instalación \
+             (firmada por el titular), certificado de la empresa instaladora y acta de pruebas a presión, \
+             certificado de dirección y terminación de obra, comprobación en obra, planos as-built, manual \
+             de uso y mantenimiento, desplazamientos y gestión del expediente ante el órgano competente de \
+             la Comunidad Autónoma{tasas}.",
+            if e.pci_inspeccionable {
+                " inspeccionable, con asistencia a la inspección de la OCA"
+            } else {
+                ""
+            }
         ),
     };
     c
