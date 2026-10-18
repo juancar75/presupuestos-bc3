@@ -3472,6 +3472,7 @@ dependencies = [
  "ppto-core",
  "ppto-db",
  "ppto-informes",
+ "ppto-legalizacion",
  "ppto-pdf",
  "ppto-propuestas",
  "ppto-tarifas",
@@ -3490,6 +3491,18 @@ dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
  "rust_xlsxwriter",
+]
+
+[[package]]
+name = "ppto-legalizacion"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "ppto-core",
+ "ppto-propuestas",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

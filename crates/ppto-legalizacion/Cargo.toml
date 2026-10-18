@@ -1,0 +1,22 @@
+[package]
+name = "ppto-legalizacion"
+description = "Costes de legalización (RITE, PCI, RSIF): baremo por año y partidas descompuestas de tramitación, visitas, justificaciones y repercutidos"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ppto-core.workspace = true
+ppto-propuestas.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json = "1.0"
+
+[dev-dependencies]
+rust_decimal_macros.workspace = true
+
+[lints]
+workspace = true

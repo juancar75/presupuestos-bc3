@@ -16,6 +16,18 @@ versionado [semántico](https://semver.org/lang/es/).
 - Interfaz: ventana «Biblioteca…» (guardar la obra, fabricantes, cargar
   tarifa de un año, descuentos y búsqueda de partidas).
 
+### Añadido — legalización
+- Crate `ppto-legalizacion` y ventana «Legalización…»: crea en el capítulo
+  `LEG` las partidas descompuestas de una disciplina (RITE o PCI): coste de
+  tramitación (% del PEM por tramos con mínimo por expediente y por
+  vivienda, recargo por proyecto de otro técnico), visita de la OCA en
+  proyectos y segundas visitas, justificación RITE y RSIF (con registro
+  frigorífico), desplazamiento por km y horas, y tasas, EICI y visado
+  repercutidos (visado solo en proyectos, con el de dirección de obra).
+- Baremo por año en `legalizacion.json` (carpeta de configuración, fuera del
+  repositorio); los honorarios se editan en la ventana. La vista previa
+  traduce los honorarios a horas a una tarifa de referencia.
+
 ## [0.1.0-alpha.3] - 2026-10-16
 
 ### Añadido
