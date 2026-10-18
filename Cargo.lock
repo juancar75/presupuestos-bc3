@@ -3395,6 +3395,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppto-biblioteca"
+version = "0.1.0-alpha.3"
+dependencies = [
+ "ppto-core",
+ "ppto-propuestas",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ppto-ciego"
 version = "0.1.0-alpha.3"
 dependencies = [
@@ -3455,6 +3467,7 @@ dependencies = [
  "egui_extras",
  "ppto-asistente",
  "ppto-bc3",
+ "ppto-biblioteca",
  "ppto-ciego",
  "ppto-core",
  "ppto-db",
@@ -3486,6 +3499,7 @@ dependencies = [
  "calamine",
  "pdf-extract",
  "ppto-bc3",
+ "ppto-biblioteca",
  "ppto-core",
  "ppto-db",
  "ppto-informes",

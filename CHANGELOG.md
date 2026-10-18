@@ -5,6 +5,17 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido — biblioteca de precios (paso 1)
+- Crate `ppto-biblioteca`: partidas con descompuesto y versiones; por
+  fabricante, descuentos (general y por grupo), tarifas por año con
+  comparación y aviso de tarifa antigua, subida estimada y ofertas en netos
+  con descuento real. Fichero propio, opcionalmente compartido.
+- MCP: `buscar_biblioteca`, `estado_biblioteca`, `guardar_en_biblioteca`,
+  `registrar_tarifa`, `registrar_oferta`, `fijar_descuento_biblioteca`. La
+  IA consulta la biblioteca antes de estimar.
+- Interfaz: ventana «Biblioteca…» (guardar la obra, fabricantes, cargar
+  tarifa de un año, descuentos y búsqueda de partidas).
+
 ## [0.1.0-alpha.3] - 2026-10-16
 
 ### Añadido

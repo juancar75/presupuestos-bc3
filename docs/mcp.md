@@ -42,6 +42,11 @@ ese presupuesto al arrancar.
 | `buscar_tarifas` | Busca en las tarifas de subcontratas del usuario | No |
 | `proponer` | Propone el descompuesto de una partida (no se admiten precios directos) | No: queda **pendiente** en la bandeja |
 | `proponer_lote` | Hasta 40 propuestas en una llamada: recursos comunes definidos una vez, líneas `["CÓDIGO", rendimiento]` y medios auxiliares automáticos | No: quedan **pendientes** |
+| `buscar_biblioteca` | Partidas de obras anteriores (precio de hoy con la tarifa vigente) y líneas de tarifas y ofertas | No |
+| `estado_biblioteca` | Fabricantes: tarifa vigente por año, descuentos, ofertas, subida estimada | No |
+| `guardar_en_biblioteca` | Guarda las partidas de la obra activa en la biblioteca (versiones) | Solo la biblioteca |
+| `registrar_tarifa` / `registrar_oferta` | Tarifa (PVP por año) u oferta en netos de un fabricante | Solo la biblioteca |
+| `fijar_descuento_biblioteca` | Descuento del fabricante o grupo y subida estimada | Solo la biblioteca |
 | `ver_propuestas` | Estado de las propuestas (pendiente, aceptada, rechazada) | No |
 | `leer_mensajes` | Encargos pendientes del panel del asistente (con adjuntos) y conversación anterior | No |
 | `responder` | Contesta en el panel del asistente y marca los encargos como atendidos | No |
@@ -110,3 +115,16 @@ aceptar en «Propuestas IA» e informes. La clave se guarda solo en el equipo
 La bandeja y la conversación se modifican con un fichero de bloqueo
 (`.lock`) para que el programa y el MCP no se pisen, y un fichero que no se
 puede leer no se sobrescribe.
+
+## Biblioteca de precios
+
+`biblioteca.json` en la carpeta de configuración, o en la carpeta indicada en
+`biblioteca-ruta.txt` (una carpeta compartida de OneDrive o del NAS para todo
+el equipo). Nunca se sube al repositorio. Por fabricante guarda tres cosas
+separadas: **descuentos** (no caducan), **tarifas por año** (se usa la más
+reciente; aviso si es de un año anterior; subida estimada mientras no llega la
+nueva) y **ofertas en netos** (con validez y descuento real frente a la
+tarifa). Las partidas se guardan con versiones (fecha, obra, real/revisado/
+estimado) y, al consultarlas, cada material de fabricante se recalcula con la
+tarifa vigente y el descuento. Las obras ya presupuestadas no cambian.
+Ventana **Biblioteca…** en el programa.

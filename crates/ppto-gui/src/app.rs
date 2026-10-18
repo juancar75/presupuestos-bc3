@@ -4,6 +4,7 @@
 
 mod alta;
 mod asistente;
+mod biblioteca;
 mod ciego;
 mod dificultad;
 mod pdf;
@@ -201,6 +202,7 @@ pub struct Aplicacion {
     /// Tarifas de subcontratas del usuario (fuera del repositorio).
     tarifas: ppto_tarifas::Biblioteca,
     ventana_tarifas: Option<tarifas::VentanaTarifas>,
+    ventana_biblioteca: Option<biblioteca::VentanaBiblioteca>,
     dificultad: dificultad::FormDificultad,
     /// Cambios que se anotan en la auditoría al guardar la revisión.
     notas_revision: Vec<String>,
@@ -339,6 +341,7 @@ impl Aplicacion {
             ratio: ratio::FormRatio::default(),
             tarifas: ppto_tarifas::Biblioteca::default(),
             ventana_tarifas: None,
+            ventana_biblioteca: None,
             dificultad: dificultad::FormDificultad::default(),
             notas_revision: Vec::new(),
             enlace: propuestas::Enlace::sin_disco(),
@@ -1174,6 +1177,13 @@ impl Aplicacion {
                 .clicked()
             {
                 self.abrir_tarifas();
+            }
+            if ui
+                .button("Biblioteca…")
+                .on_hover_text("Base de precios propia: partidas de obras anteriores, tarifas de fabricante por año, descuentos y ofertas")
+                .clicked()
+            {
+                self.ventana_biblioteca = Some(biblioteca::VentanaBiblioteca::abrir());
             }
             if ui
                 .button("📄 PDF…")
@@ -2448,6 +2458,7 @@ impl eframe::App for Aplicacion {
         self.ventana_alta(&ctx, &mut acciones);
         self.ventana_pdf(&ctx);
         self.ventana_tarifas(&ctx);
+        self.ventana_biblioteca(&ctx);
         self.ventana_propuestas(&ctx, &mut acciones);
         if !acciones.is_empty() {
             self.aplicar(acciones);
@@ -3209,5 +3220,38 @@ mod pruebas {
         assert_eq!(m[0].adjuntos, ["C:/ofertas/koolair.pdf"]);
         // El presupuesto no cambia
         assert_eq!(app.p, p);
+    }
+
+    #[test]
+    fn ventana_de_biblioteca_guarda_la_obra() {
+        let dir = std::env::temp_dir().join(format!("gui-bib-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ruta = dir.join("biblioteca.json");
+        // Biblioteca con una tarifa antigua (aviso en naranja)
+        ppto_biblioteca::Biblioteca::modificar(&ruta, |b| {
+            b.cargar_tarifa("KOOLAIR", "2020", 2020, Default::default());
+            b.fijar_descuento("KOOLAIR", Some(dec!(45)));
+        })
+        .unwrap();
+        let mut app = Aplicacion::sin_ventana();
+        app.ventana_biblioteca = Some(biblioteca::VentanaBiblioteca::en(Some(ruta.clone())));
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let c = ui.ctx().clone();
+                app.ventana_biblioteca(&c);
+            });
+            out.textures_delta.clear();
+        }
+        assert!(app.ventana_biblioteca.is_some());
+        // Guardar la obra (lo mismo que el botón)
+        let p = app.p.clone();
+        ppto_biblioteca::Biblioteca::modificar(&ruta, |b| {
+            b.guardar_obra(&p, "Ejemplo", ppto_biblioteca::Origen::Real, None)
+        })
+        .unwrap();
+        assert_eq!(ppto_biblioteca::Biblioteca::cargar(&ruta).partidas.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

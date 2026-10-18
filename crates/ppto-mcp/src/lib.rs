@@ -12,6 +12,8 @@
 //!
 //! Todas las cifras salen de `ppto-core`, igual que en la interfaz y los informes.
 
+#![recursion_limit = "512"]
+
 use ppto_core::concepto::Naturaleza;
 use ppto_core::formato::{eur, num};
 use ppto_core::subcontrata::{Asignacion, Contratacion, PaqueteTrabajo, simular};
@@ -21,6 +23,7 @@ use std::fmt::Write as _;
 use std::str::FromStr;
 
 pub mod asistente;
+mod biblioteca;
 
 /// Versión del protocolo MCP que se anuncia si el cliente no pide otra.
 pub const PROTOCOLO: &str = "2025-06-18";
@@ -36,6 +39,7 @@ pub struct Estado {
     pub ruta_bandeja: Option<std::path::PathBuf>,
     pub ruta_tarifas: Option<std::path::PathBuf>,
     pub ruta_conversaciones: Option<std::path::PathBuf>,
+    pub ruta_biblioteca: Option<std::path::PathBuf>,
     pub gg: Decimal,
     pub bi: Decimal,
     pub iva: Decimal,
@@ -51,6 +55,7 @@ impl Default for Estado {
             ruta_bandeja: ppto_propuestas::ruta_bandeja(),
             ruta_tarifas: ppto_propuestas::carpeta_config().map(|c| c.join("tarifas.json")),
             ruta_conversaciones: ppto_propuestas::conversacion::ruta_conversaciones(),
+            ruta_biblioteca: ppto_biblioteca::ruta(),
             gg: venta::GG_HABITUAL,
             bi: venta::BI_HABITUAL,
             iva: venta::IVA_GENERAL,
@@ -126,7 +131,7 @@ impl Estado {
         Ok(informe)
     }
 
-    fn p(&self) -> Result<&Presupuesto, String> {
+    pub(crate) fn p(&self) -> Result<&Presupuesto, String> {
         self.presupuesto
             .as_ref()
             .ok_or_else(|| "no hay presupuesto abierto: use abrir_presupuesto (o abrir_ejemplo)".to_owned())
@@ -165,7 +170,7 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                     Abre un presupuesto con abrir_presupuesto y consulta o simula. Las herramientas no \
                     modifican el presupuesto. Para valorar la obra que el usuario tiene abierta en el \
                     programa: abrir_obra_activa, partidas_sin_precio, ver_concepto/buscar/buscar_tarifas \
-                    para reutilizar recursos y precios existentes, y proponer (una propuesta por partida; para varias partidas, proponer_lote, que acepta hasta 40 en una llamada), \
+                    para reutilizar recursos y precios existentes; ANTES de estimar consulte buscar_biblioteca (partidas, tarifas y ofertas del usuario de obras anteriores), y proponer (una propuesta por partida; para varias partidas, proponer_lote, que acepta hasta 40 en una llamada), \
                     con confianza y justificación de cada precio y rendimiento). El usuario acepta o \
                     rechaza cada propuesta en el programa; consulte ver_propuestas. Si el usuario \
                     pide «atiende el asistente» o similar, lea los encargos que dejó en el panel del \
@@ -322,6 +327,62 @@ fn herramientas() -> Value {
             }, "required": ["propuestas"] }
         },
         {
+            "name": "buscar_biblioteca",
+            "description": "CONSULTAR ANTES DE ESTIMAR. Busca en la biblioteca de precios del usuario: partidas guardadas de obras anteriores (con su descompuesto y el precio de hoy de cada línea según la tarifa vigente y el descuento del fabricante), y líneas de tarifas (PVP) y ofertas (netos) de fabricantes. Avisa de tarifas de años anteriores.",
+            "inputSchema": { "type": "object", "properties": {
+                "texto": { "type": "string", "description": "Palabras a buscar (sin tildes ni mayúsculas), p. ej. «tubo ppr 32» o «rejilla koolair»" },
+                "limite": { "type": "integer" }
+            }, "required": ["texto"] }
+        },
+        {
+            "name": "estado_biblioteca",
+            "description": "Resumen de la biblioteca: nº de partidas y, por fabricante, tarifa vigente (y si es de un año anterior), descuentos, ofertas y subida estimada.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "guardar_en_biblioteca",
+            "description": "Guarda en la biblioteca las partidas descompuestas con precio de la obra activa (o solo las indicadas) y aprende sus descuentos por fabricante. Úsela solo cuando el usuario lo pida. No duplica partidas sin cambios; si cambian, guarda una versión nueva.",
+            "inputSchema": { "type": "object", "properties": {
+                "origen": { "type": "string", "enum": ["real", "revisado", "estimado"], "description": "real: obra cerrada u ofertas reales; revisado: revisado por el usuario; estimado" },
+                "partidas": { "type": "array", "items": { "type": "string" } }
+            } }
+        },
+        {
+            "name": "registrar_tarifa",
+            "description": "Guarda en la biblioteca la tarifa (PVP por referencia) de un fabricante para un año, p. ej. leída de un adjunto. Las tarifas anteriores se conservan; se usa la más reciente y el descuento del fabricante no cambia. Devuelve la comparación con la tarifa anterior.",
+            "inputSchema": { "type": "object", "properties": {
+                "fabricante": { "type": "string" },
+                "etiqueta": { "type": "string", "description": "p. ej. «2027» o «2027-1»" },
+                "anio": { "type": "integer" },
+                "lineas": { "type": "array", "items": { "type": "object", "properties": {
+                    "referencia": { "type": "string" }, "descripcion": { "type": "string" }, "unidad": { "type": "string" },
+                    "pvp": num, "grupo": { "type": "string" }
+                }, "required": ["referencia", "pvp"] } }
+            }, "required": ["fabricante", "etiqueta", "lineas"] }
+        },
+        {
+            "name": "registrar_oferta",
+            "description": "Guarda en la biblioteca una oferta en NETOS de un fabricante para una obra (p. ej. leída de un adjunto). Si hay tarifa del fabricante, calcula el descuento real por grupo. Los netos de la oferta sirven de referencia para otras obras (confianza media).",
+            "inputSchema": { "type": "object", "properties": {
+                "fabricante": { "type": "string" },
+                "numero": { "type": "string" },
+                "fecha": { "type": "string", "description": "AAAA-MM-DD" },
+                "validez": { "type": "string", "description": "AAAA-MM-DD" },
+                "obra": { "type": "string" },
+                "lineas": { "type": "array", "items": { "type": "object", "properties": {
+                    "referencia": { "type": "string" }, "descripcion": { "type": "string" }, "unidad": { "type": "string" },
+                    "neto": num, "cantidad": num
+                }, "required": ["referencia", "neto"] } }
+            }, "required": ["fabricante", "lineas"] }
+        },
+        {
+            "name": "fijar_descuento_biblioteca",
+            "description": "Guarda en la biblioteca el descuento del instalador de un fabricante (o «FAB/GRUPO») y/o la subida estimada sobre su última tarifa mientras no llegue la nueva. Solo con datos que dé el usuario.",
+            "inputSchema": { "type": "object", "properties": {
+                "fabricante": { "type": "string" }, "porcentaje": num, "subida_estimada": num
+            }, "required": ["fabricante"] }
+        },
+        {
             "name": "ver_propuestas",
             "description": "Propuestas hechas para la obra activa y su estado (pendiente, aceptada o rechazada por el usuario).",
             "inputSchema": { "type": "object", "properties": {} }
@@ -416,6 +477,12 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "buscar_tarifas" => buscar_tarifas(estado, texto(a, "texto")?),
         "proponer" => proponer(estado, a),
         "proponer_lote" => proponer_lote(estado, a),
+        "buscar_biblioteca" => biblioteca::buscar(estado, a),
+        "estado_biblioteca" => biblioteca::estado_biblioteca(estado),
+        "registrar_tarifa" => biblioteca::registrar_tarifa(estado, a),
+        "registrar_oferta" => biblioteca::registrar_oferta(estado, a),
+        "fijar_descuento_biblioteca" => biblioteca::fijar_descuento(estado, a),
+        "guardar_en_biblioteca" => biblioteca::guardar_obra(estado, a),
         "ver_propuestas" => ver_propuestas(estado),
         "leer_mensajes" => asistente::leer_mensajes(estado),
         "responder" => asistente::responder(estado, a),
@@ -463,7 +530,7 @@ fn destino(estado: &Estado, ruta: &str, ext: &str) -> Result<String, String> {
     Ok(ruta.to_owned())
 }
 
-fn texto<'a>(a: &'a Value, campo: &str) -> Result<&'a str, String> {
+pub(crate) fn texto<'a>(a: &'a Value, campo: &str) -> Result<&'a str, String> {
     a.get(campo)
         .and_then(Value::as_str)
         .filter(|s| !s.trim().is_empty())
@@ -482,7 +549,7 @@ fn decimal(v: &Value) -> Option<Decimal> {
     }
 }
 
-fn dec_campo(a: &Value, campo: &str) -> Result<Option<Decimal>, String> {
+pub(crate) fn dec_campo(a: &Value, campo: &str) -> Result<Option<Decimal>, String> {
     match a.get(campo) {
         None | Some(Value::Null) => Ok(None),
         Some(v) => decimal(v)
@@ -1029,6 +1096,19 @@ fn buscar_tarifas(estado: &Estado, consulta: &str) -> Result<String, String> {
         let _ = write!(t, "\n{} resultados; se muestran 40.", e.len());
     }
     Ok(t)
+}
+
+pub(crate) fn nombre_naturaleza(n: Naturaleza) -> &'static str {
+    match n {
+        Naturaleza::ManoObra => "mano_obra",
+        Naturaleza::Material => "material",
+        Naturaleza::Maquinaria => "maquinaria",
+        Naturaleza::Subcontrata => "subcontrata",
+        Naturaleza::Porcentaje => "porcentaje",
+        Naturaleza::Partida => "partida",
+        Naturaleza::Capitulo => "capitulo",
+        _ => "otros",
+    }
 }
 
 fn leer_naturaleza(s: &str) -> Option<Naturaleza> {
