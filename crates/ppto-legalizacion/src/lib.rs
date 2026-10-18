@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! # ppto-legalizacion
 //!
-//! Legalización de una disciplina de la obra (RITE o PCI, con RSIF) como
+//! Legalización **as-built** (sobre la instalación ya ejecutada) de una disciplina de la obra (RITE o PCI, con RSIF) como
 //! **una partida descompuesta** en el capítulo `LEG`, en la que figuran todos
 //! los costes:
 //!
@@ -989,9 +989,9 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         let h = b.horas_redaccion.de(e.pem, n_viv);
         if h > Decimal::ZERO {
             c.bloques.push(Bloque {
-                titulo: "Redacción del proyecto".into(),
+                titulo: "Redacción del proyecto de legalización (as-built)".into(),
                 regla: format!("{} h ({})", num(h, 1), b.horas_redaccion.texto(n_viv)),
-                lineas: horas_perfil(b, "redacción del proyecto", h, &b.reparto_redaccion),
+                lineas: horas_perfil(b, "redacción del proyecto as-built", h, &b.reparto_redaccion),
             });
         }
     }
@@ -1234,11 +1234,11 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
             if e.ajeno {
                 " de otro técnico"
             } else {
-                ", incluida su redacción"
+                ", incluida su redacción sobre la instalación ejecutada (as-built)"
             }
         ),
         (Disciplina::Rite, false) => format!(
-            "Legalización de las instalaciones térmicas (RITE) mediante memoria técnica. Incluye elaboración \
+            "Legalización de las instalaciones térmicas (RITE) mediante memoria técnica sobre la instalación ejecutada (as-built). Incluye elaboración \
              de la memoria con la justificación del RITE y, en su caso, del RSIF, comprobación en obra, planos as-built, libro de uso \
              y mantenimiento, cumplimentación de la documentación 3.1.5, aportación del CIE del instalador \
              eléctrico, desplazamientos y gestión del expediente ante el órgano competente de la Comunidad \
@@ -1253,7 +1253,7 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
             if e.ajeno {
                 " de otro técnico"
             } else {
-                ", incluida su redacción"
+                ", incluida su redacción sobre la instalación ejecutada (as-built)"
             }
         ),
         (Disciplina::Pci, false) => format!(
@@ -1545,7 +1545,7 @@ mod tests {
         e.potencia_calor_kw = dec!(250);
         let c = calcular(&b(), &e);
         assert_eq!(horas(&c, "Tramitación"), dec!(28)); // 8 + 1 × 20
-        assert_eq!(horas(&c, "Redacción"), dec!(42)); // 12 + 1,5 × 20
+        assert_eq!(horas(&c, "Redacción del proyecto de legalización"), dec!(42)); // 12 + 1,5 × 20
         assert!(bloque(&c, "Justificación RITE").is_none());
         e.ajeno = true;
         e.justificar_rite = e.justificar_rite_por_defecto();

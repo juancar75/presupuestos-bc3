@@ -1,6 +1,6 @@
 # Legalización
 
-La ventana **Legalización…** añade al presupuesto de la instaladora una
+La ventana **Legalización…** (legalización as-built: proyectos y memorias sobre la instalación ejecutada) añade al presupuesto de la instaladora una
 partida por disciplina (`LEG-RITE`, `LEG-PCI`) en el capítulo `LEG`, con
 **todos los costes en el descompuesto**. Volver a crearla la sustituye (y se
 puede deshacer).
