@@ -19,6 +19,8 @@ La **tarifa sale de nuestros costes y nuestro margen**:
 | Costes indirectos, gestión y beneficio | siempre | % según el tamaño del encargo (pequeño, mediano, grande por horas, o elegido) |
 | Tasas, inspección y visados | si se repercuten | tasa de la Comunidad, EICI, visados (proyectos), EICI de segundas visitas y registro frigorífico; sin margen |
 
+El total de horas se redondea al alza a jornadas completas (8 h por defecto); la diferencia se añade al primer bloque como «ajuste a jornada completa».
+
 Los honorarios en **% del PEM** (tramos y mínimos) no forman el precio: se
 calculan como **referencia de mercado** y la ventana muestra la diferencia.
 

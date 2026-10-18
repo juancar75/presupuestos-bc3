@@ -234,6 +234,9 @@ pub struct Baremo {
     pub rsif_horas_repetido: Decimal,
     /// Horas del técnico en cada visita a obra.
     pub horas_visita_obra: Decimal,
+    /// Horas de la jornada: el total de horas se redondea al alza a jornadas
+    /// completas (0 = sin redondeo).
+    pub horas_jornada: Decimal,
     /// Margen (costes indirectos, gestión y beneficio) según tamaño del
     /// encargo: `margen` para pequeños; 0 en mediano o grande = el de pequeño.
     pub margen_mediano: Decimal,
@@ -343,6 +346,7 @@ impl Default for Baremo {
             rsif_horas_modelo: z,
             rsif_horas_repetido: z,
             horas_visita_obra: z,
+            horas_jornada: z,
             margen_mediano: z,
             margen_grande: z,
             horas_mediano: z,
@@ -444,6 +448,7 @@ impl Baremo {
             rsif_horas_modelo: Decimal::new(15, 1),
             rsif_horas_repetido: Decimal::new(25, 2),
             horas_visita_obra: d(2),
+            horas_jornada: d(8),
             oca_horas: d(2),
             viaje_km: d(40),
             viaje_horas: d(1),
@@ -1136,8 +1141,33 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         }
     }
 
+    // 5b. Jornadas completas: el total de horas se redondea al alza a jornadas
+    // y la diferencia se añade al primer bloque, repartida como él.
+    let mut horas_mo: Decimal = c.lineas().filter(|l| l.unidad == "h").map(|l| l.cantidad).sum();
+    if b.horas_jornada > Decimal::ZERO && horas_mo > Decimal::ZERO {
+        let jornadas = (horas_mo / b.horas_jornada).ceil();
+        let extra = jornadas * b.horas_jornada - horas_mo;
+        if extra > Decimal::ZERO
+            && let Some(bl) = c.bloques.first_mut()
+        {
+            let mut nuevas = horas_perfil(b, "ajuste a jornada completa", extra, reparto);
+            // El redondeo de cada línea no debe descuadrar el total.
+            let suma: Decimal = nuevas.iter().map(|l| l.cantidad).sum();
+            if let Some(ultima) = nuevas.last_mut() {
+                ultima.cantidad += extra - suma;
+            }
+            bl.lineas.extend(nuevas);
+            bl.regla.push_str(&format!(
+                "; + {} h para completar {} jornadas de {} h",
+                num(extra, 1),
+                jornadas,
+                corto(b.horas_jornada)
+            ));
+            horas_mo = jornadas * b.horas_jornada;
+        }
+    }
+
     // 6. Costes indirectos, gestión y beneficio (según tamaño del encargo)
-    let horas_mo: Decimal = c.lineas().filter(|l| l.unidad == "h").map(|l| l.cantidad).sum();
     let tamano = e.tamano.unwrap_or_else(|| b.tamano_por_horas(horas_mo));
     let pct = b.margen_de(tamano);
     c.tamano = Some(tamano);
@@ -1503,8 +1533,12 @@ mod tests {
     use super::*;
     use rust_decimal_macros::dec;
 
+    /// Baremo de ejemplo sin redondeo a jornadas, para comprobar cada tarea.
     fn b() -> Baremo {
-        Baremo::ejemplo(2026)
+        Baremo {
+            horas_jornada: Decimal::ZERO,
+            ..Baremo::ejemplo(2026)
+        }
     }
 
     fn bloque<'a>(c: &'a Calculo, titulo: &str) -> Option<&'a Bloque> {
@@ -1537,6 +1571,19 @@ mod tests {
         assert_eq!(c.margen, redondear(redondear(c.coste / CIEN, 3) * dec!(25), 2));
         // El baremo en % del PEM solo es referencia: 1,5 % de 50.000 + 0,75 % de 100.000.
         assert_eq!(c.referencia, dec!(1500));
+    }
+
+    #[test]
+    fn horas_en_jornadas_completas() {
+        // Memoria de 7.000 €: 4,28 h + 2,07 + 1,5 + visita 2 + viaje 1 = 10,85 → 16 h.
+        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(7000));
+        let c = calcular(&Baremo::ejemplo(2026), &e);
+        assert_eq!(c.horas, dec!(16));
+        let m = bloque(&c, "Elaboración").unwrap();
+        assert!(m.regla.contains("2 jornadas de 8 h"));
+        assert!(m.lineas.iter().any(|l| l.resumen.contains("ajuste a jornada completa")));
+        // Sin jornada no se redondea.
+        assert!(calcular(&b(), &e).horas < dec!(11));
     }
 
     #[test]
@@ -1720,7 +1767,8 @@ mod tests {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, pem_antes);
         e.potencia_calor_kw = dec!(80);
         e.segundas_visitas = 1;
-        let c = calcular(&b(), &e);
+        let c = calcular(&Baremo::ejemplo(2026), &e);
+        assert_eq!(c.horas % dec!(8), Decimal::ZERO);
         aplicar(&mut p, Disciplina::Rite, &c).unwrap();
         // El presupuesto valora la partida igual que el cálculo (también el %).
         assert_eq!(p.pem().unwrap(), pem_antes + c.total());
