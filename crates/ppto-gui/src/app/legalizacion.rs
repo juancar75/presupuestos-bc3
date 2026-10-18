@@ -12,8 +12,8 @@ use eframe::egui::{self, Color32, RichText};
 use ppto_core::Decimal;
 use ppto_core::formato::{eur, leer, num};
 use ppto_legalizacion::{
-    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, Refrigerante, RegistroIf, Rol, Tamano, Tipo, Tramo,
-    Uso, UsoPci, aplicar, calcular, capitulos,
+    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, Lectura, Refrigerante, RegistroIf, Rol, Tamano, Tipo,
+    Tramo, Uso, UsoPci, aplicar, calcular, capitulos,
 };
 use std::path::PathBuf;
 
@@ -176,6 +176,8 @@ pub(super) struct VentanaLegalizacion {
     if_kw_sistema: String,
     if_kw_total: String,
     superficie: String,
+    /// Datos sacados del presupuesto (para revisar).
+    lectura: Option<Lectura>,
     // Edición del baremo
     editar: bool,
     campos: Vec<String>,
@@ -203,6 +205,7 @@ impl VentanaLegalizacion {
             if_kw_sistema: String::new(),
             if_kw_total: String::new(),
             superficie: String::new(),
+            lectura: None,
             editar: false,
             campos: Vec::new(),
             tramos: Vec::new(),
@@ -248,6 +251,62 @@ impl VentanaLegalizacion {
             Ok(c) => self.capitulos = c.into_iter().map(|(a, b, i)| (a, b, i, true)).collect(),
             Err(e) => self.mensaje = Some((format!("No se pudo valorar la obra: {e}"), true)),
         }
+    }
+
+    /// Rellena el expediente con lo leído en las mediciones y marca los
+    /// capítulos de la disciplina como base del PEM.
+    fn rellenar(&mut self, p: &ppto_core::Presupuesto) {
+        let l = ppto_legalizacion::leer_presupuesto(p);
+        if l.vacia() {
+            self.mensaje = Some((
+                "No se han encontrado equipos de climatización, frigorífica ni PCI en las mediciones.".into(),
+                true,
+            ));
+            self.lectura = None;
+            return;
+        }
+        self.leer_capitulos(p);
+        self.lectura = Some(l);
+        self.aplicar_lectura();
+        let revisar = self
+            .lectura
+            .as_ref()
+            .map_or(0, |l| l.pistas.iter().filter(|p| !p.fiable).count());
+        self.mensaje = Some((
+            format!(
+                "Datos rellenados desde el presupuesto{}. Revíselos en «Datos sacados del presupuesto».",
+                if revisar > 0 {
+                    format!(" ({revisar} para revisar)")
+                } else {
+                    String::new()
+                }
+            ),
+            false,
+        ));
+    }
+
+    fn aplicar_lectura(&mut self) {
+        let Some(l) = self.lectura.clone() else { return };
+        let caps = match self.e.disciplina {
+            Disciplina::Rite => &l.capitulos_rite,
+            Disciplina::Pci => &l.capitulos_pci,
+        };
+        if !caps.is_empty() {
+            for c in &mut self.capitulos {
+                c.3 = caps.contains(&c.0);
+            }
+            self.pem_manual.clear();
+        }
+        l.rellenar(&mut self.e);
+        let fijar = |t: &mut String, v: Decimal| {
+            if !v.is_zero() {
+                *t = texto(v);
+            }
+        };
+        fijar(&mut self.potencia_calor, l.potencia_calor);
+        fijar(&mut self.potencia_frio, l.potencia_frio);
+        fijar(&mut self.if_kw_sistema, l.if_kw_sistema);
+        fijar(&mut self.if_kw_total, l.if_kw_total);
     }
 
     fn baremo(&self) -> Baremo {
@@ -492,6 +551,7 @@ impl Aplicacion {
                             v.e.justificar_rite = v.e.justificar_rite_por_defecto();
                             v.e.circuitos_rsif = 0;
                             v.e.modelos_rsif = 0;
+                            v.aplicar_lectura();
                         }
                         ui.separator();
                         let antes = v.e.documento;
@@ -509,6 +569,41 @@ impl Aplicacion {
                             v.e.justificar_rite = v.e.justificar_rite_por_defecto();
                         }
                     });
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button("Rellenar desde el presupuesto")
+                            .on_hover_text(
+                                "Busca en las mediciones potencias, unidades exteriores, refrigerante, frigorífica, BIE, detección y sistemas PCI. Revise lo propuesto.",
+                            )
+                            .clicked()
+                        {
+                            v.rellenar(&self.p);
+                        }
+                    });
+                    if let Some(l) = &v.lectura {
+                        ui.collapsing(format!("Datos sacados del presupuesto ({})", l.pistas.len()), |ui| {
+                            egui::Grid::new("leg_pistas").striped(true).num_columns(2).show(ui, |ui| {
+                                for p in &l.pistas {
+                                    let t = RichText::new(&p.dato);
+                                    ui.label(if p.fiable {
+                                        t
+                                    } else {
+                                        t.color(Color32::from_rgb(220, 150, 40))
+                                    })
+                                    .on_hover_text(if p.fiable { "Medido" } else { "Revisar: depende de cómo esté redactada la partida" });
+                                    ui.label(RichText::new(&p.fuente).weak());
+                                    ui.end_row();
+                                }
+                            });
+                            ui.label(
+                                RichText::new(
+                                    "No se leen: uso del DB SI 4, superficie, viviendas, revisiones, visitas y km. Circuitos RSIF: póngalo a 0 si no se supera la carga mínima.",
+                                )
+                                .small()
+                                .weak(),
+                            );
+                        });
+                    }
                     // RITE art. 15: con más de 70 kW hace falta proyecto.
                     let mut exp = v.e.clone();
                     exp.potencia_calor_kw = leer(&v.potencia_calor).unwrap_or_default();

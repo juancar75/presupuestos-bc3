@@ -27,6 +27,10 @@ versionado [semántico](https://semver.org/lang/es/).
   margen. Los honorarios en % del PEM quedan como referencia de mercado.
 - RITE art. 15: documento exigido según la suma de potencias de calor o de
   frío (proyecto por encima de 70 kW).
+- Avisos de proyecto o memoria en PCI (DB SI 4) y frigoríficas (RSIF nivel 2).
+- «Rellenar desde el presupuesto»: propone potencias, circuitos RSIF,
+  refrigerante, instalación frigorífica, sistemas PCI, BIE y detección a
+  partir de las mediciones, con la partida de la que sale cada dato.
 - Baremo por año en `legalizacion.json`, fuera del repositorio; costes,
   horas y margen se editan en la ventana.
 

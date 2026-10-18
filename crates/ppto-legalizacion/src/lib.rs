@@ -32,6 +32,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+mod lectura;
+pub use lectura::{Lectura, Pista, leer_presupuesto};
+
 /// Fichero del baremo en la carpeta de configuración.
 pub const FICHERO: &str = "legalizacion.json";
 /// Capítulo que agrupa la legalización en el presupuesto.
