@@ -1601,7 +1601,14 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
                 };
                 if !eici.is_zero() {
                     r.push(por_unidad(
-                        "EICI memoria individual de vivienda".into(),
+                        format!(
+                            "EICI memoria individual de vivienda{}",
+                            if e.primario_frio {
+                                " con primario frigorífico"
+                            } else {
+                                ""
+                            }
+                        ),
                         "ud",
                         n_viv,
                         eici,
@@ -1619,7 +1626,18 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
                 } else {
                     b.eici_rite_memoria
                 };
-                fijo(&mut r, "EICI memoria técnica".into(), eici);
+                fijo(
+                    &mut r,
+                    format!(
+                        "EICI memoria técnica{}",
+                        if e.primario_frio {
+                            " con primario frigorífico"
+                        } else {
+                            ""
+                        }
+                    ),
+                    eici,
+                );
             }
         }
         (Disciplina::Pci, true) => {
