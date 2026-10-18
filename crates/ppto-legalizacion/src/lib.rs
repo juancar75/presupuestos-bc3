@@ -1,25 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! # ppto-legalizacion
 //!
-//! Costes de legalización de una obra (RITE, PCI y RSIF) como partidas
-//! descompuestas dentro del presupuesto de la instaladora:
+//! Legalización de una disciplina de la obra (RITE o PCI, con RSIF) como
+//! **una partida descompuesta** en el capítulo `LEG`, en la que figuran todos
+//! los costes:
 //!
-//! - **Coste de tramitación** (honorarios propios): % del PEM de la
-//!   disciplina por tramos acumulativos, con un mínimo por expediente y otro
-//!   por vivienda; +x % si el proyecto es de otro técnico. Incluye as-built,
-//!   cálculos, libro de uso y mantenimiento, documentación 3.1.5, CIE del
-//!   instalador eléctrico, dirección de obra y gestión del expediente.
-//! - **Visita de la OCA** (proyectos) y **segundas visitas**.
-//! - **Justificación RITE** (% del PEM con mínimo) y **justificación RSIF**
-//!   (por circuito con mínimo), con registro de instalación frigorífica opcional.
-//! - **Desplazamiento** (€/km y horas de viaje) por encima de un umbral.
-//! - **Repercutidos**: tasas de la Comunidad, inspección EICI y derechos de
-//!   visado (solo proyectos), según las tablas del año.
+//! 1. **Mano de obra técnica** por perfil (senior, junior, técnico,
+//!    documentación) a su coste horario, para la tramitación (as-built,
+//!    cálculos, libro de uso y mantenimiento, documentación 3.1.5, CIE del
+//!    eléctrico, dirección de obra y gestión del expediente), la redacción del
+//!    proyecto propio y las justificaciones RITE y RSIF. Las horas salen del
+//!    honorario de baremo (% del PEM por tramos con mínimos), descontado el
+//!    margen.
+//! 2. **Visitas de la OCA**: horas del técnico en la inspección.
+//! 3. **Desplazamientos**: horas de viaje, kilometraje, aparcamiento y dietas
+//!    de cada visita (dirección de obra y OCA).
+//! 4. **Costes indirectos, gestión y beneficio**: % sobre lo anterior.
+//! 5. **Repercutidos** sin margen: tasas de la Comunidad, EICI y visados.
 //!
-//! El baremo (honorarios y tablas) es del usuario y vive fuera del
-//! repositorio, en `legalizacion.json` de la carpeta de configuración, con una
-//! versión por año. [`Baremo::ejemplo`] lleva valores **sintéticos** para
-//! pruebas y como plantilla.
+//! El baremo (honorarios, costes horarios y tablas) es del usuario y vive
+//! fuera del repositorio, en `legalizacion.json` de la carpeta de
+//! configuración, con una versión por año. [`Baremo::ejemplo`] lleva valores
+//! **sintéticos** para pruebas y como plantilla.
 
 use ppto_core::decimales::redondear;
 use ppto_core::formato::{eur, num};
@@ -90,7 +92,46 @@ fn escalon(tramos: &[Tramo], x: Decimal) -> Option<Decimal> {
         .map(|tr| tr.valor)
 }
 
-/// Honorarios y tablas de un año. Todos los importes sin IVA.
+/// Reparto de las horas de una tarea entre perfiles (en %; suman 100).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Reparto {
+    pub senior: Decimal,
+    pub junior: Decimal,
+    pub tecnico: Decimal,
+    pub documentacion: Decimal,
+}
+
+impl Default for Reparto {
+    fn default() -> Self {
+        Self {
+            senior: d(25),
+            junior: d(75),
+            tecnico: Decimal::ZERO,
+            documentacion: Decimal::ZERO,
+        }
+    }
+}
+
+fn reparto_tramitacion() -> Reparto {
+    Reparto {
+        senior: d(15),
+        junior: d(35),
+        tecnico: d(30),
+        documentacion: d(20),
+    }
+}
+
+fn reparto_redaccion() -> Reparto {
+    Reparto {
+        senior: d(40),
+        junior: d(45),
+        tecnico: Decimal::ZERO,
+        documentacion: d(15),
+    }
+}
+
+/// Honorarios, costes y tablas de un año. Todos los importes sin IVA.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Baremo {
@@ -98,43 +139,57 @@ pub struct Baremo {
     /// Procedencia de los datos (p. ej. «Tablas PRMEM 2026, honorarios AIDESEGI»).
     pub nota: String,
 
-    // --- honorarios propios
+    // --- honorarios de baremo (precio de venta, margen incluido)
     /// Tramitación: % del PEM de la disciplina por tramos acumulativos.
     pub tramitacion: Vec<Tramo>,
     /// Mínimo por expediente en proyectos (y en memorias si el de memoria es cero).
     pub tramitacion_minimo: Decimal,
     /// Mínimo por expediente en memorias técnicas (0 = el de proyectos).
     pub tramitacion_minimo_memoria: Decimal,
-    /// Redacción del proyecto cuando es propio: % del PEM por tramos acumulativos.
-    pub redaccion: Vec<Tramo>,
-    pub redaccion_minimo: Decimal,
-    /// Mínimo por vivienda en bloques (se cobra el mayor).
+    /// Mínimo por vivienda con uso Viviendas (se cobra el mayor).
     pub minimo_vivienda: Decimal,
     /// Recargo (%) cuando el proyecto es de otro técnico.
     pub recargo_ajeno: Decimal,
-    pub visita_oca: Decimal,
-    pub segunda_visita: Decimal,
-    /// Justificación RITE: % del PEM RITE con mínimo.
+    /// Redacción del proyecto propio: % del PEM por tramos acumulativos.
+    pub redaccion: Vec<Tramo>,
+    pub redaccion_minimo: Decimal,
+    /// Justificación RITE aparte: % del PEM RITE con mínimo.
     pub justif_rite_pct: Decimal,
     pub justif_rite_minimo: Decimal,
-    /// Justificación RSIF: por circuito de cada modelo distinto, por circuito
-    /// repetido (0 = como uno distinto) y mínimo.
+    /// Justificación RSIF: por circuito de cada modelo, por circuito repetido
+    /// (0 = como uno distinto) y mínimo.
     pub rsif_circuito: Decimal,
     pub rsif_repetido: Decimal,
     pub rsif_minimo: Decimal,
-    /// Desplazamiento: €/km (ida y vuelta) y €/h de viaje, solo por encima del umbral de km.
+
+    // --- costes
+    /// Coste horario de cada perfil (€/h).
+    pub coste_senior: Decimal,
+    pub coste_junior: Decimal,
+    pub coste_tecnico: Decimal,
+    pub coste_documentacion: Decimal,
+    /// Costes indirectos, gestión y beneficio (%) sobre mano de obra y desplazamientos.
+    pub margen: Decimal,
+    pub reparto_tramitacion: Reparto,
+    pub reparto_redaccion: Reparto,
+    pub reparto_justificacion: Reparto,
+    /// Horas del técnico en cada visita de la OCA.
+    pub oca_horas: Decimal,
+    /// Viaje habitual (sin datos de la obra): km de ida y vuelta y horas.
+    pub viaje_km: Decimal,
+    pub viaje_horas: Decimal,
+    /// €/km, aparcamiento por viaje y dieta por viaje fuera de zona.
     pub km: Decimal,
+    pub aparcamiento: Decimal,
+    pub dieta: Decimal,
+    /// Km de ida y vuelta a partir de los cuales se paga dieta.
     pub km_umbral: Decimal,
-    pub hora_viaje: Decimal,
-    /// Tarifa horaria media para traducir los honorarios a horas (comprobación).
-    pub hora_referencia: Decimal,
 
     // --- repercutidos
     /// Derechos de visado: coeficiente por tramos acumulativos sobre el PEM.
     pub visado: Vec<Tramo>,
     /// Visado del certificado de dirección de obra (mismo importe que el proyecto).
     pub visado_direccion_obra: bool,
-
     /// Tasa RITE de proyecto por valor de la inversión (escalón).
     pub tasa_rite_proyecto: Vec<Tramo>,
     pub tasa_rite_memoria_vivienda: Decimal,
@@ -144,15 +199,14 @@ pub struct Baremo {
     /// EICI de proyecto RITE por potencia en kW (escalón); por encima, `+ por_100kw`.
     pub eici_rite_kw: Vec<Tramo>,
     pub eici_rite_por_100kw: Decimal,
-    /// EICI de proyecto para bloques de N viviendas sin sala de máquinas (escalón);
-    /// por encima, `base + por_vivienda × N`.
+    /// EICI de proyecto para edificios de N viviendas sin sala de máquinas
+    /// (escalón); por encima, `base + por_vivienda × N`.
     pub eici_rite_viviendas: Vec<Tramo>,
     pub eici_rite_viviendas_base: Decimal,
     pub eici_rite_por_vivienda: Decimal,
     pub eici_rite_primario: Decimal,
     /// EICI de segundas visitas y posteriores.
     pub eici_segunda_visita: Decimal,
-
     /// Tasa PCI de proyecto por inversión (escalón); por encima, `bloque × nº de bloques`.
     pub tasa_pci: Vec<Tramo>,
     pub tasa_pci_bloque: Decimal,
@@ -165,7 +219,6 @@ pub struct Baremo {
     /// Límites de superficie (m²) de las columnas: columna i si S < límite i.
     pub eici_pci_superficies: Vec<Decimal>,
     pub eici_pci_presion: Decimal,
-
     /// Registro de instalación frigorífica (RSIF): EICI por nivel y tasa.
     pub eici_if_memoria_a2l: Decimal,
     pub eici_if_memoria_l1: Decimal,
@@ -176,54 +229,64 @@ pub struct Baremo {
 
 impl Default for Baremo {
     fn default() -> Self {
+        let z = Decimal::ZERO;
         Self {
             anio: 0,
             nota: String::new(),
             tramitacion: Vec::new(),
-            tramitacion_minimo: Decimal::ZERO,
-            tramitacion_minimo_memoria: Decimal::ZERO,
+            tramitacion_minimo: z,
+            tramitacion_minimo_memoria: z,
+            minimo_vivienda: z,
+            recargo_ajeno: z,
             redaccion: Vec::new(),
-            redaccion_minimo: Decimal::ZERO,
-            minimo_vivienda: Decimal::ZERO,
-            recargo_ajeno: Decimal::ZERO,
-            visita_oca: Decimal::ZERO,
-            segunda_visita: Decimal::ZERO,
-            justif_rite_pct: Decimal::ZERO,
-            justif_rite_minimo: Decimal::ZERO,
-            rsif_circuito: Decimal::ZERO,
-            rsif_repetido: Decimal::ZERO,
-            rsif_minimo: Decimal::ZERO,
-            km: Decimal::ZERO,
-            km_umbral: Decimal::ZERO,
-            hora_viaje: Decimal::ZERO,
-            hora_referencia: Decimal::ZERO,
+            redaccion_minimo: z,
+            justif_rite_pct: z,
+            justif_rite_minimo: z,
+            rsif_circuito: z,
+            rsif_repetido: z,
+            rsif_minimo: z,
+            coste_senior: z,
+            coste_junior: z,
+            coste_tecnico: z,
+            coste_documentacion: z,
+            margen: z,
+            reparto_tramitacion: reparto_tramitacion(),
+            reparto_redaccion: reparto_redaccion(),
+            reparto_justificacion: Reparto::default(),
+            oca_horas: z,
+            viaje_km: z,
+            viaje_horas: z,
+            km: z,
+            aparcamiento: z,
+            dieta: z,
+            km_umbral: z,
             visado: Vec::new(),
             visado_direccion_obra: true,
             tasa_rite_proyecto: Vec::new(),
-            tasa_rite_memoria_vivienda: Decimal::ZERO,
-            tasa_rite_memoria_otro: Decimal::ZERO,
-            eici_rite_memoria: Decimal::ZERO,
-            eici_rite_memoria_primario: Decimal::ZERO,
+            tasa_rite_memoria_vivienda: z,
+            tasa_rite_memoria_otro: z,
+            eici_rite_memoria: z,
+            eici_rite_memoria_primario: z,
             eici_rite_kw: Vec::new(),
-            eici_rite_por_100kw: Decimal::ZERO,
+            eici_rite_por_100kw: z,
             eici_rite_viviendas: Vec::new(),
-            eici_rite_viviendas_base: Decimal::ZERO,
-            eici_rite_por_vivienda: Decimal::ZERO,
-            eici_rite_primario: Decimal::ZERO,
-            eici_segunda_visita: Decimal::ZERO,
+            eici_rite_viviendas_base: z,
+            eici_rite_por_vivienda: z,
+            eici_rite_primario: z,
+            eici_segunda_visita: z,
             tasa_pci: Vec::new(),
-            tasa_pci_bloque: Decimal::ZERO,
-            tasa_pci_tam_bloque: Decimal::ZERO,
-            tasa_pci_memoria: Decimal::ZERO,
+            tasa_pci_bloque: z,
+            tasa_pci_tam_bloque: z,
+            tasa_pci_memoria: z,
             eici_pci_memoria: Vec::new(),
             eici_pci_proyecto: Vec::new(),
             eici_pci_superficies: Vec::new(),
-            eici_pci_presion: Decimal::ZERO,
-            eici_if_memoria_a2l: Decimal::ZERO,
-            eici_if_memoria_l1: Decimal::ZERO,
-            eici_if_proyecto: Decimal::ZERO,
-            eici_if_proyecto_sala: Decimal::ZERO,
-            tasa_if: Decimal::ZERO,
+            eici_pci_presion: z,
+            eici_if_memoria_a2l: z,
+            eici_if_memoria_l1: z,
+            eici_if_proyecto: z,
+            eici_if_proyecto_sala: z,
+            tasa_if: z,
         }
     }
 }
@@ -235,27 +298,32 @@ impl Baremo {
         let m = |n: u32| Some(d(n));
         Self {
             anio,
-            nota: "VALORES DE EJEMPLO: sustitúyalos por sus honorarios y las tablas oficiales del año".into(),
+            nota: "VALORES DE EJEMPLO: sustitúyalos por sus honorarios, costes y las tablas oficiales del año".into(),
             tramitacion: vec![t(m(100_000), d(1)), t(None, Decimal::new(5, 1))],
             tramitacion_minimo: d(500),
             tramitacion_minimo_memoria: d(300),
-            redaccion: vec![t(m(100_000), Decimal::new(15, 1)), t(None, d(1))],
-            redaccion_minimo: d(600),
             minimo_vivienda: d(50),
             recargo_ajeno: d(20),
-            visita_oca: d(100),
-            segunda_visita: d(100),
+            redaccion: vec![t(m(100_000), Decimal::new(15, 1)), t(None, d(1))],
+            redaccion_minimo: d(600),
             justif_rite_pct: Decimal::new(2, 1),
             justif_rite_minimo: d(200),
             rsif_circuito: d(100),
             rsif_repetido: d(20),
-            rsif_minimo: d(200),
+            rsif_minimo: d(100),
+            coste_senior: d(50),
+            coste_junior: d(40),
+            coste_tecnico: d(40),
+            coste_documentacion: d(30),
+            margen: d(25),
+            oca_horas: d(2),
+            viaje_km: d(40),
+            viaje_horas: d(1),
             km: Decimal::new(25, 2),
-            km_umbral: d(50),
-            hora_viaje: d(40),
-            hora_referencia: d(40),
+            aparcamiento: d(10),
+            dieta: d(30),
+            km_umbral: d(100),
             visado: vec![t(m(100_000), Decimal::new(2, 3)), t(None, Decimal::new(1, 3))],
-            visado_direccion_obra: true,
             tasa_rite_proyecto: vec![t(m(10_000), d(10)), t(None, d(50))],
             tasa_rite_memoria_vivienda: d(3),
             tasa_rite_memoria_otro: d(6),
@@ -271,7 +339,6 @@ impl Baremo {
             tasa_pci: vec![t(m(10_000), d(50)), t(m(100_000), d(200))],
             tasa_pci_bloque: d(10),
             tasa_pci_tam_bloque: d(5000),
-            tasa_pci_memoria: Decimal::ZERO,
             eici_pci_memoria: vec![d(200), d(250), d(300)],
             eici_pci_proyecto: vec![vec![d(400), d(500)], vec![d(450), d(550)]],
             eici_pci_superficies: vec![d(1000)],
@@ -281,6 +348,16 @@ impl Baremo {
             eici_if_proyecto: d(250),
             eici_if_proyecto_sala: d(350),
             tasa_if: d(35),
+            ..Self::default()
+        }
+    }
+
+    fn coste(&self, p: Perfil) -> Decimal {
+        match p {
+            Perfil::Senior => self.coste_senior,
+            Perfil::Junior => self.coste_junior,
+            Perfil::Tecnico => self.coste_tecnico,
+            Perfil::Documentacion => self.coste_documentacion,
         }
     }
 }
@@ -338,6 +415,8 @@ impl Baremos {
 
 // --------------------------------------------------------------- expediente
 
+// --------------------------------------------------------------- expediente
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Disciplina {
     Rite,
@@ -387,7 +466,7 @@ pub enum RegistroIf {
 pub struct Expediente {
     pub disciplina: Disciplina,
     pub documento: Documento,
-    /// PEM de la disciplina (base del % de tramitación y de la tasa).
+    /// PEM de la disciplina (base del % de los honorarios y de la tasa).
     pub pem: Decimal,
     /// Proyecto redactado por otro técnico.
     pub ajeno: bool,
@@ -403,20 +482,19 @@ pub struct Expediente {
     /// PCI: superficie (m²) para la EICI de proyecto.
     pub superficie: Decimal,
     pub presion_diferencial: bool,
-    /// Justificación RITE aparte (solo RITE; en memorias y proyectos propios
-    /// suele ir incluida en la tramitación o la redacción).
+    /// Justificación RITE aparte (en memorias y proyectos propios va incluida).
     pub justificar_rite: bool,
-    /// Modelos (circuitos distintos) a justificar por RSIF; el resto de
-    /// `circuitos_rsif` son repetidos. 0 = todos distintos.
-    pub modelos_rsif: u32,
-    /// Circuitos frigoríficos a justificar por RSIF (0 = sin RSIF).
+    /// Circuitos frigoríficos a justificar por RSIF (0 = sin RSIF) y, de
+    /// ellos, modelos distintos (0 = todos distintos).
     pub circuitos_rsif: u32,
+    pub modelos_rsif: u32,
     pub registro_if: Option<RegistroIf>,
+    /// Visitas de dirección de obra y segundas visitas de la OCA.
+    pub visitas_obra: u32,
     pub segundas_visitas: u32,
-    /// Km de ida y vuelta por viaje y nº de viajes.
+    /// Km de ida y vuelta y horas por viaje (0 = viaje habitual del baremo).
     pub km: Decimal,
     pub horas_viaje: Decimal,
-    pub viajes: u32,
     /// Repercutir tasas, EICI y visado (si no, los paga la propiedad).
     pub repercutir: bool,
 }
@@ -444,70 +522,117 @@ impl Expediente {
             superficie: Decimal::ZERO,
             presion_diferencial: false,
             justificar_rite: false,
-            modelos_rsif: 0,
             circuitos_rsif: 0,
+            modelos_rsif: 0,
             registro_if: None,
+            visitas_obra: 1,
             segundas_visitas: 0,
             km: Decimal::ZERO,
             horas_viaje: Decimal::ZERO,
-            viajes: 1,
             repercutir: true,
         }
+    }
+
+    fn proyecto(&self) -> bool {
+        self.documento == Documento::Proyecto
     }
 }
 
 // ----------------------------------------------------------------- cálculo
 
-/// Línea del descompuesto de una partida de legalización.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Perfil {
+    Senior,
+    Junior,
+    Tecnico,
+    Documentacion,
+}
+
+impl Perfil {
+    const TODOS: [Perfil; 4] = [Perfil::Senior, Perfil::Junior, Perfil::Tecnico, Perfil::Documentacion];
+
+    pub fn nombre(self) -> &'static str {
+        match self {
+            Self::Senior => "Ingeniero senior",
+            Self::Junior => "Ingeniero junior",
+            Self::Tecnico => "Técnico",
+            Self::Documentacion => "Técnico de documentación",
+        }
+    }
+
+    fn parte(self, r: &Reparto) -> Decimal {
+        match self {
+            Self::Senior => r.senior,
+            Self::Junior => r.junior,
+            Self::Tecnico => r.tecnico,
+            Self::Documentacion => r.documentacion,
+        }
+    }
+}
+
+/// Clase de línea: decide si lleva margen y cómo se suma.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tipo {
+    ManoObra,
+    Indirecto,
+    Margen,
+    Repercutido,
+}
+
+/// Línea del descompuesto de la partida de legalización.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Linea {
     pub resumen: String,
     pub unidad: String,
-    pub naturaleza: Naturaleza,
     pub cantidad: Decimal,
     pub precio: Decimal,
-    /// Honorario propio (cuenta para las horas) o importe repercutido.
-    pub propia: bool,
+    pub tipo: Tipo,
 }
 
 impl Linea {
     pub fn importe(&self) -> Decimal {
         redondear(self.cantidad * self.precio, 2)
     }
+
+    pub fn naturaleza(&self) -> Naturaleza {
+        match self.tipo {
+            Tipo::ManoObra => Naturaleza::ManoObra,
+            Tipo::Margen => Naturaleza::Porcentaje,
+            Tipo::Indirecto | Tipo::Repercutido => Naturaleza::Otros,
+        }
+    }
 }
 
-fn importe_fijo(resumen: String, precio: Decimal, propia: bool) -> Linea {
+fn importe_fijo(resumen: String, precio: Decimal, tipo: Tipo) -> Linea {
     Linea {
         resumen,
         unidad: "ud".into(),
-        naturaleza: Naturaleza::Otros,
         cantidad: Decimal::ONE,
         precio: redondear(precio, 2),
-        propia,
+        tipo,
     }
 }
 
-fn por_unidad(resumen: String, unidad: &str, n: Decimal, precio: Decimal, propia: bool) -> Linea {
+fn por_unidad(resumen: String, unidad: &str, n: Decimal, precio: Decimal, tipo: Tipo) -> Linea {
     Linea {
         resumen,
         unidad: unidad.into(),
-        naturaleza: Naturaleza::Otros,
-        cantidad: n,
+        cantidad: redondear(n, 3),
         precio: redondear(precio, 2),
-        propia,
+        tipo,
     }
 }
 
+/// Grupo de líneas con su explicación (para la vista previa).
 #[derive(Debug, Clone, PartialEq)]
-pub struct PartidaLeg {
-    /// Sufijo del código (`TRAM`, `OCA`…): la partida es `LEG-<disciplina>-<sufijo>`.
-    pub sufijo: &'static str,
-    pub resumen: String,
-    pub texto: String,
+pub struct Bloque {
+    pub titulo: String,
+    /// Cómo se ha calculado (honorario de baremo, mínimo aplicado…).
+    pub regla: String,
     pub lineas: Vec<Linea>,
 }
 
-impl PartidaLeg {
+impl Bloque {
     pub fn importe(&self) -> Decimal {
         self.lineas.iter().map(Linea::importe).sum()
     }
@@ -515,18 +640,30 @@ impl PartidaLeg {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Calculo {
-    pub partidas: Vec<PartidaLeg>,
-    /// Honorarios propios (sin repercutidos).
-    pub honorarios: Decimal,
+    pub resumen: String,
+    pub texto: String,
+    pub bloques: Vec<Bloque>,
+    /// Mano de obra y desplazamientos (coste, sin margen).
+    pub coste: Decimal,
+    pub margen: Decimal,
     pub repercutidos: Decimal,
-    /// Horas que equivalen los honorarios a la tarifa de referencia.
-    pub horas: Option<Decimal>,
+    /// Horas de mano de obra (incluidas las de viaje).
+    pub horas: Decimal,
     pub avisos: Vec<String>,
 }
 
 impl Calculo {
+    /// Honorarios: coste + margen.
+    pub fn honorarios(&self) -> Decimal {
+        self.coste + self.margen
+    }
+
     pub fn total(&self) -> Decimal {
-        self.honorarios + self.repercutidos
+        self.honorarios() + self.repercutidos
+    }
+
+    pub fn lineas(&self) -> impl Iterator<Item = &Linea> {
+        self.bloques.iter().flat_map(|b| &b.lineas)
     }
 }
 
@@ -536,38 +673,52 @@ fn corto(v: Decimal) -> String {
     num(n, n.scale())
 }
 
-fn rango(desde: Decimal, hasta: Option<Decimal>) -> String {
-    match hasta {
-        Some(h) if desde.is_zero() => format!("hasta {}", eur(h)),
-        Some(h) => format!("de {} a {}", eur(desde), eur(h)),
-        None => format!("más de {}", eur(desde)),
-    }
+/// Honorario por tramos acumulativos y su explicación.
+fn por_pem(tramos: &[Tramo], pem: Decimal) -> (Decimal, String) {
+    let partes = por_tramos(tramos, pem);
+    let importe = partes
+        .iter()
+        .map(|(_, _, pct, parte)| redondear(*parte * *pct / CIEN, 2))
+        .sum();
+    let txt = partes
+        .iter()
+        .map(|(_, _, pct, parte)| format!("{} % de {}", corto(*pct), eur(*parte)))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    (importe, txt)
 }
 
-/// Líneas «<qué>: x % s/ PEM <tramo>» de una tabla acumulativa.
-fn pct_por_tramos(que: &str, tramos: &[Tramo], pem: Decimal) -> Vec<Linea> {
-    por_tramos(tramos, pem)
-        .into_iter()
-        .map(|(desde, hasta, pct, parte)| {
-            importe_fijo(
-                format!(
-                    "{que}: {} % s/ PEM {} ({})",
-                    corto(pct),
-                    rango(desde, hasta),
-                    eur(parte)
-                ),
-                parte * pct / CIEN,
-                true,
+/// Convierte un honorario de baremo (con margen) en horas por perfil a coste.
+fn horas_de(b: &Baremo, que: &str, honorario: Decimal, r: &Reparto) -> Vec<Linea> {
+    let tarifa: Decimal = Perfil::TODOS.iter().map(|p| p.parte(r) * b.coste(*p)).sum::<Decimal>() / CIEN;
+    if tarifa <= Decimal::ZERO {
+        return vec![importe_fijo(
+            format!("{que} (sin costes horarios en el baremo)"),
+            honorario,
+            Tipo::ManoObra,
+        )];
+    }
+    let coste = honorario * CIEN / (CIEN + b.margen);
+    let horas = coste / tarifa;
+    Perfil::TODOS
+        .iter()
+        .filter(|p| !p.parte(r).is_zero())
+        .map(|p| {
+            por_unidad(
+                format!("{}: {que}", p.nombre()),
+                "h",
+                horas * p.parte(r) / CIEN,
+                b.coste(*p),
+                Tipo::ManoObra,
             )
         })
         .collect()
 }
 
-/// Calcula las partidas de legalización de un expediente con un baremo.
+/// Calcula la partida de legalización de un expediente con un baremo.
 pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     let mut c = Calculo::default();
-    let sigla = e.disciplina.sigla();
-    let proyecto = e.documento == Documento::Proyecto;
+    let proyecto = e.proyecto();
     let doc = if proyecto { "proyecto" } else { "memoria técnica" };
     let viviendas = e.n_viviendas();
     let n_viv = d(viviendas);
@@ -578,145 +729,63 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     } else {
         b.tramitacion_minimo
     };
-    let mut lineas = pct_por_tramos("Tramitación", &b.tramitacion, e.pem);
-    let por_pem: Decimal = lineas.iter().map(Linea::importe).sum();
+    let (pct, txt) = por_pem(&b.tramitacion, e.pem);
     let suelo_viv = b.minimo_vivienda * n_viv;
-    if suelo_viv > por_pem && suelo_viv >= minimo {
-        lineas = vec![por_unidad(
-            format!("Tramitación: mínimo por vivienda ({viviendas} viv.)"),
-            "viv",
-            n_viv,
-            b.minimo_vivienda,
-            true,
-        )];
-    } else if minimo > por_pem {
-        lineas = vec![importe_fijo(
-            "Tramitación: importe mínimo por expediente".into(),
-            minimo,
-            true,
-        )];
-    }
-    if e.ajeno && !b.recargo_ajeno.is_zero() {
-        let base: Decimal = lineas.iter().map(Linea::importe).sum();
-        lineas.push(importe_fijo(
-            format!(
-                "Revisión y adaptación de proyecto de otro técnico (+{} %)",
-                corto(b.recargo_ajeno)
-            ),
-            base * b.recargo_ajeno / CIEN,
-            true,
-        ));
-    }
-    let texto_tram = match e.disciplina {
-        Disciplina::Rite => format!(
-            "Coste de tramitación de la legalización de las instalaciones térmicas (RITE) mediante {doc}. \
-             Incluye planos as-built, cálculos justificativos, libro de uso y mantenimiento, cumplimentación \
-             de la documentación 3.1.5, aportación del CIE del instalador eléctrico, dirección de obra y \
-             gestión del expediente ante el órgano competente de la Comunidad Autónoma."
-        ),
-        Disciplina::Pci => format!(
-            "Coste de tramitación de la legalización de las instalaciones de protección contra incendios \
-             (RIPCI) mediante {doc}. Incluye planos as-built, cálculos justificativos, certificado de la \
-             empresa instaladora, manual de uso y mantenimiento, dirección de obra y gestión del expediente \
-             ante el órgano competente de la Comunidad Autónoma."
-        ),
+    let (mut honorario, mut regla) = if suelo_viv > pct && suelo_viv >= minimo {
+        (
+            suelo_viv,
+            format!("mínimo por vivienda: {viviendas} × {}", eur(b.minimo_vivienda)),
+        )
+    } else if minimo > pct {
+        (minimo, format!("mínimo por expediente {}", eur(minimo)))
+    } else {
+        (pct, format!("{txt} del PEM"))
     };
-    c.partidas.push(PartidaLeg {
-        sufijo: "TRAM",
-        resumen: format!("Coste de tramitación {sigla} ({doc})"),
-        texto: texto_tram,
-        lineas,
+    if e.ajeno && !b.recargo_ajeno.is_zero() {
+        honorario = redondear(honorario * (CIEN + b.recargo_ajeno) / CIEN, 2);
+        regla.push_str(&format!(", +{} % por proyecto de otro técnico", corto(b.recargo_ajeno)));
+    }
+    c.bloques.push(Bloque {
+        titulo: "Tramitación y dirección de obra".into(),
+        regla: format!("Honorario {} ({regla})", eur(honorario)),
+        lineas: horas_de(
+            b,
+            "tramitación, as-built y dirección de obra",
+            honorario,
+            &b.reparto_tramitacion,
+        ),
     });
 
-    // 1b. Redacción del proyecto propio
+    // 2. Redacción del proyecto propio
     if proyecto && !e.ajeno && !b.redaccion.is_empty() {
-        let mut lineas = pct_por_tramos("Redacción", &b.redaccion, e.pem);
-        let por_pem: Decimal = lineas.iter().map(Linea::importe).sum();
-        if b.redaccion_minimo > por_pem {
-            lineas = vec![importe_fijo(
-                "Redacción: importe mínimo".into(),
-                b.redaccion_minimo,
-                true,
-            )];
-        }
-        c.partidas.push(PartidaLeg {
-            sufijo: "RED",
-            resumen: format!("Redacción del proyecto {sigla}"),
-            texto: format!(
-                "Redacción del proyecto de {} firmado por técnico competente: memoria, cálculos y \
-                 justificación reglamentaria, pliego, presupuesto y planos.",
-                e.disciplina.nombre()
-            ),
-            lineas,
-        });
-    }
-
-    // 2. Visitas de la OCA
-    if proyecto && !b.visita_oca.is_zero() {
-        c.partidas.push(PartidaLeg {
-            sufijo: "OCA",
-            resumen: format!("Asistencia a la visita de inspección de la OCA ({sigla})"),
-            texto: "Preparación y asistencia del técnico a la visita de inspección inicial de la entidad \
-                    de control (EICI/OCA) para la puesta en servicio."
-                .into(),
-            lineas: vec![importe_fijo(
-                "Asistencia a la visita de la OCA".into(),
-                b.visita_oca,
-                true,
-            )],
-        });
-    }
-    if e.segundas_visitas > 0 {
-        let n = d(e.segundas_visitas);
-        let mut lineas = vec![por_unidad(
-            "Asistencia a segunda visita o posterior".into(),
-            "ud",
-            n,
-            b.segunda_visita,
-            true,
-        )];
-        if e.repercutir && !b.eici_segunda_visita.is_zero() {
-            lineas.push(por_unidad(
-                "Tarifa EICI de segunda visita o posterior (repercutida)".into(),
-                "ud",
-                n,
-                b.eici_segunda_visita,
-                false,
-            ));
-        }
-        c.partidas.push(PartidaLeg {
-            sufijo: "VIS2",
-            resumen: format!("Segundas visitas de inspección ({sigla})"),
-            texto: "Visitas adicionales de la entidad de control por defectos o trabajos pendientes.".into(),
-            lineas,
+        let (pct, txt) = por_pem(&b.redaccion, e.pem);
+        let (h, regla) = if b.redaccion_minimo > pct {
+            (b.redaccion_minimo, format!("mínimo {}", eur(b.redaccion_minimo)))
+        } else {
+            (pct, format!("{txt} del PEM"))
+        };
+        c.bloques.push(Bloque {
+            titulo: "Redacción del proyecto".into(),
+            regla: format!("Honorario {} ({regla})", eur(h)),
+            lineas: horas_de(b, "redacción del proyecto", h, &b.reparto_redaccion),
         });
     }
 
     // 3. Justificaciones
     if e.disciplina == Disciplina::Rite && e.justificar_rite {
-        let por_pct = redondear(e.pem * b.justif_rite_pct / CIEN, 2);
-        let linea = if b.justif_rite_minimo > por_pct {
-            importe_fijo("Justificación RITE: importe mínimo".into(), b.justif_rite_minimo, true)
+        let pct = redondear(e.pem * b.justif_rite_pct / CIEN, 2);
+        let (h, regla) = if b.justif_rite_minimo > pct {
+            (b.justif_rite_minimo, format!("mínimo {}", eur(b.justif_rite_minimo)))
         } else {
-            importe_fijo(
-                format!(
-                    "Justificación RITE: {} % s/ PEM ({})",
-                    corto(b.justif_rite_pct),
-                    eur(e.pem)
-                ),
-                por_pct,
-                true,
-            )
+            (pct, format!("{} % del PEM", corto(b.justif_rite_pct)))
         };
-        c.partidas.push(PartidaLeg {
-            sufijo: "JRITE",
-            resumen: "Justificación del cumplimiento del RITE".into(),
-            texto: "Justificación de las exigencias de bienestar e higiene, eficiencia energética y seguridad \
-                    del RITE (IT 1) de la instalación ejecutada."
-                .into(),
-            lineas: vec![linea],
+        c.bloques.push(Bloque {
+            titulo: "Justificación RITE".into(),
+            regla: format!("Honorario {} ({regla})", eur(h)),
+            lineas: horas_de(b, "justificación RITE", h, &b.reparto_justificacion),
         });
     }
+    let mut rep_if = Vec::new();
     if e.circuitos_rsif > 0 {
         let modelos = if e.modelos_rsif == 0 {
             e.circuitos_rsif
@@ -730,31 +799,23 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
             b.rsif_repetido
         };
         let importe = d(modelos) * b.rsif_circuito + d(repetidos) * p_rep;
-        let mut lineas = if b.rsif_minimo > importe {
-            vec![importe_fijo(
-                format!("Justificación RSIF: importe mínimo ({} circuitos)", e.circuitos_rsif),
-                b.rsif_minimo,
-                true,
-            )]
+        let (h, regla) = if b.rsif_minimo > importe {
+            (b.rsif_minimo, format!("mínimo {}", eur(b.rsif_minimo)))
         } else {
-            let mut v = vec![por_unidad(
-                "Justificación RSIF por circuito de cada modelo".into(),
-                "circ",
-                d(modelos),
-                b.rsif_circuito,
-                true,
-            )];
-            if repetidos > 0 {
-                v.push(por_unidad(
-                    "Justificación RSIF por circuito repetido".into(),
-                    "circ",
-                    d(repetidos),
-                    p_rep,
-                    true,
-                ));
-            }
-            v
+            (
+                importe,
+                format!(
+                    "{modelos} modelos × {} + {repetidos} repetidos × {}",
+                    eur(b.rsif_circuito),
+                    eur(p_rep)
+                ),
+            )
         };
+        c.bloques.push(Bloque {
+            titulo: format!("Justificación RSIF ({} circuitos)", e.circuitos_rsif),
+            regla: format!("Honorario {} ({regla})", eur(h)),
+            lineas: horas_de(b, "justificación RSIF", h, &b.reparto_justificacion),
+        });
         if e.repercutir
             && let Some(nivel) = e.registro_if
         {
@@ -764,96 +825,182 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
                 RegistroIf::Proyecto => ("proyecto nivel 2 sin sala", b.eici_if_proyecto),
                 RegistroIf::ProyectoConSala => ("proyecto nivel 2 con sala", b.eici_if_proyecto_sala),
             };
-            lineas.push(importe_fijo(
-                format!("EICI registro instalación frigorífica, {txt} (repercutida)"),
+            rep_if.push(importe_fijo(
+                format!("EICI registro instalación frigorífica, {txt}"),
                 eici,
-                false,
+                Tipo::Repercutido,
             ));
             if !b.tasa_if.is_zero() {
-                lineas.push(importe_fijo(
-                    "Tasa de registro de instalación frigorífica (repercutida)".into(),
+                rep_if.push(importe_fijo(
+                    "Tasa de registro de instalación frigorífica".into(),
                     b.tasa_if,
-                    false,
+                    Tipo::Repercutido,
                 ));
             }
         }
-        c.partidas.push(PartidaLeg {
-            sufijo: "RSIF",
-            resumen: "Justificación del Reglamento de Seguridad para Instalaciones Frigoríficas (RSIF)".into(),
-            texto: "Justificación de la carga de refrigerante por circuito y local (RSIF e IF), incluido el \
-                    registro de la instalación frigorífica cuando proceda."
-                .into(),
-            lineas,
+    }
+
+    // 4. Visitas de la OCA
+    let visitas_oca = u32::from(proyecto) + e.segundas_visitas;
+    if visitas_oca > 0 && !b.oca_horas.is_zero() {
+        c.bloques.push(Bloque {
+            titulo: format!("Visitas de inspección de la OCA ({visitas_oca})"),
+            regla: format!("{} h por visita", corto(b.oca_horas)),
+            lineas: vec![por_unidad(
+                format!(
+                    "{}: preparación y asistencia a la visita de la OCA",
+                    Perfil::Tecnico.nombre()
+                ),
+                "h",
+                b.oca_horas * d(visitas_oca),
+                b.coste_tecnico,
+                Tipo::ManoObra,
+            )],
         });
     }
 
-    // 4. Desplazamiento
-    if e.km > b.km_umbral && e.viajes > 0 {
-        let v = d(e.viajes);
-        let mut lineas = vec![por_unidad(
-            format!(
-                "Kilometraje ({} km ida y vuelta × {} {})",
-                corto(e.km),
-                e.viajes,
-                if e.viajes == 1 { "viaje" } else { "viajes" }
-            ),
-            "km",
-            e.km * v,
-            b.km,
-            true,
-        )];
-        if e.horas_viaje > Decimal::ZERO {
-            lineas.push(Linea {
-                resumen: "Horas de viaje del técnico".into(),
-                unidad: "h".into(),
-                naturaleza: Naturaleza::ManoObra,
-                cantidad: e.horas_viaje * v,
-                precio: b.hora_viaje,
-                propia: true,
-            });
+    // 5. Desplazamientos
+    let viajes = e.visitas_obra + visitas_oca;
+    if viajes > 0 {
+        let km = if e.km > Decimal::ZERO { e.km } else { b.viaje_km };
+        let horas = if e.horas_viaje > Decimal::ZERO {
+            e.horas_viaje
+        } else {
+            b.viaje_horas
+        };
+        let v = d(viajes);
+        let mut lineas = Vec::new();
+        if !horas.is_zero() {
+            lineas.push(por_unidad(
+                format!("{}: horas de viaje", Perfil::Tecnico.nombre()),
+                "h",
+                horas * v,
+                b.coste_tecnico,
+                Tipo::ManoObra,
+            ));
         }
-        c.partidas.push(PartidaLeg {
-            sufijo: "DESP",
-            resumen: format!("Desplazamientos fuera de zona ({sigla})"),
-            texto: "Desplazamientos del técnico a obra e inspecciones fuera de la zona habitual.".into(),
-            lineas,
-        });
-    }
-
-    // 5. Repercutidos
-    if e.repercutir {
-        let lineas = repercutidos(b, e, &mut c.avisos);
+        if !km.is_zero() && !b.km.is_zero() {
+            lineas.push(por_unidad("Kilometraje".into(), "km", km * v, b.km, Tipo::Indirecto));
+        }
+        if !b.aparcamiento.is_zero() {
+            lineas.push(por_unidad(
+                "Aparcamiento".into(),
+                "ud",
+                v,
+                b.aparcamiento,
+                Tipo::Indirecto,
+            ));
+        }
+        if km > b.km_umbral && !b.dieta.is_zero() {
+            lineas.push(por_unidad("Dietas".into(), "ud", v, b.dieta, Tipo::Indirecto));
+        }
         if !lineas.is_empty() {
-            c.partidas.push(PartidaLeg {
-                sufijo: "REP",
-                resumen: format!("Tasas, inspección y visado repercutidos ({sigla})"),
-                texto: format!(
-                    "Tasas de la Comunidad Autónoma, tarifa de la entidad de inspección (EICI) y, en su caso, \
-                     derechos de visado de las {}, repercutidos sin IVA.",
-                    e.disciplina.nombre()
+            c.bloques.push(Bloque {
+                titulo: format!("Desplazamientos ({viajes} viajes)"),
+                regla: format!(
+                    "{} visitas de obra + {visitas_oca} de la OCA; {} km y {} h por viaje",
+                    e.visitas_obra,
+                    corto(km),
+                    corto(horas)
                 ),
                 lineas,
             });
         }
     }
 
-    // Totales y horas
-    for p in &c.partidas {
-        for l in &p.lineas {
-            if l.propia {
-                c.honorarios += l.importe();
-            } else {
-                c.repercutidos += l.importe();
-            }
+    // 6. Costes indirectos, gestión y beneficio
+    let base: Decimal = c.lineas().map(Linea::importe).sum();
+    if !b.margen.is_zero() {
+        let precio = redondear(base / CIEN, 3);
+        c.bloques.push(Bloque {
+            titulo: "Costes indirectos, gestión y beneficio".into(),
+            regla: format!("{} % sobre {}", corto(b.margen), eur(base)),
+            lineas: vec![Linea {
+                resumen: "Costes indirectos, gestión y beneficio de ingeniería".into(),
+                unidad: "%".into(),
+                cantidad: b.margen,
+                precio,
+                tipo: Tipo::Margen,
+            }],
+        });
+    }
+
+    // 7. Repercutidos
+    if e.repercutir {
+        let mut lineas = repercutidos(b, e, &mut c.avisos);
+        if e.segundas_visitas > 0 && !b.eici_segunda_visita.is_zero() {
+            lineas.push(por_unidad(
+                "EICI segunda visita o posterior".into(),
+                "ud",
+                d(e.segundas_visitas),
+                b.eici_segunda_visita,
+                Tipo::Repercutido,
+            ));
+        }
+        lineas.extend(rep_if);
+        if !lineas.is_empty() {
+            c.bloques.push(Bloque {
+                titulo: "Tasas, inspección y visados (repercutidos sin margen)".into(),
+                regla: "Tablas oficiales del año".into(),
+                lineas,
+            });
         }
     }
-    if b.hora_referencia > Decimal::ZERO {
-        c.horas = Some(redondear(c.honorarios / b.hora_referencia, 1));
+
+    for l in c.bloques.iter().flat_map(|b| &b.lineas) {
+        match l.tipo {
+            Tipo::ManoObra => {
+                c.coste += l.importe();
+                if l.unidad == "h" {
+                    c.horas += l.cantidad;
+                }
+            }
+            Tipo::Indirecto => c.coste += l.importe(),
+            Tipo::Margen => c.margen += l.importe(),
+            Tipo::Repercutido => c.repercutidos += l.importe(),
+        }
     }
     if e.pem <= Decimal::ZERO {
         c.avisos
-            .push("El PEM de la disciplina es cero: la tramitación queda en el mínimo.".into());
+            .push("El PEM de la disciplina es cero: los honorarios quedan en el mínimo.".into());
     }
+
+    c.resumen = format!("Legalización de {} mediante {doc}", e.disciplina.nombre());
+    c.texto = match e.disciplina {
+        Disciplina::Rite => format!(
+            "Legalización de las instalaciones térmicas (RITE) mediante {doc}{}. Incluye planos as-built, \
+             cálculos justificativos, libro de uso y mantenimiento, cumplimentación de la documentación \
+             3.1.5, aportación del CIE del instalador eléctrico, dirección de obra, asistencia a las visitas \
+             de inspección, desplazamientos y gestión del expediente ante el órgano competente de la \
+             Comunidad Autónoma{}.",
+            if proyecto && !e.ajeno {
+                ", incluida su redacción"
+            } else {
+                ""
+            },
+            if e.repercutir {
+                ", con tasas, inspección de la EICI y visados"
+            } else {
+                ""
+            }
+        ),
+        Disciplina::Pci => format!(
+            "Legalización de las instalaciones de protección contra incendios (RIPCI) mediante {doc}{}. \
+             Incluye planos as-built, cálculos justificativos, manual de uso y mantenimiento, dirección de \
+             obra, asistencia a las visitas de inspección, desplazamientos y gestión del expediente ante el \
+             órgano competente de la Comunidad Autónoma{}.",
+            if proyecto && !e.ajeno {
+                ", incluida su redacción"
+            } else {
+                ""
+            },
+            if e.repercutir {
+                ", con tasas, inspección de la EICI y visados"
+            } else {
+                ""
+            }
+        ),
+    };
     c
 }
 
@@ -864,7 +1011,7 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
     let n_viv = d(viviendas);
     let fijo = |r: &mut Vec<Linea>, txt: String, v: Decimal| {
         if !v.is_zero() {
-            r.push(importe_fijo(txt, v, false));
+            r.push(importe_fijo(txt, v, Tipo::Repercutido));
         }
     };
     match (e.disciplina, proyecto) {
@@ -916,7 +1063,7 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
                         "ud",
                         n_viv,
                         b.tasa_rite_memoria_vivienda,
-                        false,
+                        Tipo::Repercutido,
                     ));
                 }
                 let eici = if e.primario_frio {
@@ -930,7 +1077,7 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
                         "ud",
                         n_viv,
                         eici,
-                        false,
+                        Tipo::Repercutido,
                     ));
                 }
             } else {
@@ -1026,8 +1173,8 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
 
 // ------------------------------------------------------- en el presupuesto
 
-/// Código del subcapítulo de una disciplina.
-pub fn subcapitulo(disciplina: Disciplina) -> String {
+/// Código de la partida de una disciplina dentro del capítulo `LEG`.
+pub fn codigo_partida(disciplina: Disciplina) -> String {
     format!("{CAPITULO}-{}", disciplina.sigla())
 }
 
@@ -1048,9 +1195,8 @@ pub fn capitulos(p: &Presupuesto) -> Result<Vec<(String, String, Decimal)>, Erro
         .collect())
 }
 
-/// Escribe (o sustituye) el subcapítulo `LEG-<disciplina>` dentro de `LEG`.
-/// Las partidas llevan su descompuesto; si algo falla, el presupuesto queda
-/// como estaba.
+/// Escribe (o sustituye) la partida `LEG-<disciplina>` en el capítulo `LEG`
+/// con todo su descompuesto. Si algo falla, el presupuesto queda como estaba.
 pub fn aplicar(p: &mut Presupuesto, disciplina: Disciplina, calculo: &Calculo) -> Result<(), ErrorMotor> {
     let copia = p.clone();
     let r = aplicar_sin_deshacer(p, disciplina, calculo);
@@ -1065,24 +1211,31 @@ fn aplicar_sin_deshacer(p: &mut Presupuesto, disciplina: Disciplina, calculo: &C
     if !p.conceptos.contains_key(CAPITULO) {
         p.nuevo_capitulo(&raiz, CAPITULO, "LEGALIZACIÓN")?;
     }
-    let sub = subcapitulo(disciplina);
-    if p.conceptos.contains_key(&sub) {
-        p.quitar_y_purgar(CAPITULO, &sub)?;
-    }
-    p.nuevo_capitulo(CAPITULO, &sub, &format!("Legalización {}", disciplina.nombre()))?;
-    for partida in &calculo.partidas {
-        let codigo = format!("{sub}-{}", partida.sufijo);
-        let mut lineas = Vec::new();
-        for (i, l) in partida.lineas.iter().enumerate() {
-            let rc = format!("{codigo}-{:02}", i + 1);
-            p.insertar(Concepto::basico(&rc, &l.unidad, &l.resumen, l.naturaleza, l.precio))?;
-            lineas.push(LineaDescomposicion::new(rc, l.cantidad));
+    let codigo = codigo_partida(disciplina);
+    if p.conceptos.contains_key(&codigo) {
+        for padre in p.padres(&codigo) {
+            p.quitar_y_purgar(&padre, &codigo)?;
         }
-        let mut c = Concepto::partida(&codigo, "ud", &partida.resumen, lineas);
-        c.texto = Some(partida.texto.clone());
-        p.insertar(c)?;
-        p.anadir_linea(&sub, &codigo, Decimal::ONE)?;
     }
+    let mut lineas = Vec::new();
+    for (i, l) in calculo.lineas().enumerate() {
+        let rc = if l.tipo == Tipo::Margen {
+            format!("{codigo}%CI")
+        } else {
+            format!("{codigo}-{:02}", i + 1)
+        };
+        let concepto = if l.tipo == Tipo::Margen {
+            Concepto::porcentaje(&rc, &l.resumen)
+        } else {
+            Concepto::basico(&rc, &l.unidad, &l.resumen, l.naturaleza(), l.precio)
+        };
+        p.insertar(concepto)?;
+        lineas.push(LineaDescomposicion::new(rc, l.cantidad));
+    }
+    let mut c = Concepto::partida(&codigo, "ud", &calculo.resumen, lineas);
+    c.texto = Some(calculo.texto.clone());
+    p.insertar(c)?;
+    p.anadir_linea(CAPITULO, &codigo, Decimal::ONE)?;
     p.validar()
 }
 
@@ -1095,163 +1248,172 @@ mod tests {
         Baremo::ejemplo(2026)
     }
 
+    fn bloque<'a>(c: &'a Calculo, titulo: &str) -> Option<&'a Bloque> {
+        c.bloques.iter().find(|b| b.titulo.starts_with(titulo))
+    }
+
+    /// El honorario de baremo se reproduce (al céntimo de redondeo) con
+    /// horas a coste + margen.
+    fn honorario_bloque(c: &Calculo, titulo: &str) -> Decimal {
+        let coste = bloque(c, titulo).unwrap().importe();
+        redondear(coste * (CIEN + b().margen) / CIEN, 0)
+    }
+
     #[test]
-    fn tramos_acumulativos() {
-        // 1 % hasta 100.000 y 0,5 % del exceso: 150.000 → 1.000 + 250.
+    fn tramos_acumulativos_en_horas_por_perfil() {
+        // 1 % hasta 100.000 y 0,5 % del exceso: 150.000 → 1.250.
         let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(150000));
         let c = calcular(&b(), &e);
-        let tram = &c.partidas[0];
-        assert_eq!(tram.sufijo, "TRAM");
-        assert_eq!(tram.lineas.len(), 2);
-        assert_eq!(tram.importe(), dec!(1250));
+        let tram = bloque(&c, "Tramitación").unwrap();
+        assert!(tram.regla.contains("1.250,00"));
+        assert_eq!(tram.lineas.len(), 4); // senior, junior, técnico, documentación
+        assert!(tram.lineas.iter().all(|l| l.unidad == "h" && l.tipo == Tipo::ManoObra));
+        assert_eq!(honorario_bloque(&c, "Tramitación"), dec!(1250));
     }
 
     #[test]
-    fn minimo_por_expediente_y_por_vivienda() {
+    fn minimos_de_memoria_proyecto_y_vivienda() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(20000));
-        // Mínimo de memoria 300; en proyecto, 500.
-        assert_eq!(calcular(&b(), &e).partidas[0].importe(), dec!(300));
+        assert_eq!(honorario_bloque(&calcular(&b(), &e), "Tramitación"), dec!(300));
         e.documento = Documento::Proyecto;
-        assert_eq!(calcular(&b(), &e).partidas[0].importe(), dec!(500));
+        assert_eq!(honorario_bloque(&calcular(&b(), &e), "Tramitación"), dec!(500));
         e.documento = Documento::Memoria;
-        // 40 viviendas × 50 = 2.000 > 1 % de 80.000 = 800.
         e.pem = dec!(80000);
         e.viviendas = 40;
-        // En terciario el nº de viviendas no cuenta.
-        assert_eq!(calcular(&b(), &e).partidas[0].importe(), dec!(800));
+        // En terciario el nº de viviendas no cuenta: 1 % de 80.000.
+        assert_eq!(honorario_bloque(&calcular(&b(), &e), "Tramitación"), dec!(800));
         e.uso = Uso::Viviendas;
         let c = calcular(&b(), &e);
-        assert_eq!(c.partidas[0].lineas[0].cantidad, dec!(40));
-        assert_eq!(c.partidas[0].importe(), dec!(2000));
-        // Repercutidos por vivienda: tasa 3 + EICI 60.
-        let rep = c.partidas.iter().find(|p| p.sufijo == "REP").unwrap();
-        assert_eq!(rep.importe(), dec!(40) * dec!(63));
+        assert_eq!(honorario_bloque(&c, "Tramitación"), dec!(2000));
+        // Repercutidos por vivienda: tasa 3 + EICI 60, sin margen.
+        assert_eq!(c.repercutidos, dec!(40) * dec!(63));
     }
 
     #[test]
-    fn recargo_proyecto_ajeno() {
+    fn proyecto_propio_redaccion_y_ajeno_recargo() {
         let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Proyecto, dec!(10000));
+        let c = calcular(&b(), &e);
+        assert_eq!(honorario_bloque(&c, "Redacción"), dec!(600));
         e.ajeno = true;
-        // mínimo 500 + 20 %, y sin redacción.
         let c = calcular(&b(), &e);
-        assert_eq!(c.partidas[0].importe(), dec!(600));
-        assert!(!c.partidas.iter().any(|p| p.sufijo == "RED"));
-        // Proyecto propio: redacción 1,5 % de 10.000 = 150 < mínimo 600.
-        e.ajeno = false;
-        let c = calcular(&b(), &e);
-        assert_eq!(c.partidas[0].importe(), dec!(500));
-        assert_eq!(
-            c.partidas.iter().find(|p| p.sufijo == "RED").unwrap().importe(),
-            dec!(600)
-        );
+        assert!(bloque(&c, "Redacción").is_none());
+        assert_eq!(honorario_bloque(&c, "Tramitación"), dec!(600)); // 500 + 20 %
     }
 
     #[test]
-    fn proyecto_lleva_oca_y_visado_con_direccion_de_obra() {
-        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(200000));
-        e.potencia_kw = dec!(250);
-        let c = calcular(&b(), &e);
-        assert!(c.partidas.iter().any(|p| p.sufijo == "OCA"));
-        let rep = c.partidas.iter().find(|p| p.sufijo == "REP").unwrap();
-        // Visado: 100.000 × 0,002 + 100.000 × 0,001 = 300, dos veces (proyecto y D.O.).
-        let visados: Vec<_> = rep.lineas.iter().filter(|l| l.resumen.contains("visado")).collect();
-        assert_eq!(visados.len(), 2);
-        assert!(visados.iter().all(|l| l.importe() == dec!(300)));
-        // Tasa 50 + EICI 800 (hasta 1.000 kW).
-        assert_eq!(rep.importe(), dec!(50) + dec!(800) + dec!(600));
-        // Las memorias no llevan visado ni visita de OCA.
-        e.documento = Documento::Memoria;
-        let c = calcular(&b(), &e);
-        assert!(!c.partidas.iter().any(|p| p.sufijo == "OCA"));
-        assert!(
-            !c.partidas
-                .iter()
-                .flat_map(|p| &p.lineas)
-                .any(|l| l.resumen.contains("visado"))
-        );
-    }
-
-    #[test]
-    fn eici_por_encima_del_ultimo_tramo_de_potencia() {
+    fn visitas_oca_y_desplazamientos_a_coste_con_margen() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(50000));
-        e.potencia_kw = dec!(1250); // 800 + 10 × ceil(250/100) = 830
+        e.potencia_kw = dec!(120);
+        e.segundas_visitas = 1;
         let c = calcular(&b(), &e);
-        let rep = c.partidas.iter().find(|p| p.sufijo == "REP").unwrap();
+        // 2 visitas OCA × 2 h × 40.
+        assert_eq!(bloque(&c, "Visitas").unwrap().importe(), dec!(160));
+        // 3 viajes (1 de obra + 2 OCA): 3 h × 40 + 120 km × 0,25 + 3 × 10; sin dietas.
+        assert_eq!(
+            bloque(&c, "Desplazamientos").unwrap().importe(),
+            dec!(120) + dec!(30) + dec!(30)
+        );
+        // Lejos: dietas.
+        e.km = dec!(250);
+        e.horas_viaje = dec!(3);
+        let c = calcular(&b(), &e);
+        let desp = bloque(&c, "Desplazamientos").unwrap();
+        assert_eq!(
+            desp.importe(),
+            dec!(9) * dec!(40) + dec!(750) * dec!(0.25) + dec!(30) + dec!(90)
+        );
+        // Margen: 25 % sobre todo lo que no es repercutido.
+        let base: Decimal = c
+            .lineas()
+            .filter(|l| matches!(l.tipo, Tipo::ManoObra | Tipo::Indirecto))
+            .map(Linea::importe)
+            .sum();
+        assert_eq!(c.coste, base);
+        assert_eq!(c.margen, redondear(redondear(base / CIEN, 3) * dec!(25), 2));
+        // La EICI de segunda visita se repercute sin margen.
+        let rep = bloque(&c, "Tasas").unwrap();
         assert!(
             rep.lineas
                 .iter()
-                .any(|l| l.resumen.starts_with("EICI") && l.importe() == dec!(830))
+                .any(|l| l.resumen.contains("segunda visita") && l.importe() == dec!(300))
         );
     }
 
     #[test]
-    fn justificaciones_rsif_y_desplazamiento() {
-        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
-        e.justificar_rite = true;
-        e.circuitos_rsif = 3;
-        e.registro_if = Some(RegistroIf::MemoriaA2l);
-        e.km = dec!(120);
-        e.horas_viaje = dec!(2);
-        e.viajes = 2;
+    fn memoria_sin_visitas_oca() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(30000));
+        e.visitas_obra = 0;
         let c = calcular(&b(), &e);
-        let j = c.partidas.iter().find(|p| p.sufijo == "JRITE").unwrap();
-        assert_eq!(j.importe(), dec!(200)); // 0,2 % de 50.000 = 100 < mínimo 200
-        let rsif = c.partidas.iter().find(|p| p.sufijo == "RSIF").unwrap();
-        assert_eq!(rsif.importe(), dec!(300) + dec!(120) + dec!(35));
-        // 40 circuitos de 2 modelos: 2 × 100 + 38 × 20.
+        assert!(bloque(&c, "Visitas").is_none());
+        assert!(bloque(&c, "Desplazamientos").is_none());
+        assert!(!c.lineas().any(|l| l.resumen.contains("visado")));
+    }
+
+    #[test]
+    fn repercutidos_de_proyecto() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(200000));
+        e.potencia_kw = dec!(250);
+        let c = calcular(&b(), &e);
+        // Tasa 50 + EICI 800 + visado (200 + 100) × 2.
+        assert_eq!(c.repercutidos, dec!(50) + dec!(800) + dec!(600));
+        e.potencia_kw = dec!(1250); // 800 + 10 × ceil(250/100)
+        let c = calcular(&b(), &e);
+        assert!(
+            c.lineas()
+                .any(|l| l.resumen.starts_with("EICI proyecto") && l.importe() == dec!(830))
+        );
+        // PCI: tasa 10 × 30 bloques, EICI fila 2 col 2, presión, visado (200+50) × 2.
+        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Proyecto, dec!(150000));
+        e.instalaciones_pci = 5;
+        e.superficie = dec!(2000);
+        e.presion_diferencial = true;
+        assert_eq!(
+            calcular(&b(), &e).repercutidos,
+            dec!(300) + dec!(550) + dec!(150) + dec!(500)
+        );
+    }
+
+    #[test]
+    fn rsif_por_modelo_y_repetido_con_registro() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
         e.circuitos_rsif = 40;
         e.modelos_rsif = 2;
+        e.registro_if = Some(RegistroIf::MemoriaA2l);
         let c = calcular(&b(), &e);
-        let rsif = c.partidas.iter().find(|p| p.sufijo == "RSIF").unwrap();
-        assert_eq!(rsif.importe(), dec!(200) + dec!(760) + dec!(120) + dec!(35));
-        let desp = c.partidas.iter().find(|p| p.sufijo == "DESP").unwrap();
-        assert_eq!(desp.importe(), dec!(240) * dec!(0.25) + dec!(4) * dec!(40));
-        // Por debajo del umbral no hay desplazamiento.
-        e.km = dec!(40);
-        assert!(!calcular(&b(), &e).partidas.iter().any(|p| p.sufijo == "DESP"));
+        assert_eq!(honorario_bloque(&c, "Justificación RSIF"), dec!(200) + dec!(760));
+        assert!(
+            c.lineas()
+                .any(|l| l.tipo == Tipo::Repercutido && l.importe() == dec!(120))
+        );
+        assert!(
+            c.lineas()
+                .any(|l| l.tipo == Tipo::Repercutido && l.importe() == dec!(35))
+        );
     }
 
     #[test]
-    fn pci_proyecto_por_instalaciones_y_superficie() {
-        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Proyecto, dec!(150000));
-        e.instalaciones_pci = 5; // se queda en la última fila
-        e.superficie = dec!(2000); // segunda columna
-        e.presion_diferencial = true;
-        let c = calcular(&b(), &e);
-        let rep = c.partidas.iter().find(|p| p.sufijo == "REP").unwrap();
-        // Tasa: 10 × ceil(150.000 / 5.000) = 300; EICI 550; presión 150; visado 200+50 dos veces.
-        assert_eq!(rep.importe(), dec!(300) + dec!(550) + dec!(150) + dec!(500));
-        assert!(!c.partidas.iter().any(|p| p.sufijo == "JRITE"));
-    }
-
-    #[test]
-    fn horas_equivalentes_solo_cuentan_honorarios() {
-        let e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(100000));
-        let c = calcular(&b(), &e);
-        // Tramitación 1.000 + redacción 1.500 + OCA 100 (justificación RITE incluida).
-        assert_eq!(c.honorarios, dec!(1000) + dec!(1500) + dec!(100));
-        assert_eq!(c.horas, Some(dec!(65)));
-        assert!(c.repercutidos > Decimal::ZERO);
-    }
-
-    #[test]
-    fn aplicar_crea_y_sustituye_el_subcapitulo() {
+    fn aplicar_crea_una_partida_con_todo_el_descompuesto() {
         let mut p = ppto_core::ejemplos::suelo_radiante();
         let pem_antes = p.pem().unwrap();
-        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, pem_antes);
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, pem_antes);
+        e.potencia_kw = dec!(80);
+        e.segundas_visitas = 1;
         let c = calcular(&b(), &e);
         aplicar(&mut p, Disciplina::Rite, &c).unwrap();
+        // El presupuesto valora la partida igual que el cálculo (también el %).
         assert_eq!(p.pem().unwrap(), pem_antes + c.total());
-        // Repetir no duplica.
         aplicar(&mut p, Disciplina::Rite, &c).unwrap();
         assert_eq!(p.pem().unwrap(), pem_antes + c.total());
         assert_eq!(p.concepto(CAPITULO).unwrap().descomposicion.len(), 1);
-        // La base del PEM no incluye la legalización.
         let suma: Decimal = capitulos(&p).unwrap().iter().map(|x| x.2).sum();
         assert_eq!(suma, pem_antes);
-        let tram = p.concepto("LEG-RITE-TRAM").unwrap();
-        assert!(!tram.descomposicion.is_empty());
-        assert!(tram.texto.as_deref().unwrap().contains("as-built"));
+        let partida = p.concepto("LEG-RITE").unwrap();
+        assert_eq!(partida.descomposicion.len(), c.lineas().count());
+        assert!(p.concepto("LEG-RITE%CI").unwrap().naturaleza == Naturaleza::Porcentaje);
+        assert!(partida.texto.as_deref().unwrap().contains("as-built"));
+        // Las horas son mano de obra en el presupuesto.
+        let h = &partida.descomposicion[0].hijo;
+        assert_eq!(p.concepto(h).unwrap().naturaleza, Naturaleza::ManoObra);
     }
 
     #[test]
@@ -1267,9 +1429,11 @@ mod tests {
         let json = serde_json::to_string(&bs).unwrap();
         let de: Baremos = serde_json::from_str(&json).unwrap();
         assert_eq!(de, bs);
-        // Campos que faltan toman su valor por defecto.
-        let parcial: Baremos = serde_json::from_str(r#"{"versiones":[{"anio":2026,"km":"0.26"}]}"#).unwrap();
+        // Campos que faltan toman su valor por defecto (y los desconocidos se ignoran).
+        let parcial: Baremos =
+            serde_json::from_str(r#"{"versiones":[{"anio":2026,"km":"0.26","visita_oca":"200"}]}"#).unwrap();
         assert_eq!(parcial.versiones[0].km, dec!(0.26));
         assert!(parcial.versiones[0].visado_direccion_obra);
+        assert_eq!(parcial.versiones[0].reparto_tramitacion.tecnico, dec!(30));
     }
 }

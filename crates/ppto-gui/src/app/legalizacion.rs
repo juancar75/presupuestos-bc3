@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Ventana «Legalización»: costes de tramitación, visitas de la OCA,
-//! justificaciones RITE/RSIF, desplazamiento y repercutidos (tasas, EICI,
-//! visado) como partidas descompuestas en el capítulo `LEG`.
+//! Ventana «Legalización»: una partida por disciplina en el capítulo `LEG`
+//! con todos los costes en el descompuesto (horas por perfil, visitas de la
+//! OCA, desplazamientos, costes indirectos y beneficio, y tasas, EICI y
+//! visados repercutidos).
 //!
 //! El baremo (honorarios y tablas por año) está en `legalizacion.json`, en la
 //! carpeta de configuración, fuera del repositorio.
@@ -11,50 +12,66 @@ use eframe::egui::{self, Color32, RichText};
 use ppto_core::Decimal;
 use ppto_core::formato::{eur, leer, num};
 use ppto_legalizacion::{
-    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, RegistroIf, Tramo, Uso, aplicar, calcular, capitulos,
+    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, RegistroIf, Tipo, Tramo, Uso, aplicar, calcular,
+    capitulos,
 };
 use std::path::PathBuf;
 
-/// Honorarios propios editables en la ventana (las tablas oficiales, en el JSON).
-const CAMPOS: [&str; 17] = [
+/// Honorarios y costes editables en la ventana (las tablas oficiales y los
+/// repartos de horas por perfil, en el JSON).
+const CAMPOS: [&str; 24] = [
     "Mínimo tramitación proyecto (€)",
     "Mínimo tramitación memoria (€)",
-    "Mínimo redacción proyecto propio (€)",
-    "RSIF circuito repetido (€)",
     "Mínimo por vivienda (€)",
     "Recargo proyecto ajeno (%)",
-    "Visita de la OCA (€)",
-    "Segunda visita (€)",
+    "Mínimo redacción proyecto propio (€)",
     "Justificación RITE (% PEM)",
     "Justificación RITE mínimo (€)",
-    "RSIF por circuito de cada modelo (€)",
+    "RSIF circuito de cada modelo (€)",
+    "RSIF circuito repetido (€)",
     "RSIF mínimo (€)",
+    "Coste ingeniero senior (€/h)",
+    "Coste ingeniero junior (€/h)",
+    "Coste técnico (€/h)",
+    "Coste documentación (€/h)",
+    "Costes indirectos y beneficio (%)",
+    "Horas por visita OCA",
+    "Viaje habitual: km ida y vuelta",
+    "Viaje habitual: horas",
     "Kilometraje (€/km)",
-    "Umbral desplazamiento (km)",
-    "Hora de viaje (€/h)",
-    "Hora de referencia (€/h)",
+    "Aparcamiento (€/viaje)",
+    "Dieta (€/viaje)",
+    "Dietas a partir de (km)",
     "EICI 2ª visita (€)",
+    "Tasa registro frigorífica (€)",
 ];
 
 fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
     match i {
         0 => &mut b.tramitacion_minimo,
         1 => &mut b.tramitacion_minimo_memoria,
-        2 => &mut b.redaccion_minimo,
-        3 => &mut b.rsif_repetido,
-        4 => &mut b.minimo_vivienda,
-        5 => &mut b.recargo_ajeno,
-        6 => &mut b.visita_oca,
-        7 => &mut b.segunda_visita,
-        8 => &mut b.justif_rite_pct,
-        9 => &mut b.justif_rite_minimo,
-        10 => &mut b.rsif_circuito,
-        11 => &mut b.rsif_minimo,
-        12 => &mut b.km,
-        13 => &mut b.km_umbral,
-        14 => &mut b.hora_viaje,
-        15 => &mut b.hora_referencia,
-        _ => &mut b.eici_segunda_visita,
+        2 => &mut b.minimo_vivienda,
+        3 => &mut b.recargo_ajeno,
+        4 => &mut b.redaccion_minimo,
+        5 => &mut b.justif_rite_pct,
+        6 => &mut b.justif_rite_minimo,
+        7 => &mut b.rsif_circuito,
+        8 => &mut b.rsif_repetido,
+        9 => &mut b.rsif_minimo,
+        10 => &mut b.coste_senior,
+        11 => &mut b.coste_junior,
+        12 => &mut b.coste_tecnico,
+        13 => &mut b.coste_documentacion,
+        14 => &mut b.margen,
+        15 => &mut b.oca_horas,
+        16 => &mut b.viaje_km,
+        17 => &mut b.viaje_horas,
+        18 => &mut b.km,
+        19 => &mut b.aparcamiento,
+        20 => &mut b.dieta,
+        21 => &mut b.km_umbral,
+        22 => &mut b.eici_segunda_visita,
+        _ => &mut b.tasa_if,
     }
 }
 
@@ -418,17 +435,25 @@ impl Aplicacion {
                                 );
                             });
                         ui.end_row();
-                        ui.label("Segundas visitas");
+                        ui.label("Visitas de dirección de obra");
+                        numero(ui, &mut v.e.visitas_obra);
+                        ui.label("Segundas visitas OCA");
                         numero(ui, &mut v.e.segundas_visitas);
-                        ui.checkbox(&mut v.e.repercutir, "Repercutir tasas, EICI y visado");
                         ui.end_row();
                         ui.label("Km ida y vuelta por viaje");
-                        caja(ui, &mut v.km, 70.0);
-                        ui.label("Horas de viaje por viaje");
-                        caja(ui, &mut v.horas, 70.0);
+                        ui.add(
+                            egui::TextEdit::singleline(&mut v.km)
+                                .hint_text(texto(baremo.viaje_km))
+                                .desired_width(70.0),
+                        );
+                        ui.label("Horas por viaje");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut v.horas)
+                                .hint_text(texto(baremo.viaje_horas))
+                                .desired_width(70.0),
+                        );
                         ui.end_row();
-                        ui.label("Viajes");
-                        numero(ui, &mut v.e.viajes);
+                        ui.checkbox(&mut v.e.repercutir, "Repercutir tasas, EICI y visado");
                         ui.end_row();
                     });
                     ui.separator();
@@ -439,47 +464,46 @@ impl Aplicacion {
                     for a in &c.avisos {
                         ui.label(RichText::new(a).color(Color32::from_rgb(220, 150, 40)));
                     }
+                    let codigo = ppto_legalizacion::codigo_partida(e.disciplina);
+                    ui.label(RichText::new(format!("{codigo}  {}", c.resumen)).strong());
                     egui::Grid::new("leg_previa")
                         .striped(true)
                         .num_columns(4)
                         .show(ui, |ui| {
-                            for t in ["Partida / línea", "Cantidad", "Precio €", "Importe €"] {
+                            for t in ["Línea del descompuesto", "Cantidad", "Precio €", "Importe €"] {
                                 ui.label(RichText::new(t).strong());
                             }
                             ui.end_row();
-                            for p in &c.partidas {
-                                ui.label(RichText::new(&p.resumen).strong());
-                                ui.label("1 ud");
+                            for bl in &c.bloques {
+                                ui.label(RichText::new(&bl.titulo).strong())
+                                    .on_hover_text(&bl.regla);
+                                ui.label(RichText::new(&bl.regla).small().weak());
                                 ui.label("");
-                                ui.label(RichText::new(eur(p.importe())).strong());
+                                ui.label(RichText::new(eur(bl.importe())).strong());
                                 ui.end_row();
-                                for l in &p.lineas {
-                                    let t = if l.propia {
-                                        l.resumen.clone()
+                                for l in &bl.lineas {
+                                    ui.label(RichText::new(format!("   {}", l.resumen)).weak());
+                                    ui.label(format!("{} {}", texto(l.cantidad), l.unidad));
+                                    ui.label(if l.tipo == Tipo::Margen {
+                                        format!("{} (base/100)", eur(l.precio))
                                     } else {
-                                        format!("{} ·", l.resumen)
-                                    };
-                                    ui.label(RichText::new(format!("   {t}")).weak());
-                                    ui.label(format!(
-                                        "{} {}",
-                                        num(l.cantidad.normalize(), l.cantidad.normalize().scale()),
-                                        l.unidad
-                                    ));
-                                    ui.label(eur(l.precio));
+                                        eur(l.precio)
+                                    });
                                     ui.label(eur(l.importe()));
                                     ui.end_row();
                                 }
                             }
                         });
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("Honorarios: {} €", eur(c.honorarios))).strong());
-                        if let Some(h) = c.horas {
-                            ui.label(format!("≈ {} h a {} €/h", num(h, 1), eur(baremo.hora_referencia)));
-                        }
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(format!("Coste: {} € ({} h)", eur(c.coste), num(c.horas, 1)));
+                        ui.separator();
+                        ui.label(format!("Indirectos y beneficio: {} €", eur(c.margen)));
+                        ui.separator();
+                        ui.label(RichText::new(format!("Honorarios: {} €", eur(c.honorarios()))).strong());
                         ui.separator();
                         ui.label(format!("Repercutidos: {} €", eur(c.repercutidos)));
                         ui.separator();
-                        ui.label(RichText::new(format!("Total: {} €", eur(c.total()))).strong());
+                        ui.label(RichText::new(format!("Total partida: {} €", eur(c.total()))).strong());
                     });
                     if let Some((m, error)) = &v.mensaje {
                         let col = if *error {
@@ -489,18 +513,15 @@ impl Aplicacion {
                         };
                         ui.label(RichText::new(m).color(col));
                     }
-                    let sub = ppto_legalizacion::subcapitulo(e.disciplina);
-                    let existe = self.p.conceptos.contains_key(&sub);
+                    let existe = self.p.conceptos.contains_key(&codigo);
                     let rotulo = if existe {
-                        format!("Sustituir el capítulo {sub}")
+                        format!("Sustituir la partida {codigo}")
                     } else {
-                        format!("Crear el capítulo {sub}")
+                        format!("Crear la partida {codigo}")
                     };
                     if ui
-                        .add_enabled(baremo.anio != 0 && !c.partidas.is_empty(), egui::Button::new(rotulo))
-                        .on_hover_text(
-                            "Partidas descompuestas dentro del capítulo LEG (LEGALIZACIÓN). Se puede deshacer.",
-                        )
+                        .add_enabled(baremo.anio != 0, egui::Button::new(rotulo))
+                        .on_hover_text("Una partida con todo el descompuesto en el capítulo LEG (LEGALIZACIÓN). Se puede deshacer.")
                         .clicked()
                     {
                         crear = Some((e.disciplina, c));
@@ -515,8 +536,8 @@ impl Aplicacion {
                     self.marcar_cambio();
                     v.mensaje = Some((
                         format!(
-                            "Capítulo {} creado: {} €.",
-                            ppto_legalizacion::subcapitulo(disciplina),
+                            "Partida {} creada: {} €.",
+                            ppto_legalizacion::codigo_partida(disciplina),
                             eur(c.total())
                         ),
                         false,

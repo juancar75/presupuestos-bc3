@@ -17,18 +17,17 @@ versionado [semántico](https://semver.org/lang/es/).
   tarifa de un año, descuentos y búsqueda de partidas).
 
 ### Añadido — legalización
-- Crate `ppto-legalizacion` y ventana «Legalización…» (uso terciario o
-  viviendas): crea en el capítulo
-  `LEG` las partidas descompuestas de una disciplina (RITE o PCI): coste de
-  tramitación (% del PEM por tramos con mínimo de memoria, de proyecto y
-  por vivienda, recargo por proyecto de otro técnico), redacción del
-  proyecto propio, visita de la OCA en proyectos y segundas visitas,
-  justificación RITE aparte y RSIF por modelo y circuito repetido (con
-  registro frigorífico), desplazamiento por km y horas, y tasas, EICI y visado
-  repercutidos (visado solo en proyectos, con el de dirección de obra).
-- Baremo por año en `legalizacion.json` (carpeta de configuración, fuera del
-  repositorio); los honorarios se editan en la ventana. La vista previa
-  traduce los honorarios a horas a una tarifa de referencia.
+- Crate `ppto-legalizacion` y ventana «Legalización…» (RITE o PCI, memoria o
+  proyecto, terciario o viviendas): una partida por disciplina en el
+  capítulo `LEG` con todo el descompuesto: horas por perfil a su coste
+  (tramitación y dirección de obra, redacción del proyecto propio,
+  justificaciones RITE y RSIF), visitas de la OCA, desplazamientos (horas,
+  km, aparcamiento, dietas), costes indirectos y beneficio, y tasas, EICI y
+  visados repercutidos sin margen.
+- Los honorarios salen de un baremo por año (% del PEM por tramos con
+  mínimos por expediente y por vivienda, recargo por proyecto ajeno, RSIF
+  por modelo y circuito repetido) en `legalizacion.json`, fuera del
+  repositorio; honorarios y costes se editan en la ventana.
 
 ## [0.1.0-alpha.3] - 2026-10-16
 
