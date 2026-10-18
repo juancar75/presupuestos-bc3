@@ -1369,27 +1369,30 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     }
 
     // 5b. Jornadas completas: el total de horas se redondea al alza a jornadas
-    // y la diferencia se añade al primer bloque, repartida como él.
+    // y la diferencia va en un bloque propio, repartida como la tarea principal.
     let mut horas_mo: Decimal = c.lineas().filter(|l| l.unidad == "h").map(|l| l.cantidad).sum();
     if b.horas_jornada > Decimal::ZERO && horas_mo > Decimal::ZERO {
         let jornadas = (horas_mo / b.horas_jornada).ceil();
         let extra = jornadas * b.horas_jornada - horas_mo;
-        if extra > Decimal::ZERO
-            && let Some(bl) = c.bloques.first_mut()
-        {
+        if extra > Decimal::ZERO {
             let mut nuevas = horas_perfil(b, "ajuste a jornada completa", extra, reparto);
             // El redondeo de cada línea no debe descuadrar el total.
             let suma: Decimal = nuevas.iter().map(|l| l.cantidad).sum();
             if let Some(ultima) = nuevas.last_mut() {
                 ultima.cantidad += extra - suma;
             }
-            bl.lineas.extend(nuevas);
-            bl.regla.push_str(&format!(
-                "; + {} h para completar {} jornadas de {} h",
-                num(extra, 1),
-                jornadas,
-                corto(b.horas_jornada)
-            ));
+            // Antes de los desplazamientos no hace falta: va al final de la mano de obra.
+            c.bloques.push(Bloque {
+                titulo: "Ajuste a jornada completa".into(),
+                regla: format!(
+                    "{} h para completar {} jornadas de {} h ({} h de trabajo)",
+                    num(extra, 1),
+                    jornadas,
+                    corto(b.horas_jornada),
+                    num(horas_mo, 1)
+                ),
+                lineas: nuevas,
+            });
             horas_mo = jornadas * b.horas_jornada;
         }
     }
@@ -1890,9 +1893,10 @@ mod tests {
         let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(7000));
         let c = calcular(&Baremo::ejemplo(2026), &e);
         assert_eq!(c.horas, dec!(16));
-        let m = bloque(&c, "Elaboración").unwrap();
-        assert!(m.regla.contains("2 jornadas de 8 h"));
-        assert!(m.lineas.iter().any(|l| l.resumen.contains("ajuste a jornada completa")));
+        let a = bloque(&c, "Ajuste a jornada completa").unwrap();
+        assert!(a.regla.contains("2 jornadas de 8 h"));
+        // La memoria muestra sus horas reales: 4 h + 0,4 × 0,7.
+        assert_eq!(horas(&c, "Elaboración"), dec!(4.28));
         // Sin jornada no se redondea.
         assert!(calcular(&b(), &e).horas < dec!(11));
     }
