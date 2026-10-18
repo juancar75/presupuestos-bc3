@@ -12,7 +12,7 @@ use eframe::egui::{self, Color32, RichText};
 use ppto_core::Decimal;
 use ppto_core::formato::{eur, leer, num};
 use ppto_legalizacion::{
-    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, RegistroIf, Tamano, Tipo, Tramo, Uso, aplicar,
+    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, RegistroIf, Rol, Tamano, Tipo, Tramo, Uso, aplicar,
     calcular, capitulos,
 };
 use std::path::PathBuf;
@@ -512,6 +512,13 @@ impl Aplicacion {
                         ));
                     }
                     ui.horizontal(|ui| {
+                        ui.label("Factura:");
+                        ui.radio_value(&mut v.e.rol, Rol::Instalador, "Instalador")
+                            .on_hover_text("La partida va a coste; el margen es el de la obra");
+                        ui.radio_value(&mut v.e.rol, Rol::Ingenieria, "Ingeniería")
+                            .on_hover_text("Margen propio según el tamaño del encargo");
+                    });
+                    ui.horizontal(|ui| {
                         ui.label("Uso:");
                         ui.radio_value(&mut v.e.uso, Uso::Terciario, "Terciario");
                         ui.radio_value(&mut v.e.uso, Uso::Viviendas, "Viviendas");
@@ -667,6 +674,13 @@ impl Aplicacion {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(format!("Coste: {} € ({} h)", eur(c.coste), num(c.horas, 1)));
                         ui.separator();
+                        if v.e.rol == Rol::Instalador {
+                            ui.label(format!(
+                                "Margen: el de la obra (costes indirectos {} % por partida; margen sobre venta {} % en «Resumen y venta»)",
+                                num(self.p.costes_indirectos, 2),
+                                num(self.margen, 2)
+                            ));
+                        } else {
                         ui.label("Encargo");
                         egui::ComboBox::from_id_salt("leg_tamano")
                             .selected_text(match v.e.tamano {
@@ -680,6 +694,7 @@ impl Aplicacion {
                                 }
                             });
                         ui.label(format!("Indirectos y beneficio {} %: {} €", texto(c.pct_margen), eur(c.margen)));
+                        }
                         ui.separator();
                         ui.label(RichText::new(format!("Honorarios: {} €", eur(c.honorarios()))).strong());
                         ui.separator();
@@ -687,13 +702,21 @@ impl Aplicacion {
                         ui.separator();
                         ui.label(RichText::new(format!("Total partida: {} €", eur(c.total()))).strong());
                     });
+                    // En el rol instalador, la tarifa con el margen de la obra.
+                    let tarifa = if v.e.rol == Rol::Instalador && self.margen < Decimal::ONE_HUNDRED {
+                        c.honorarios() * (Decimal::ONE_HUNDRED + self.p.costes_indirectos)
+                            / (Decimal::ONE_HUNDRED - self.margen)
+                    } else {
+                        c.honorarios()
+                    };
                     if c.referencia > Decimal::ZERO {
-                        let dif = (c.honorarios() - c.referencia) * Decimal::ONE_HUNDRED / c.referencia;
+                        let dif = (tarifa - c.referencia) * Decimal::ONE_HUNDRED / c.referencia;
                         ui.label(
                             RichText::new(format!(
-                                "Referencia de mercado: {} € · nuestra tarifa {} € ({}{} %)",
+                                "Referencia de mercado: {} € · nuestra tarifa{} {} € ({}{} %)",
                                 eur(c.referencia),
-                                eur(c.honorarios()),
+                                if v.e.rol == Rol::Instalador { " con el margen de la obra" } else { "" },
+                                eur(tarifa),
                                 if dif >= Decimal::ZERO { "+" } else { "" },
                                 num(dif, 0)
                             ))

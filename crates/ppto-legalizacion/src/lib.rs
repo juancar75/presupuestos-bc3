@@ -173,6 +173,15 @@ impl Horas {
     }
 }
 
+/// Quién factura la legalización: el instalador (dentro del presupuesto de
+/// obra: la partida va a coste y el margen es el de la obra) o la ingeniería
+/// (margen propio según el tamaño del encargo).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Rol {
+    Instalador,
+    Ingenieria,
+}
+
 /// Tamaño del encargo: decide el margen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tamano {
@@ -278,7 +287,8 @@ pub struct Baremo {
     pub coste_junior: Decimal,
     pub coste_tecnico: Decimal,
     pub coste_documentacion: Decimal,
-    /// Costes indirectos, gestión y beneficio (%) de los encargos pequeños.
+    /// Rol ingeniería: costes indirectos, gestión y beneficio (%) de los
+    /// encargos pequeños.
     pub margen: Decimal,
     /// Reparto de horas de la tramitación de proyectos y de memorias.
     pub reparto_tramitacion: Reparto,
@@ -743,7 +753,9 @@ pub struct Expediente {
     pub horas_viaje: Decimal,
     /// Repercutir tasas, EICI y visado (si no, los paga la propiedad).
     pub repercutir: bool,
-    /// Tamaño del encargo para el margen (`None` = según las horas).
+    /// Rol que factura (instalador por defecto).
+    pub rol: Rol,
+    /// Rol ingeniería: tamaño del encargo para el margen (`None` = según las horas).
     pub tamano: Option<Tamano>,
 }
 
@@ -784,6 +796,7 @@ impl Expediente {
             km: Decimal::ZERO,
             horas_viaje: Decimal::ZERO,
             repercutir: true,
+            rol: Rol::Instalador,
             tamano: None,
         }
     }
@@ -942,7 +955,8 @@ pub struct Calculo {
     pub repercutidos: Decimal,
     /// Horas de mano de obra (incluidas las de viaje).
     pub horas: Decimal,
-    /// Tamaño aplicado y su margen (%).
+    /// Rol ingeniería: tamaño aplicado y margen (% sobre coste). En el rol
+    /// instalador no hay margen en la partida.
     pub tamano: Option<Tamano>,
     pub pct_margen: Decimal,
     /// Honorarios de referencia de mercado (baremo en % del PEM), para comparar.
@@ -1345,12 +1359,20 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
         }
     }
 
-    // 6. Costes indirectos, gestión y beneficio (según tamaño del encargo)
-    let tamano = e.tamano.unwrap_or_else(|| b.tamano_por_horas(horas_mo));
-    let pct = b.margen_de(tamano);
-    c.tamano = Some(tamano);
-    c.pct_margen = pct;
+    // 6. Margen: instalador, sobre venta; ingeniería, según tamaño del encargo
     let base: Decimal = c.lineas().map(Linea::importe).sum();
+    // Rol instalador: sin margen en la partida; lo pone la obra (sus costes
+    // indirectos y su margen sobre venta), como al resto de partidas.
+    let tamano = e.tamano.unwrap_or_else(|| b.tamano_por_horas(horas_mo));
+    let pct = if e.rol == Rol::Ingenieria {
+        b.margen_de(tamano)
+    } else {
+        Decimal::ZERO
+    };
+    if e.rol == Rol::Ingenieria {
+        c.tamano = Some(tamano);
+        c.pct_margen = pct;
+    }
     if !pct.is_zero() {
         let precio = redondear(base / CIEN, 3);
         c.bloques.push(Bloque {
@@ -1732,6 +1754,7 @@ mod tests {
     fn horas_por_tarea_a_coste_por_perfil() {
         // Memoria: 4 h + 0,4 h por 10.000 € → 150.000 € = 10 h.
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(150000));
+        e.rol = Rol::Ingenieria;
         e.justificar_rite = false;
         e.circuitos_rsif = 0;
         e.visitas_obra = 0;
@@ -1881,8 +1904,20 @@ mod tests {
     }
 
     #[test]
+    fn rol_instalador_va_a_coste() {
+        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
+        assert_eq!(e.rol, Rol::Instalador);
+        let c = calcular(&b(), &e);
+        assert_eq!(c.tamano, None);
+        assert_eq!(c.margen, Decimal::ZERO);
+        assert!(!c.lineas().any(|l| l.tipo == Tipo::Margen));
+        assert_eq!(c.honorarios(), c.coste);
+    }
+
+    #[test]
     fn margen_segun_tamano_del_encargo() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(400000));
+        e.rol = Rol::Ingenieria;
         e.potencia_calor_kw = dec!(300);
         let c = calcular(&b(), &e);
         assert!(c.horas >= dec!(80));
@@ -2036,6 +2071,7 @@ mod tests {
         let pem_antes = p.pem().unwrap();
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, pem_antes);
         e.potencia_calor_kw = dec!(80);
+        e.rol = Rol::Ingenieria; // con línea porcentual de margen
         e.segundas_visitas = 1;
         let c = calcular(&Baremo::ejemplo(2026), &e);
         assert_eq!(c.horas % dec!(8), Decimal::ZERO);
