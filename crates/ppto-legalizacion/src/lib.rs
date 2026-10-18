@@ -496,8 +496,12 @@ pub struct Expediente {
     pub uso: Uso,
     /// Nº de viviendas (solo con uso Viviendas; 1 = unifamiliar).
     pub viviendas: u32,
-    /// RITE: potencia térmica (kW) para la EICI de proyecto.
-    pub potencia_kw: Decimal,
+    /// RITE: suma de las potencias térmicas nominales de los generadores de
+    /// calor y, por separado, de los de frío del edificio (RITE art. 15.2).
+    pub potencia_calor_kw: Decimal,
+    pub potencia_frio_kw: Decimal,
+    /// RITE: edificio de viviendas con sala de máquinas (cambia la EICI).
+    pub sala_maquinas: bool,
     /// RITE: circuito primario frigorífico.
     pub primario_frio: bool,
     /// PCI: nº de instalaciones (extintores, BIE, detección…).
@@ -540,7 +544,9 @@ impl Expediente {
             ajeno: false,
             uso: Uso::Terciario,
             viviendas: 1,
-            potencia_kw: Decimal::ZERO,
+            potencia_calor_kw: Decimal::ZERO,
+            potencia_frio_kw: Decimal::ZERO,
+            sala_maquinas: false,
             primario_frio: false,
             instalaciones_pci: 1,
             superficie: Decimal::ZERO,
@@ -554,6 +560,28 @@ impl Expediente {
             km: Decimal::ZERO,
             horas_viaje: Decimal::ZERO,
             repercutir: true,
+        }
+    }
+
+    /// Potencia que decide la documentación RITE: la mayor de la suma de
+    /// generadores de calor y la de frío (art. 15.2).
+    pub fn potencia(&self) -> Decimal {
+        self.potencia_calor_kw.max(self.potencia_frio_kw)
+    }
+
+    /// Documento que exige el RITE (art. 15): proyecto por encima de 70 kW,
+    /// memoria técnica de 5 a 70 kW y ninguno por debajo de 5 kW. `None` si no
+    /// es RITE o no se conoce la potencia.
+    pub fn documento_exigido(&self) -> Option<Option<Documento>> {
+        let p = self.potencia();
+        if self.disciplina != Disciplina::Rite || p.is_zero() {
+            None
+        } else if p > d(70) {
+            Some(Some(Documento::Proyecto))
+        } else if p >= d(5) {
+            Some(Some(Documento::Memoria))
+        } else {
+            Some(None)
         }
     }
 
@@ -1003,6 +1031,21 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
             Tipo::Repercutido => c.repercutidos += l.importe(),
         }
     }
+    match e.documento_exigido() {
+        Some(Some(Documento::Proyecto)) if !proyecto => c.avisos.push(format!(
+            "Con {} kW (suma de generadores, RITE art. 15.2) hace falta proyecto, no memoria técnica.",
+            corto(e.potencia())
+        )),
+        Some(Some(Documento::Memoria)) if proyecto => c.avisos.push(format!(
+            "Con {} kW basta con memoria técnica (RITE art. 15); el proyecto es opcional.",
+            corto(e.potencia())
+        )),
+        Some(None) => c.avisos.push(format!(
+            "Con {} kW (menos de 5 kW) el RITE no exige memoria ni proyecto.",
+            corto(e.potencia())
+        )),
+        _ => {}
+    }
     if e.pem <= Decimal::ZERO {
         c.avisos
             .push("El PEM de la disciplina es cero: los honorarios quedan en el mínimo.".into());
@@ -1080,7 +1123,7 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
                 ),
                 None => avisos.push("La tabla de tasas RITE de proyecto no cubre este PEM.".into()),
             }
-            if viviendas > 0 && e.potencia_kw < d(70) {
+            if viviendas > 0 && !e.sala_maquinas {
                 let v = escalon(&b.eici_rite_viviendas, n_viv)
                     .unwrap_or(b.eici_rite_viviendas_base + b.eici_rite_por_vivienda * n_viv);
                 fijo(
@@ -1089,19 +1132,16 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
                     v,
                 );
             } else {
-                if e.potencia_kw < d(70) {
-                    avisos.push("Proyecto RITE con menos de 70 kW: revise si basta con memoria técnica.".into());
-                }
                 let ultimo = b.eici_rite_kw.last().and_then(|tr| tr.hasta);
-                let v = match escalon(&b.eici_rite_kw, e.potencia_kw) {
+                let v = match escalon(&b.eici_rite_kw, e.potencia()) {
                     Some(v) => v,
                     None => {
                         let tope = ultimo.unwrap_or(Decimal::ZERO);
                         let base = b.eici_rite_kw.last().map_or(Decimal::ZERO, |tr| tr.valor);
-                        base + b.eici_rite_por_100kw * ((e.potencia_kw - tope) / CIEN).ceil()
+                        base + b.eici_rite_por_100kw * ((e.potencia() - tope) / CIEN).ceil()
                     }
                 };
-                fijo(&mut r, format!("EICI proyecto RITE ({} kW)", num(e.potencia_kw, 0)), v);
+                fijo(&mut r, format!("EICI proyecto RITE ({} kW)", num(e.potencia(), 0)), v);
             }
             if e.primario_frio {
                 fijo(
@@ -1385,7 +1425,7 @@ mod tests {
     #[test]
     fn visitas_oca_y_desplazamientos_a_coste_con_margen() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(50000));
-        e.potencia_kw = dec!(120);
+        e.potencia_calor_kw = dec!(120);
         e.segundas_visitas = 1;
         let c = calcular(&b(), &e);
         // 2 visitas OCA × 2 h × 40.
@@ -1437,6 +1477,39 @@ mod tests {
     }
 
     #[test]
+    fn documentacion_segun_potencia_rite_art_15() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(300000));
+        assert_eq!(e.documento_exigido(), None);
+        // 40 viviendas con 4,5 kW de frío cada una: 180 kW → proyecto.
+        e.uso = Uso::Viviendas;
+        e.viviendas = 40;
+        e.potencia_calor_kw = dec!(160);
+        e.potencia_frio_kw = dec!(180);
+        assert_eq!(e.potencia(), dec!(180));
+        assert_eq!(e.documento_exigido(), Some(Some(Documento::Proyecto)));
+        assert!(
+            calcular(&b(), &e)
+                .avisos
+                .iter()
+                .any(|a| a.contains("hace falta proyecto"))
+        );
+        // En proyecto, EICI de edificio de viviendas (sin sala de máquinas).
+        e.documento = Documento::Proyecto;
+        let c = calcular(&b(), &e);
+        assert!(c.avisos.is_empty());
+        assert!(c.lineas().any(|l| l.resumen.contains("edificio de 40 viviendas")));
+        // Con sala de máquinas, por potencia.
+        e.sala_maquinas = true;
+        assert!(calcular(&b(), &e).lineas().any(|l| l.resumen.contains("(180 kW)")));
+        e.potencia_calor_kw = dec!(12);
+        e.potencia_frio_kw = dec!(9);
+        assert_eq!(e.documento_exigido(), Some(Some(Documento::Memoria)));
+        e.potencia_calor_kw = dec!(4);
+        e.potencia_frio_kw = dec!(3.5);
+        assert_eq!(e.documento_exigido(), Some(None));
+    }
+
+    #[test]
     fn memoria_sin_visitas_oca() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(30000));
         e.visitas_obra = 0;
@@ -1449,11 +1522,11 @@ mod tests {
     #[test]
     fn repercutidos_de_proyecto() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(200000));
-        e.potencia_kw = dec!(250);
+        e.potencia_calor_kw = dec!(250);
         let c = calcular(&b(), &e);
         // Tasa 50 + EICI 800 + visado (200 + 100) × 2.
         assert_eq!(c.repercutidos, dec!(50) + dec!(800) + dec!(600));
-        e.potencia_kw = dec!(1250); // 800 + 10 × ceil(250/100)
+        e.potencia_calor_kw = dec!(1250); // 800 + 10 × ceil(250/100)
         let c = calcular(&b(), &e);
         assert!(
             c.lineas()
@@ -1493,7 +1566,7 @@ mod tests {
         let mut p = ppto_core::ejemplos::suelo_radiante();
         let pem_antes = p.pem().unwrap();
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, pem_antes);
-        e.potencia_kw = dec!(80);
+        e.potencia_calor_kw = dec!(80);
         e.segundas_visitas = 1;
         let c = calcular(&b(), &e);
         aplicar(&mut p, Disciplina::Rite, &c).unwrap();

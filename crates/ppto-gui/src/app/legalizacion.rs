@@ -90,7 +90,8 @@ pub(super) struct VentanaLegalizacion {
     pem_manual: String,
     km: String,
     horas: String,
-    potencia: String,
+    potencia_calor: String,
+    potencia_frio: String,
     superficie: String,
     // Edición del baremo
     editar: bool,
@@ -114,7 +115,8 @@ impl VentanaLegalizacion {
             pem_manual: String::new(),
             km: String::new(),
             horas: String::new(),
-            potencia: String::new(),
+            potencia_calor: String::new(),
+            potencia_frio: String::new(),
             superficie: String::new(),
             editar: false,
             campos: Vec::new(),
@@ -176,7 +178,8 @@ impl VentanaLegalizacion {
         e.pem = self.pem();
         e.km = leer(&self.km).unwrap_or_default();
         e.horas_viaje = leer(&self.horas).unwrap_or_default();
-        e.potencia_kw = leer(&self.potencia).unwrap_or_default();
+        e.potencia_calor_kw = leer(&self.potencia_calor).unwrap_or_default();
+        e.potencia_frio_kw = leer(&self.potencia_frio).unwrap_or_default();
         e.superficie = leer(&self.superficie).unwrap_or_default();
         if e.disciplina == Disciplina::Pci {
             e.justificar_rite = false;
@@ -405,6 +408,22 @@ impl Aplicacion {
                             v.e.justificar_rite = v.e.justificar_rite_por_defecto();
                         }
                     });
+                    // RITE art. 15: con más de 70 kW hace falta proyecto.
+                    let mut exp = v.e.clone();
+                    exp.potencia_calor_kw = leer(&v.potencia_calor).unwrap_or_default();
+                    exp.potencia_frio_kw = leer(&v.potencia_frio).unwrap_or_default();
+                    if exp.documento_exigido() == Some(Some(Documento::Proyecto)) && v.e.documento == Documento::Memoria {
+                        v.e.documento = Documento::Proyecto;
+                        v.e.visitas_obra = baremo.visitas_proyecto;
+                        v.e.justificar_rite = v.e.justificar_rite_por_defecto();
+                        v.mensaje = Some((
+                            format!(
+                                "{} kW: el RITE (art. 15) exige proyecto; se ha cambiado de memoria a proyecto.",
+                                texto(exp.potencia())
+                            ),
+                            false,
+                        ));
+                    }
                     ui.horizontal(|ui| {
                         ui.label("Uso:");
                         ui.radio_value(&mut v.e.uso, Uso::Terciario, "Terciario");
@@ -427,8 +446,18 @@ impl Aplicacion {
                     egui::Grid::new("leg_datos").num_columns(4).show(ui, |ui| {
                         match v.e.disciplina {
                             Disciplina::Rite => {
-                                ui.label("Potencia (kW)");
-                                caja(ui, &mut v.potencia, 70.0);
+                                ui.label("Potencia calor (kW)").on_hover_text(
+                                    "Suma de las potencias nominales de todos los generadores de calor del edificio (RITE art. 15.2)",
+                                );
+                                caja(ui, &mut v.potencia_calor, 70.0);
+                                ui.label("Potencia frío (kW)").on_hover_text(
+                                    "Suma de las potencias nominales de todos los generadores de frío del edificio (RITE art. 15.2)",
+                                );
+                                caja(ui, &mut v.potencia_frio, 70.0);
+                                ui.end_row();
+                                ui.checkbox(&mut v.e.sala_maquinas, "Sala de máquinas")
+                                    .on_hover_text("En edificios de viviendas, la EICI va por potencia en vez de por nº de viviendas");
+                                ui.label("");
                                 ui.end_row();
                                 ui.checkbox(&mut v.e.primario_frio, "Primario frigorífico");
                                 ui.checkbox(&mut v.e.justificar_rite, "Justificación RITE")
