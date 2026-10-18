@@ -264,8 +264,10 @@ pub struct Baremo {
     pub horas_calc_bie: Decimal,
     pub horas_calc_deteccion: Decimal,
     pub horas_justif_rite: Horas,
-    /// RSIF: horas fijas + por modelo + por circuito repetido.
+    /// RSIF: horas fijas, que cubren hasta `rsif_circuitos_base` circuitos;
+    /// a partir de ahí, por modelo distinto y por circuito repetido.
     pub rsif_horas_base: Decimal,
+    pub rsif_circuitos_base: Decimal,
     pub rsif_horas_modelo: Decimal,
     pub rsif_horas_repetido: Decimal,
     /// Horas del técnico en cada visita a obra.
@@ -399,6 +401,7 @@ impl Default for Baremo {
             horas_calc_bie: z,
             horas_calc_deteccion: z,
             rsif_horas_base: z,
+            rsif_circuitos_base: z,
             horas_justif_rite: Horas::default(),
             rsif_horas_modelo: z,
             rsif_horas_repetido: z,
@@ -1213,17 +1216,35 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     let mut rep_if = Vec::new();
     if e.circuitos_rsif > 0 {
         let (modelos, repetidos) = e.rsif_modelos_repetidos();
-        let h = b.rsif_horas_base + d(modelos) * b.rsif_horas_modelo + d(repetidos) * b.rsif_horas_repetido;
+        // Los primeros circuitos van en las horas fijas; se descuentan primero
+        // de los modelos distintos.
+        let incluidos = b.rsif_circuitos_base;
+        let extra_modelos = (d(modelos) - incluidos).max(Decimal::ZERO);
+        let extra_repetidos = (d(e.circuitos_rsif) - incluidos).max(Decimal::ZERO) - extra_modelos;
+        let extra_repetidos = extra_repetidos.max(Decimal::ZERO).min(d(repetidos));
+        let h = b.rsif_horas_base + extra_modelos * b.rsif_horas_modelo + extra_repetidos * b.rsif_horas_repetido;
         if h > Decimal::ZERO {
+            let mut regla = format!("{} h", corto(b.rsif_horas_base));
+            if !incluidos.is_zero() {
+                regla.push_str(&format!(" hasta {} circuitos", corto(incluidos)));
+            }
+            if !extra_modelos.is_zero() {
+                regla.push_str(&format!(
+                    " + {} modelos × {} h",
+                    extra_modelos,
+                    corto(b.rsif_horas_modelo)
+                ));
+            }
+            if !extra_repetidos.is_zero() {
+                regla.push_str(&format!(
+                    " + {} repetidos × {} h",
+                    extra_repetidos,
+                    corto(b.rsif_horas_repetido)
+                ));
+            }
             c.bloques.push(Bloque {
                 titulo: format!("Justificación RSIF ({} circuitos)", e.circuitos_rsif),
-                regla: format!(
-                    "{} h ({} h + {modelos} modelos × {} h + {repetidos} repetidos × {} h)",
-                    num(h, 1),
-                    corto(b.rsif_horas_base),
-                    corto(b.rsif_horas_modelo),
-                    corto(b.rsif_horas_repetido)
-                ),
+                regla: format!("{} h ({regla})", num(h, 1)),
                 lineas: horas_perfil(b, "justificación RSIF", h, &b.reparto_justificacion),
             });
         }
@@ -1963,6 +1984,28 @@ mod tests {
         assert!(!p.justificar_rite_por_defecto());
         p.ajeno = true;
         assert!(p.justificar_rite_por_defecto());
+    }
+
+    #[test]
+    fn rsif_horas_fijas_hasta_tres_circuitos() {
+        let mut bp = b();
+        bp.rsif_horas_base = d(2);
+        bp.rsif_circuitos_base = d(3);
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
+        for n in 1..=3 {
+            e.circuitos_rsif = n;
+            assert_eq!(horas(&calcular(&bp, &e), "Justificación RSIF"), dec!(2));
+        }
+        // 5 circuitos distintos: 2 + 2 × 1.
+        e.circuitos_rsif = 5;
+        assert_eq!(horas(&calcular(&bp, &e), "Justificación RSIF"), dec!(4));
+        // 40 circuitos de 2 modelos: 2 + 37 repetidos × 0,25.
+        e.circuitos_rsif = 40;
+        e.modelos_rsif = 2;
+        assert_eq!(
+            redondear(horas(&calcular(&bp, &e), "Justificación RSIF"), 2),
+            dec!(11.25)
+        );
     }
 
     #[test]
