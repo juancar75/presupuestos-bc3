@@ -56,6 +56,12 @@ ignore = [
     # rust_xlsxwriter 0.99 aún piden ^8. Sin aviso de seguridad publicado.
     # Quitar al actualizar a versiones que usen zip 9.
     { crate = "zip@8.6.0", reason = "serie 8.x retirada; dependientes aún sin zip 9" },
+    # Fallos de zip 8.x al EXTRAER archivos a disco (enlaces simbólicos y
+    # permisos Unix). El programa nunca extrae: calamine lee el Excel en
+    # memoria, rust_xlsxwriter y ppto-ciego solo escriben. Revisado 2026-10-18.
+    { id = "RUSTSEC-2026-0367", reason = "solo ZipArchive::extract, no usado" },
+    { id = "RUSTSEC-2026-0368", reason = "solo ZipArchive::extract, no usado" },
+    { id = "RUSTSEC-2026-0369", reason = "solo extract/ZipStreamReader, no usados" },
     { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml vía serde_yaml de hayagriva (bibliografía de Typst), no usado" },
 ]
 

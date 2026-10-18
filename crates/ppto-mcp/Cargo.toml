@@ -22,6 +22,7 @@ ppto-bc3.workspace = true
 ppto-informes.workspace = true
 ppto-propuestas.workspace = true
 ppto-tarifas.workspace = true
+ppto-biblioteca.workspace = true
 rust_decimal.workspace = true
 serde_json = "1.0"
 pdf-extract = "0.12.1"

@@ -446,3 +446,65 @@ fn proponer_lote_con_recursos_comunes() {
     assert!(err && t.contains("como mucho 40"), "{t}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn biblioteca_aprende_de_una_obra_y_de_tarifas_y_ofertas() {
+    let dir = std::env::temp_dir().join(format!("mcp-bib-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut p = ppto_core::ejemplos::suelo_radiante();
+    p.fijar_tarifa("MT.PANEL", "ACME", rust_decimal_macros::dec!(20))
+        .unwrap();
+    p.fijar_descuento("ACME", rust_decimal_macros::dec!(50)).unwrap();
+    let activa = dir.join("obra-activa.json");
+    ppto_propuestas::ObraActiva::guardar(&p, &activa).unwrap();
+    let mut e = Estado {
+        ruta_obra_activa: Some(activa),
+        ruta_bandeja: Some(dir.join("propuestas.json")),
+        ruta_tarifas: Some(dir.join("tarifas.json")),
+        ruta_conversaciones: Some(dir.join("asistente.json")),
+        ruta_biblioteca: Some(dir.join("biblioteca.json")),
+        ..Estado::default()
+    };
+    llamar(&mut e, "abrir_obra_activa", json!({}));
+    let (t, err) = llamar(&mut e, "guardar_en_biblioteca", json!({ "origen": "real" }));
+    assert!(!err && t.contains("2 nuevas") && t.contains("ACME"), "{t}");
+
+    // Tarifa 2027 de ACME: el panel sube de 20 a 22 y conserva el 50 %
+    let (t, err) = llamar(
+        &mut e,
+        "registrar_tarifa",
+        json!({ "fabricante": "Acme", "etiqueta": "2027", "anio": 2027,
+                "lineas": [{ "referencia": "MT.PANEL", "descripcion": "Panel tetones", "pvp": 22 }] }),
+    );
+    assert!(!err && t.contains("1 referencias"), "{t}");
+    let (t, err) = llamar(&mut e, "buscar_biblioteca", json!({ "texto": "suelo radiante" }));
+    assert!(
+        !err && t.contains("SR.M2") && t.contains("| 11,00 |") && t.contains("tarifa 2027"),
+        "{t}"
+    );
+
+    // Oferta en netos de otro fabricante
+    let (t, err) = llamar(
+        &mut e,
+        "registrar_oferta",
+        json!({ "fabricante": "LG", "numero": "OF-1", "fecha": "2026-10-18",
+                "lineas": [{ "referencia": "ARUM100", "descripcion": "Exterior VRF", "neto": 4800 }] }),
+    );
+    assert!(!err && t.contains("1 líneas"), "{t}");
+    let (t, _) = llamar(&mut e, "buscar_biblioteca", json!({ "texto": "vrf" }));
+    assert!(t.contains("oferta OF-1") && t.contains("neto"), "{t}");
+
+    let (t, err) = llamar(
+        &mut e,
+        "fijar_descuento_biblioteca",
+        json!({ "fabricante": "LG", "porcentaje": 50 }),
+    );
+    assert!(!err, "{t}");
+    let (t, _) = llamar(&mut e, "estado_biblioteca", json!({}));
+    assert!(
+        t.contains("2 partidas") && t.contains("| ACME | 2027 |") && t.contains("| LG |"),
+        "{t}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ppto-core", "crates/ppto-db", "crates/ppto-cli", "crates/ppto-gui", "crates/ppto-bc3", "crates/ppto-informes", "crates/ppto-mcp", "crates/ppto-pdf", "crates/ppto-ciego", "crates/ppto-tarifas", "crates/ppto-propuestas", "crates/ppto-asistente"]
+members = ["crates/ppto-core", "crates/ppto-db", "crates/ppto-cli", "crates/ppto-gui", "crates/ppto-bc3", "crates/ppto-informes", "crates/ppto-mcp", "crates/ppto-pdf", "crates/ppto-ciego", "crates/ppto-tarifas", "crates/ppto-propuestas", "crates/ppto-asistente", "crates/ppto-biblioteca"]
 
 [workspace.package]
 version = "0.1.0-alpha.3"
@@ -26,6 +26,7 @@ ppto-tarifas = { path = "crates/ppto-tarifas" }
 ppto-propuestas = { path = "crates/ppto-propuestas" }
 ppto-mcp = { path = "crates/ppto-mcp" }
 ppto-asistente = { path = "crates/ppto-asistente" }
+ppto-biblioteca = { path = "crates/ppto-biblioteca" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

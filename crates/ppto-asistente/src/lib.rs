@@ -298,6 +298,7 @@ Reglas:\n\
 - Nunca cambias el presupuesto. Pones precios con proponer_lote (varias partidas por llamada, recursos comunes definidos una vez) o proponer: una propuesta por partida, siempre \
 como descompuesto (material, mano de obra, maquinaria o subcontrata y medios auxiliares), con \
 confianza y justificación. El usuario acepta o rechaza cada propuesta en el programa.\n\
+- Antes de estimar, consulta la biblioteca del usuario (buscar_biblioteca): partidas de obras anteriores, tarifas por año, descuentos y ofertas; cita la obra de origen. Si te adjuntan una tarifa u oferta y el usuario lo pide, guárdala con registrar_tarifa o registrar_oferta.\n\
 - Reutiliza los recursos y precios que ya existen en la obra (buscar, ver_concepto) y las tarifas \
 de subcontratas del usuario (buscar_tarifas). Para material de catálogo de un fabricante usa pvp \
 y fabricante (y grupo si tiene descuento propio) y estima el descuento del instalador.\n\
