@@ -142,18 +142,20 @@ fn reparto_redaccion() -> Reparto {
     }
 }
 
-/// Horas de una tarea: fijas + por cada 10.000 € de PEM + por vivienda.
+/// Horas de una tarea: fijas + por cada 10.000 € de PEM + por vivienda,
+/// con un mínimo.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Horas {
     pub base: Decimal,
     pub por_10k: Decimal,
     pub por_vivienda: Decimal,
+    pub minimo: Decimal,
 }
 
 impl Horas {
     fn de(&self, pem: Decimal, viviendas: Decimal) -> Decimal {
-        self.base + self.por_10k * pem / d(10_000) + self.por_vivienda * viviendas
+        (self.base + self.por_10k * pem / d(10_000) + self.por_vivienda * viviendas).max(self.minimo)
     }
 
     fn texto(&self, viviendas: Decimal) -> String {
@@ -163,6 +165,9 @@ impl Horas {
         }
         if !self.por_vivienda.is_zero() && !viviendas.is_zero() {
             t.push_str(&format!(" + {} h por vivienda", corto(self.por_vivienda)));
+        }
+        if !self.minimo.is_zero() {
+            t.push_str(&format!("; mínimo {} h", corto(self.minimo)));
         }
         t
     }
@@ -228,8 +233,15 @@ pub struct Baremo {
     // --- horas por tarea (forman el precio)
     pub horas_memoria: Horas,
     pub horas_tramitacion: Horas,
+    /// Redacción del proyecto: memoria, presupuesto, pliego de condiciones,
+    /// seguridad y salud y anexos (certificados, fichas, manuales de usuario).
     pub horas_redaccion: Horas,
+    /// Proyectos: planos as-built y cálculos justificativos, aparte.
+    pub horas_planos: Horas,
+    pub horas_calculos: Horas,
     pub horas_justif_rite: Horas,
+    /// RSIF: horas fijas + por modelo + por circuito repetido.
+    pub rsif_horas_base: Decimal,
     pub rsif_horas_modelo: Decimal,
     pub rsif_horas_repetido: Decimal,
     /// Horas del técnico en cada visita a obra.
@@ -257,6 +269,8 @@ pub struct Baremo {
     pub reparto_tramitacion: Reparto,
     pub reparto_memoria: Reparto,
     pub reparto_redaccion: Reparto,
+    pub reparto_planos: Reparto,
+    pub reparto_calculos: Reparto,
     /// Visitas a obra que se proponen por defecto en memorias y en proyectos.
     pub visitas_memoria: u32,
     pub visitas_proyecto: u32,
@@ -342,6 +356,9 @@ impl Default for Baremo {
             horas_memoria: Horas::default(),
             horas_tramitacion: Horas::default(),
             horas_redaccion: Horas::default(),
+            horas_planos: Horas::default(),
+            horas_calculos: Horas::default(),
+            rsif_horas_base: z,
             horas_justif_rite: Horas::default(),
             rsif_horas_modelo: z,
             rsif_horas_repetido: z,
@@ -356,6 +373,18 @@ impl Default for Baremo {
             visitas_proyecto: 2,
             tramitacion_memoria: Vec::new(),
             reparto_redaccion: reparto_redaccion(),
+            reparto_planos: Reparto {
+                senior: d(5),
+                junior: d(25),
+                tecnico: Decimal::ZERO,
+                documentacion: d(70),
+            },
+            reparto_calculos: Reparto {
+                senior: d(30),
+                junior: d(70),
+                tecnico: Decimal::ZERO,
+                documentacion: Decimal::ZERO,
+            },
             reparto_justificacion: Reparto::default(),
             oca_horas: z,
             viaje_km: z,
@@ -429,23 +458,40 @@ impl Baremo {
                 base: d(4),
                 por_10k: Decimal::new(4, 1),
                 por_vivienda: d(1),
+                minimo: Decimal::ZERO,
             },
             horas_tramitacion: Horas {
                 base: d(8),
                 por_10k: d(1),
                 por_vivienda: Decimal::new(5, 1),
+                minimo: Decimal::ZERO,
             },
             horas_redaccion: Horas {
                 base: d(12),
                 por_10k: Decimal::new(15, 1),
                 por_vivienda: Decimal::ZERO,
+                minimo: Decimal::ZERO,
             },
             horas_justif_rite: Horas {
                 base: d(2),
                 por_10k: Decimal::new(1, 1),
                 por_vivienda: Decimal::ZERO,
+                minimo: Decimal::ZERO,
             },
-            rsif_horas_modelo: Decimal::new(15, 1),
+            horas_planos: Horas {
+                base: d(6),
+                por_10k: Decimal::new(25, 2),
+                por_vivienda: Decimal::ZERO,
+                minimo: Decimal::ZERO,
+            },
+            horas_calculos: Horas {
+                base: d(4),
+                por_10k: Decimal::new(2, 1),
+                por_vivienda: Decimal::ZERO,
+                minimo: Decimal::ZERO,
+            },
+            rsif_horas_base: d(1),
+            rsif_horas_modelo: d(1),
             rsif_horas_repetido: Decimal::new(25, 2),
             horas_visita_obra: d(2),
             horas_jornada: d(8),
@@ -643,8 +689,8 @@ pub struct Expediente {
     /// Justificación RITE (memorias RITE y proyectos de otro técnico; en los
     /// proyectos propios va en la redacción).
     pub justificar_rite: bool,
-    /// Circuitos frigoríficos a justificar por RSIF (0 = sin RSIF) y, de
-    /// ellos, modelos distintos (0 = todos distintos).
+    /// Circuitos frigoríficos a justificar por RSIF (0 = sin RSIF: no se
+    /// supera la carga mínima) y, de ellos, modelos distintos (0 = todos distintos).
     pub circuitos_rsif: u32,
     pub modelos_rsif: u32,
     pub registro_if: Option<RegistroIf>,
@@ -685,7 +731,7 @@ impl Expediente {
             superficie: Decimal::ZERO,
             presion_diferencial: false,
             justificar_rite: disciplina == Disciplina::Rite && documento == Documento::Memoria,
-            circuitos_rsif: u32::from(disciplina == Disciplina::Rite),
+            circuitos_rsif: 0,
             modelos_rsif: 0,
             registro_if: None,
             visitas_obra: if documento == Documento::Proyecto { 2 } else { 1 },
@@ -962,7 +1008,7 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     let (titulo, que, horas, reparto) = if proyecto {
         (
             "Tramitación y dirección de la instalación",
-            "tramitación, as-built y dirección de la instalación",
+            "tramitación y dirección de la instalación",
             &b.horas_tramitacion,
             &b.reparto_tramitacion,
         )
@@ -989,15 +1035,35 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         lineas: horas_perfil(b, que, h, reparto),
     });
 
-    // 2. Redacción del proyecto propio
-    if proyecto && !e.ajeno {
-        let h = b.horas_redaccion.de(e.pem, n_viv);
-        if h > Decimal::ZERO {
-            c.bloques.push(Bloque {
-                titulo: "Redacción del proyecto de legalización (as-built)".into(),
-                regla: format!("{} h ({})", num(h, 1), b.horas_redaccion.texto(n_viv)),
-                lineas: horas_perfil(b, "redacción del proyecto as-built", h, &b.reparto_redaccion),
-            });
+    // 2. Proyecto: redacción (si es propio), planos as-built y cálculos
+    if proyecto {
+        let mut tareas = Vec::new();
+        if !e.ajeno {
+            tareas.push((
+                "Redacción del proyecto de legalización (as-built)",
+                "redacción: memoria, presupuesto, pliego, seguridad y salud y anexos",
+                &b.horas_redaccion,
+                &b.reparto_redaccion,
+            ));
+        }
+        tareas.push(("Planos as-built", "planos as-built", &b.horas_planos, &b.reparto_planos));
+        if !e.ajeno {
+            tareas.push((
+                "Cálculos justificativos",
+                "cálculos justificativos",
+                &b.horas_calculos,
+                &b.reparto_calculos,
+            ));
+        }
+        for (titulo, que, horas, reparto) in tareas {
+            let h = horas.de(e.pem, n_viv);
+            if h > Decimal::ZERO {
+                c.bloques.push(Bloque {
+                    titulo: titulo.into(),
+                    regla: format!("{} h ({})", num(h, 1), horas.texto(n_viv)),
+                    lineas: horas_perfil(b, que, h, reparto),
+                });
+            }
         }
     }
 
@@ -1015,13 +1081,14 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     let mut rep_if = Vec::new();
     if e.circuitos_rsif > 0 {
         let (modelos, repetidos) = e.rsif_modelos_repetidos();
-        let h = d(modelos) * b.rsif_horas_modelo + d(repetidos) * b.rsif_horas_repetido;
+        let h = b.rsif_horas_base + d(modelos) * b.rsif_horas_modelo + d(repetidos) * b.rsif_horas_repetido;
         if h > Decimal::ZERO {
             c.bloques.push(Bloque {
                 titulo: format!("Justificación RSIF ({} circuitos)", e.circuitos_rsif),
                 regla: format!(
-                    "{} h ({modelos} modelos × {} h + {repetidos} repetidos × {} h)",
+                    "{} h ({} h + {modelos} modelos × {} h + {repetidos} repetidos × {} h)",
                     num(h, 1),
+                    corto(b.rsif_horas_base),
                     corto(b.rsif_horas_modelo),
                     corto(b.rsif_horas_repetido)
                 ),
@@ -1256,8 +1323,9 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
     };
     c.texto = match (e.disciplina, proyecto) {
         (Disciplina::Rite, true) => format!(
-            "Legalización de las instalaciones térmicas (RITE) mediante proyecto{}. Incluye dirección de la \
-             instalación y certificado final, planos as-built, cálculos justificativos, libro de uso y \
+            "Legalización de las instalaciones térmicas (RITE) mediante proyecto{}. Incluye memoria, presupuesto, \
+             pliego de condiciones, estudio de seguridad y salud y anexos (certificados, fichas y manuales), \
+             dirección de la instalación y certificado final, planos as-built, cálculos justificativos, libro de uso y \
              mantenimiento, cumplimentación de la documentación 3.1.5, aportación del CIE del instalador \
              eléctrico, asistencia a la inspección de la OCA, desplazamientos y gestión del expediente ante \
              el órgano competente de la Comunidad Autónoma{tasas}.",
@@ -1574,6 +1642,20 @@ mod tests {
     }
 
     #[test]
+    fn horas_con_minimo() {
+        let h = Horas {
+            base: d(24),
+            por_10k: Decimal::new(2, 1),
+            por_vivienda: Decimal::ZERO,
+            minimo: d(32),
+        };
+        assert_eq!(h.de(dec!(120000), Decimal::ZERO), dec!(32));
+        assert_eq!(h.de(dec!(400000), Decimal::ZERO), dec!(32));
+        assert_eq!(h.de(dec!(1000000), Decimal::ZERO), dec!(44));
+        assert!(h.texto(Decimal::ZERO).contains("mínimo 32 h"));
+    }
+
+    #[test]
     fn horas_en_jornadas_completas() {
         // Memoria de 7.000 €: 4,28 h + 2,07 + 1,5 + visita 2 + viaje 1 = 10,85 → 16 h.
         let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(7000));
@@ -1593,11 +1675,15 @@ mod tests {
         let c = calcular(&b(), &e);
         assert_eq!(horas(&c, "Tramitación"), dec!(28)); // 8 + 1 × 20
         assert_eq!(horas(&c, "Redacción del proyecto de legalización"), dec!(42)); // 12 + 1,5 × 20
+        assert_eq!(horas(&c, "Planos as-built"), dec!(11)); // 6 + 0,25 × 20
+        assert_eq!(horas(&c, "Cálculos"), dec!(8)); // 4 + 0,2 × 20
         assert!(bloque(&c, "Justificación RITE").is_none());
         e.ajeno = true;
         e.justificar_rite = e.justificar_rite_por_defecto();
         let c = calcular(&b(), &e);
         assert!(bloque(&c, "Redacción").is_none());
+        assert!(bloque(&c, "Cálculos").is_none());
+        assert!(bloque(&c, "Planos as-built").is_some());
         assert_eq!(horas(&c, "Tramitación"), dec!(33.6)); // 28 + 20 %
         assert_eq!(horas(&c, "Justificación RITE"), dec!(4)); // 2 + 0,1 × 20
     }
@@ -1633,13 +1719,17 @@ mod tests {
 
     #[test]
     fn memoria_rite_lleva_justificacion_rite_y_rsif() {
-        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(10000));
-        assert!(e.justificar_rite && e.circuitos_rsif == 1);
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(10000));
+        // Sin circuitos: no se supera la carga mínima y no hay RSIF.
+        assert!(e.justificar_rite && e.circuitos_rsif == 0);
         let c = calcular(&b(), &e);
         assert_eq!(horas(&c, "Justificación RITE"), dec!(2.1));
-        assert_eq!(horas(&c, "Justificación RSIF"), dec!(1.5));
+        assert!(bloque(&c, "Justificación RSIF").is_none());
+        // 3 circuitos distintos: 1 + 3 × 1 = 4 h.
+        e.circuitos_rsif = 3;
+        assert_eq!(horas(&calcular(&b(), &e), "Justificación RSIF"), dec!(4));
         let pci = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(7000));
-        assert!(!pci.justificar_rite && pci.circuitos_rsif == 0);
+        assert!(!pci.justificar_rite);
         let mut p = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(7000));
         assert!(!p.justificar_rite_por_defecto());
         p.ajeno = true;
@@ -1653,7 +1743,7 @@ mod tests {
         e.modelos_rsif = 2;
         e.registro_if = Some(RegistroIf::MemoriaA2l);
         let c = calcular(&b(), &e);
-        assert_eq!(horas(&c, "Justificación RSIF"), dec!(3) + dec!(9.5));
+        assert_eq!(horas(&c, "Justificación RSIF"), dec!(1) + dec!(2) + dec!(9.5));
         assert!(
             c.lineas()
                 .any(|l| l.tipo == Tipo::Repercutido && l.importe() == dec!(120))

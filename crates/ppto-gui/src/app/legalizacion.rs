@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 /// Costes, horas, margen y referencias editables en la ventana (los repartos
 /// por perfil y las tablas oficiales, en el JSON).
-const CAMPOS: [(&str, &str); 43] = [
+const CAMPOS: [(&str, &str); 50] = [
     ("Costes horarios (€/h)", "Ingeniero senior"),
     ("Costes horarios (€/h)", "Ingeniero junior"),
     ("Costes horarios (€/h)", "Técnico"),
@@ -38,8 +38,15 @@ const CAMPOS: [(&str, &str); 43] = [
     ("Horas por tarea", "Redacción: fijas"),
     ("Horas por tarea", "Redacción: por 10.000 €"),
     ("Horas por tarea", "Redacción: por vivienda"),
+    ("Horas por tarea", "Redacción: mínimo"),
+    ("Horas por tarea", "Planos as-built: fijas"),
+    ("Horas por tarea", "Planos as-built: por 10.000 €"),
+    ("Horas por tarea", "Planos as-built: por vivienda"),
+    ("Horas por tarea", "Cálculos: fijas"),
+    ("Horas por tarea", "Cálculos: por 10.000 €"),
     ("Horas por tarea", "Justificación RITE: fijas"),
     ("Horas por tarea", "Justificación RITE: por 10.000 €"),
+    ("Horas por tarea", "RSIF: fijas"),
     ("Horas por tarea", "RSIF: por modelo"),
     ("Horas por tarea", "RSIF: por circuito repetido"),
     ("Horas por tarea", "Visita a obra"),
@@ -85,31 +92,38 @@ fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
         15 => &mut b.horas_redaccion.base,
         16 => &mut b.horas_redaccion.por_10k,
         17 => &mut b.horas_redaccion.por_vivienda,
-        18 => &mut b.horas_justif_rite.base,
-        19 => &mut b.horas_justif_rite.por_10k,
-        20 => &mut b.rsif_horas_modelo,
-        21 => &mut b.rsif_horas_repetido,
-        22 => &mut b.horas_visita_obra,
-        23 => &mut b.oca_horas,
-        24 => &mut b.recargo_ajeno,
-        25 => &mut b.horas_jornada,
-        26 => &mut b.viaje_km,
-        27 => &mut b.viaje_horas,
-        28 => &mut b.km,
-        29 => &mut b.aparcamiento,
-        30 => &mut b.dieta,
-        31 => &mut b.km_umbral,
-        32 => &mut b.eici_segunda_visita,
-        33 => &mut b.tasa_if,
-        34 => &mut b.tramitacion_minimo,
-        35 => &mut b.tramitacion_minimo_memoria,
-        36 => &mut b.minimo_vivienda,
-        37 => &mut b.redaccion_minimo,
-        38 => &mut b.justif_rite_pct,
-        39 => &mut b.justif_rite_minimo,
-        40 => &mut b.rsif_circuito,
-        41 => &mut b.rsif_repetido,
-        42 => &mut b.rsif_minimo,
+        18 => &mut b.horas_redaccion.minimo,
+        19 => &mut b.horas_planos.base,
+        20 => &mut b.horas_planos.por_10k,
+        21 => &mut b.horas_planos.por_vivienda,
+        22 => &mut b.horas_calculos.base,
+        23 => &mut b.horas_calculos.por_10k,
+        24 => &mut b.horas_justif_rite.base,
+        25 => &mut b.horas_justif_rite.por_10k,
+        26 => &mut b.rsif_horas_base,
+        27 => &mut b.rsif_horas_modelo,
+        28 => &mut b.rsif_horas_repetido,
+        29 => &mut b.horas_visita_obra,
+        30 => &mut b.oca_horas,
+        31 => &mut b.recargo_ajeno,
+        32 => &mut b.horas_jornada,
+        33 => &mut b.viaje_km,
+        34 => &mut b.viaje_horas,
+        35 => &mut b.km,
+        36 => &mut b.aparcamiento,
+        37 => &mut b.dieta,
+        38 => &mut b.km_umbral,
+        39 => &mut b.eici_segunda_visita,
+        40 => &mut b.tasa_if,
+        41 => &mut b.tramitacion_minimo,
+        42 => &mut b.tramitacion_minimo_memoria,
+        43 => &mut b.minimo_vivienda,
+        44 => &mut b.redaccion_minimo,
+        45 => &mut b.justif_rite_pct,
+        46 => &mut b.justif_rite_minimo,
+        47 => &mut b.rsif_circuito,
+        48 => &mut b.rsif_repetido,
+        49 => &mut b.rsif_minimo,
         _ => unreachable!("campo fuera de rango"),
     }
 }
@@ -442,7 +456,7 @@ impl Aplicacion {
                         ui.radio_value(&mut v.e.disciplina, Disciplina::Pci, "PCI");
                         if v.e.disciplina != disciplina {
                             v.e.justificar_rite = v.e.justificar_rite_por_defecto();
-                            v.e.circuitos_rsif = u32::from(v.e.disciplina == Disciplina::Rite);
+                            v.e.circuitos_rsif = 0;
                             v.e.modelos_rsif = 0;
                         }
                         ui.separator();
@@ -528,7 +542,7 @@ impl Aplicacion {
                             }
                         }
                         ui.end_row();
-                        ui.label("Circuitos RSIF (0 = sin RSIF)");
+                        ui.label("Circuitos RSIF").on_hover_text("Solo si la carga de refrigerante supera el mínimo del RSIF; 0 = sin justificación RSIF");
                         numero(ui, &mut v.e.circuitos_rsif);
                         ui.label("de ellos, modelos distintos");
                         numero(ui, &mut v.e.modelos_rsif);
