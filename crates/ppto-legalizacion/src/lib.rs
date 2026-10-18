@@ -708,6 +708,66 @@ pub enum Uso {
     Viviendas,
 }
 
+/// Uso del establecimiento a efectos del DB SI 4 (tabla 1.1), para avisar de
+/// si la PCI requiere proyecto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UsoPci {
+    Comercial,
+    PublicaConcurrencia,
+    Administrativo,
+    Docente,
+    ResidencialPublico,
+    Aparcamiento,
+    Otro,
+}
+
+impl UsoPci {
+    pub const TODOS: [UsoPci; 7] = [
+        UsoPci::Comercial,
+        UsoPci::PublicaConcurrencia,
+        UsoPci::Administrativo,
+        UsoPci::Docente,
+        UsoPci::ResidencialPublico,
+        UsoPci::Aparcamiento,
+        UsoPci::Otro,
+    ];
+
+    pub fn nombre(self) -> &'static str {
+        match self {
+            Self::Comercial => "comercial",
+            Self::PublicaConcurrencia => "pública concurrencia",
+            Self::Administrativo => "administrativo",
+            Self::Docente => "docente",
+            Self::ResidencialPublico => "residencial público",
+            Self::Aparcamiento => "aparcamiento",
+            Self::Otro => "otro",
+        }
+    }
+
+    /// Superficie (m²) a partir de la que el DB SI 4 pide algo más que lo
+    /// general (BIE, alarma o detección). Orientativo: la tabla 1.1 manda.
+    fn umbral(self) -> Option<(u32, &'static str)> {
+        match self {
+            Self::Comercial => Some((500, "BIE a partir de 500 m²")),
+            Self::PublicaConcurrencia => Some((500, "BIE a partir de 500 m²")),
+            Self::Administrativo => Some((1000, "alarma a partir de 1.000 m²")),
+            Self::Docente => Some((1000, "alarma a partir de 1.000 m²")),
+            Self::ResidencialPublico => Some((500, "detección y alarma a partir de 500 m²")),
+            Self::Aparcamiento => Some((500, "BIE y detección a partir de 500 m²")),
+            Self::Otro => None,
+        }
+    }
+}
+
+/// Refrigerante de la instalación frigorífica (grupos del RSIF).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Refrigerante {
+    L1,
+    A2l,
+    L2,
+    L3,
+}
+
 /// Registro de instalación frigorífica que acompaña a la justificación RSIF.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RegistroIf {
@@ -745,6 +805,8 @@ pub struct Expediente {
     /// PCI: memoria inspeccionable (aumenta recorridos de evacuación o
     /// superficie de sectorización): EICI con tarifa de proyecto y visita.
     pub pci_inspeccionable: bool,
+    /// PCI: uso del establecimiento (para el aviso de proyecto).
+    pub uso_pci: UsoPci,
     /// PCI: hay BIE (cálculo hidráulico) y detección (cobertura y baterías).
     pub pci_bie: bool,
     pub pci_deteccion: bool,
@@ -758,6 +820,12 @@ pub struct Expediente {
     pub registro_if: Option<RegistroIf>,
     /// La instalación frigorífica tiene circuito primario (adicional de la EICI).
     pub if_primario: bool,
+    /// Frigorífica: potencia de compresores del mayor sistema y total (kW),
+    /// refrigerante y cámaras de atmósfera artificial (para el aviso de nivel).
+    pub if_kw_sistema: Decimal,
+    pub if_kw_total: Decimal,
+    pub refrigerante: Refrigerante,
+    pub atmosfera_artificial: bool,
     /// Revisiones de los planos de arquitectura que obligan a rehacer los
     /// planos as-built.
     pub revisiones_arquitectura: u32,
@@ -802,6 +870,7 @@ impl Expediente {
             superficie: Decimal::ZERO,
             presion_diferencial: false,
             pci_inspeccionable: false,
+            uso_pci: UsoPci::Otro,
             pci_bie: false,
             pci_deteccion: false,
             justificar_rite: disciplina == Disciplina::Rite && documento == Documento::Memoria,
@@ -809,6 +878,10 @@ impl Expediente {
             modelos_rsif: 0,
             registro_if: None,
             if_primario: false,
+            if_kw_sistema: Decimal::ZERO,
+            if_kw_total: Decimal::ZERO,
+            refrigerante: Refrigerante::A2l,
+            atmosfera_artificial: false,
             revisiones_arquitectura: 0,
             planos: 0,
             visitas_obra: if documento == Documento::Proyecto { 2 } else { 1 },
@@ -841,6 +914,75 @@ impl Expediente {
         } else {
             Some(None)
         }
+    }
+
+    /// Avisos de documentación para PCI (Orden 12/03/2014: proyecto salvo que
+    /// no se alcance ninguna condición de la tabla 1.1 del DB SI 4) y para la
+    /// instalación frigorífica (RSIF art. 8 y 20.2: nivel 1 o A2L dentro de
+    /// límites → memoria; nivel 2 → proyecto).
+    pub fn avisos_documentacion(&self) -> Vec<String> {
+        let mut a = Vec::new();
+        if self.disciplina == Disciplina::Pci {
+            let mut motivos = Vec::new();
+            if self.pci_bie {
+                motivos.push("hay BIE".to_owned());
+            }
+            if self.pci_deteccion {
+                motivos.push("hay detección".to_owned());
+            }
+            if let Some((m2, que)) = self.uso_pci.umbral()
+                && self.superficie > d(m2)
+            {
+                motivos.push(format!(
+                    "uso {} de {} m² ({que})",
+                    self.uso_pci.nombre(),
+                    corto(self.superficie)
+                ));
+            }
+            match (self.proyecto(), motivos.is_empty()) {
+                (false, false) => a.push(format!(
+                    "PCI: {} → se alcanzan condiciones de la tabla 1.1 del DB SI 4; la Orden de 12/03/2014 exige proyecto, no memoria.",
+                    motivos.join(", ")
+                )),
+                (true, true) if self.uso_pci != UsoPci::Otro && !self.superficie.is_zero() => a.push(
+                    "PCI: sin BIE ni detección y por debajo de los umbrales del uso; si no se alcanza ninguna condición de la tabla 1.1 del DB SI 4, basta memoria.".into(),
+                ),
+                _ => {}
+            }
+        }
+        if let Some(reg) = self.registro_if {
+            let mut nivel2 = Vec::new();
+            if self.if_kw_sistema > d(30) {
+                nivel2.push(format!("un sistema de {} kW (> 30)", corto(self.if_kw_sistema)));
+            }
+            if self.if_kw_total > d(100) {
+                nivel2.push(format!("{} kW en total (> 100)", corto(self.if_kw_total)));
+            }
+            if self.atmosfera_artificial {
+                nivel2.push("cámaras de atmósfera artificial".into());
+            }
+            if matches!(self.refrigerante, Refrigerante::L2 | Refrigerante::L3) {
+                nivel2.push("refrigerante L2/L3".into());
+            }
+            let es_memoria = matches!(reg, RegistroIf::MemoriaA2l | RegistroIf::MemoriaL1);
+            let datos = !self.if_kw_sistema.is_zero() || !self.if_kw_total.is_zero();
+            if es_memoria && !nivel2.is_empty() {
+                a.push(format!(
+                    "Frigorífica: {} → nivel 2; el RSIF (art. 20.2) exige proyecto, no memoria.",
+                    nivel2.join(", ")
+                ));
+            } else if !es_memoria && nivel2.is_empty() && datos {
+                a.push(format!(
+                    "Frigorífica: nivel 1{} → basta memoria (RSIF art. 20.2).",
+                    if self.refrigerante == Refrigerante::A2l {
+                        " (A2L dentro de los límites)"
+                    } else {
+                        ""
+                    }
+                ));
+            }
+        }
+        a
     }
 
     /// Circuitos RSIF de modelos distintos y repetidos.
@@ -1484,6 +1626,7 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
             Tipo::Repercutido => c.repercutidos += l.importe(),
         }
     }
+    c.avisos.extend(e.avisos_documentacion());
     match e.documento_exigido() {
         Some(Some(Documento::Proyecto)) if !proyecto => c.avisos.push(format!(
             "Con {} kW (suma de generadores, RITE art. 15.2) hace falta proyecto, no memoria técnica.",
@@ -1942,6 +2085,33 @@ mod tests {
             c.lineas()
                 .any(|l| l.resumen.contains("inspeccionable") && l.importe() == dec!(450))
         );
+    }
+
+    #[test]
+    fn avisos_de_proyecto_pci_y_frigorifica() {
+        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(20000));
+        assert!(e.avisos_documentacion().is_empty());
+        e.pci_bie = true;
+        assert!(e.avisos_documentacion()[0].contains("exige proyecto"));
+        e.pci_bie = false;
+        e.uso_pci = UsoPci::Comercial;
+        e.superficie = dec!(800);
+        assert!(e.avisos_documentacion()[0].contains("comercial de 800 m²"));
+        e.superficie = dec!(300);
+        assert!(e.avisos_documentacion().is_empty());
+        e.documento = Documento::Proyecto;
+        assert!(e.avisos_documentacion()[0].contains("basta memoria"));
+        // Frigorífica
+        let mut f = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(20000));
+        f.registro_if = Some(RegistroIf::MemoriaA2l);
+        f.if_kw_sistema = dec!(20);
+        f.if_kw_total = dec!(60);
+        assert!(f.avisos_documentacion().is_empty());
+        f.if_kw_sistema = dec!(35);
+        assert!(f.avisos_documentacion()[0].contains("nivel 2"));
+        f.if_kw_sistema = dec!(20);
+        f.registro_if = Some(RegistroIf::ProyectoConSala);
+        assert!(f.avisos_documentacion()[0].contains("basta memoria"));
     }
 
     #[test]

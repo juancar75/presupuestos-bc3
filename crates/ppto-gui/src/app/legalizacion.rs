@@ -12,8 +12,8 @@ use eframe::egui::{self, Color32, RichText};
 use ppto_core::Decimal;
 use ppto_core::formato::{eur, leer, num};
 use ppto_legalizacion::{
-    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, RegistroIf, Rol, Tamano, Tipo, Tramo, Uso, aplicar,
-    calcular, capitulos,
+    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, Refrigerante, RegistroIf, Rol, Tamano, Tipo, Tramo,
+    Uso, UsoPci, aplicar, calcular, capitulos,
 };
 use std::path::PathBuf;
 
@@ -173,6 +173,8 @@ pub(super) struct VentanaLegalizacion {
     horas: String,
     potencia_calor: String,
     potencia_frio: String,
+    if_kw_sistema: String,
+    if_kw_total: String,
     superficie: String,
     // Edición del baremo
     editar: bool,
@@ -198,6 +200,8 @@ impl VentanaLegalizacion {
             horas: String::new(),
             potencia_calor: String::new(),
             potencia_frio: String::new(),
+            if_kw_sistema: String::new(),
+            if_kw_total: String::new(),
             superficie: String::new(),
             editar: false,
             campos: Vec::new(),
@@ -261,6 +265,8 @@ impl VentanaLegalizacion {
         e.horas_viaje = leer(&self.horas).unwrap_or_default();
         e.potencia_calor_kw = leer(&self.potencia_calor).unwrap_or_default();
         e.potencia_frio_kw = leer(&self.potencia_frio).unwrap_or_default();
+        e.if_kw_sistema = leer(&self.if_kw_sistema).unwrap_or_default();
+        e.if_kw_total = leer(&self.if_kw_total).unwrap_or_default();
         e.superficie = leer(&self.superficie).unwrap_or_default();
         if e.disciplina == Disciplina::Pci {
             e.justificar_rite = false;
@@ -568,6 +574,15 @@ impl Aplicacion {
                                     );
                             }
                             Disciplina::Pci => {
+                                ui.label("Uso (DB SI 4)");
+                                egui::ComboBox::from_id_salt("leg_uso_pci")
+                                    .selected_text(v.e.uso_pci.nombre())
+                                    .show_ui(ui, |ui| {
+                                        for u in UsoPci::TODOS {
+                                            ui.selectable_value(&mut v.e.uso_pci, u, u.nombre());
+                                        }
+                                    });
+                                ui.end_row();
                                 ui.label("Nº instalaciones PCI");
                                 numero(ui, &mut v.e.instalaciones_pci);
                                 ui.end_row();
@@ -618,6 +633,29 @@ impl Aplicacion {
                         ui.checkbox(&mut v.e.if_primario, "Circuito primario")
                             .on_hover_text("Adicional de la EICI de frigoríficas por circuito primario");
                         ui.end_row();
+                        if v.e.registro_if.is_some() {
+                            ui.label("Frigorífica: kW del mayor sistema");
+                            caja(ui, &mut v.if_kw_sistema, 70.0);
+                            ui.label("kW total");
+                            caja(ui, &mut v.if_kw_total, 70.0);
+                            ui.end_row();
+                            ui.label("Refrigerante");
+                            egui::ComboBox::from_id_salt("leg_refrig")
+                                .selected_text(match v.e.refrigerante {
+                                    Refrigerante::L1 => "L1",
+                                    Refrigerante::A2l => "A2L",
+                                    Refrigerante::L2 => "L2 (no A2L)",
+                                    Refrigerante::L3 => "L3",
+                                })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut v.e.refrigerante, Refrigerante::L1, "L1");
+                                    ui.selectable_value(&mut v.e.refrigerante, Refrigerante::A2l, "A2L");
+                                    ui.selectable_value(&mut v.e.refrigerante, Refrigerante::L2, "L2 (no A2L)");
+                                    ui.selectable_value(&mut v.e.refrigerante, Refrigerante::L3, "L3");
+                                });
+                            ui.checkbox(&mut v.e.atmosfera_artificial, "Cámaras de atmósfera artificial");
+                            ui.end_row();
+                        }
                         if v.e.documento == Documento::Proyecto {
                             ui.label("Revisiones de arquitectura").on_hover_text(
                                 "Veces que hay que rehacer los planos as-built por cambios en los planos de arquitectura",
