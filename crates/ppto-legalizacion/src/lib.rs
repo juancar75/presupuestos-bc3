@@ -505,7 +505,8 @@ pub struct Expediente {
     /// PCI: superficie (m²) para la EICI de proyecto.
     pub superficie: Decimal,
     pub presion_diferencial: bool,
-    /// Justificación RITE aparte (en memorias y proyectos propios va incluida).
+    /// Justificación RITE (memorias RITE y proyectos de otro técnico; en los
+    /// proyectos propios va en la redacción).
     pub justificar_rite: bool,
     /// Circuitos frigoríficos a justificar por RSIF (0 = sin RSIF) y, de
     /// ellos, modelos distintos (0 = todos distintos).
@@ -544,8 +545,8 @@ impl Expediente {
             instalaciones_pci: 1,
             superficie: Decimal::ZERO,
             presion_diferencial: false,
-            justificar_rite: false,
-            circuitos_rsif: 0,
+            justificar_rite: disciplina == Disciplina::Rite && documento == Documento::Memoria,
+            circuitos_rsif: u32::from(disciplina == Disciplina::Rite),
             modelos_rsif: 0,
             registro_if: None,
             visitas_obra: if documento == Documento::Proyecto { 2 } else { 1 },
@@ -554,6 +555,12 @@ impl Expediente {
             horas_viaje: Decimal::ZERO,
             repercutir: true,
         }
+    }
+
+    /// Justificación RITE aparte por defecto: en memorias RITE y en proyectos
+    /// de otro técnico; en los proyectos propios va en la redacción.
+    pub fn justificar_rite_por_defecto(&self) -> bool {
+        self.disciplina == Disciplina::Rite && (!self.proyecto() || self.ajeno)
     }
 
     fn proyecto(&self) -> bool {
@@ -1026,7 +1033,7 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         ),
         (Disciplina::Rite, false) => format!(
             "Legalización de las instalaciones térmicas (RITE) mediante memoria técnica. Incluye elaboración \
-             de la memoria con su justificación del RITE, comprobación en obra, planos as-built, libro de uso \
+             de la memoria con la justificación del RITE y, en su caso, del RSIF, comprobación en obra, planos as-built, libro de uso \
              y mantenimiento, cumplimentación de la documentación 3.1.5, aportación del CIE del instalador \
              eléctrico, desplazamientos y gestión del expediente ante el órgano competente de la Comunidad \
              Autónoma{tasas}."
@@ -1412,6 +1419,21 @@ mod tests {
                 .iter()
                 .any(|l| l.resumen.contains("segunda visita") && l.importe() == dec!(300))
         );
+    }
+
+    #[test]
+    fn memoria_rite_lleva_justificacion_rite_y_rsif() {
+        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(7000));
+        assert!(e.justificar_rite && e.circuitos_rsif == 1);
+        let c = calcular(&b(), &e);
+        assert_eq!(honorario_bloque(&c, "Justificación RITE"), dec!(200)); // mínimo
+        assert_eq!(honorario_bloque(&c, "Justificación RSIF"), dec!(100)); // 1 modelo
+        let pci = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(7000));
+        assert!(!pci.justificar_rite && pci.circuitos_rsif == 0);
+        let mut p = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(7000));
+        assert!(!p.justificar_rite_por_defecto());
+        p.ajeno = true;
+        assert!(p.justificar_rite_por_defecto());
     }
 
     #[test]

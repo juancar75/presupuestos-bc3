@@ -381,8 +381,14 @@ impl Aplicacion {
                     // Expediente
                     ui.horizontal(|ui| {
                         ui.label("Disciplina:");
+                        let disciplina = v.e.disciplina;
                         ui.radio_value(&mut v.e.disciplina, Disciplina::Rite, "RITE");
                         ui.radio_value(&mut v.e.disciplina, Disciplina::Pci, "PCI");
+                        if v.e.disciplina != disciplina {
+                            v.e.justificar_rite = v.e.justificar_rite_por_defecto();
+                            v.e.circuitos_rsif = u32::from(v.e.disciplina == Disciplina::Rite);
+                            v.e.modelos_rsif = 0;
+                        }
                         ui.separator();
                         let antes = v.e.documento;
                         ui.radio_value(&mut v.e.documento, Documento::Memoria, "Memoria técnica");
@@ -392,9 +398,12 @@ impl Aplicacion {
                                 Documento::Memoria => baremo.visitas_memoria,
                                 Documento::Proyecto => baremo.visitas_proyecto,
                             };
+                            v.e.justificar_rite = v.e.justificar_rite_por_defecto();
                         }
                         ui.separator();
-                        ui.checkbox(&mut v.e.ajeno, "Proyecto de otro técnico");
+                        if ui.checkbox(&mut v.e.ajeno, "Proyecto de otro técnico").changed() {
+                            v.e.justificar_rite = v.e.justificar_rite_por_defecto();
+                        }
                     });
                     ui.horizontal(|ui| {
                         ui.label("Uso:");
@@ -422,9 +431,9 @@ impl Aplicacion {
                                 caja(ui, &mut v.potencia, 70.0);
                                 ui.end_row();
                                 ui.checkbox(&mut v.e.primario_frio, "Primario frigorífico");
-                                ui.checkbox(&mut v.e.justificar_rite, "Justificación RITE aparte")
+                                ui.checkbox(&mut v.e.justificar_rite, "Justificación RITE")
                                     .on_hover_text(
-                                        "Para proyectos de otro técnico. En memorias y proyectos propios va incluida.",
+                                        "Por defecto en memorias y en proyectos de otro técnico; en los proyectos propios va en la redacción.",
                                     );
                             }
                             Disciplina::Pci => {
