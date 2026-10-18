@@ -351,6 +351,8 @@ pub struct Baremo {
     pub eici_if_memoria_l1: Decimal,
     pub eici_if_proyecto: Decimal,
     pub eici_if_proyecto_sala: Decimal,
+    /// Coste adicional de la EICI de frigoríficas por circuito primario.
+    pub eici_if_primario: Decimal,
     pub tasa_if: Decimal,
 }
 
@@ -457,6 +459,7 @@ impl Default for Baremo {
             eici_if_memoria_l1: z,
             eici_if_proyecto: z,
             eici_if_proyecto_sala: z,
+            eici_if_primario: z,
             tasa_if: z,
         }
     }
@@ -569,6 +572,7 @@ impl Baremo {
             eici_if_memoria_l1: d(130),
             eici_if_proyecto: d(250),
             eici_if_proyecto_sala: d(350),
+            eici_if_primario: d(150),
             tasa_if: d(35),
             ..Self::default()
         }
@@ -740,6 +744,8 @@ pub struct Expediente {
     pub circuitos_rsif: u32,
     pub modelos_rsif: u32,
     pub registro_if: Option<RegistroIf>,
+    /// La instalación frigorífica tiene circuito primario (adicional de la EICI).
+    pub if_primario: bool,
     /// Revisiones de los planos de arquitectura que obligan a rehacer los
     /// planos as-built.
     pub revisiones_arquitectura: u32,
@@ -789,6 +795,7 @@ impl Expediente {
             circuitos_rsif: 0,
             modelos_rsif: 0,
             registro_if: None,
+            if_primario: false,
             revisiones_arquitectura: 0,
             planos: 0,
             visitas_obra: if documento == Documento::Proyecto { 2 } else { 1 },
@@ -1234,6 +1241,13 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
                 eici,
                 Tipo::Repercutido,
             ));
+            if e.if_primario && !b.eici_if_primario.is_zero() {
+                rep_if.push(importe_fijo(
+                    "EICI frigoríficas: coste adicional por circuito primario".into(),
+                    b.eici_if_primario,
+                    Tipo::Repercutido,
+                ));
+            }
             if !b.tasa_if.is_zero() {
                 rep_if.push(importe_fijo(
                     "Tasa de registro de instalación frigorífica".into(),
@@ -1967,6 +1981,9 @@ mod tests {
             c.lineas()
                 .any(|l| l.tipo == Tipo::Repercutido && l.importe() == dec!(35))
         );
+        // Circuito primario: adicional de la EICI de frigoríficas.
+        e.if_primario = true;
+        assert_eq!(calcular(&b(), &e).repercutidos, c.repercutidos + dec!(150));
     }
 
     #[test]

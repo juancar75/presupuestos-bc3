@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 /// Costes, horas, margen y referencias editables en la ventana (los repartos
 /// por perfil y las tablas oficiales, en el JSON).
-const CAMPOS: [(&str, &str); 60] = [
+const CAMPOS: [(&str, &str); 61] = [
     ("Costes horarios (€/h)", "Ingeniero senior"),
     ("Costes horarios (€/h)", "Ingeniero junior"),
     ("Costes horarios (€/h)", "Técnico"),
@@ -71,6 +71,7 @@ const CAMPOS: [(&str, &str); 60] = [
     ("Desplazamientos", "Dietas a partir de (km)"),
     ("Repercutidos (€)", "EICI 2ª visita"),
     ("Repercutidos (€)", "Tasa registro frigorífica"),
+    ("Repercutidos (€)", "EICI frigoríficas: circuito primario"),
     ("Referencia de mercado (€)", "Mínimo proyecto"),
     ("Referencia de mercado (€)", "Mínimo memoria"),
     ("Referencia de mercado (€)", "Mínimo por vivienda"),
@@ -135,15 +136,16 @@ fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
         48 => &mut b.km_umbral,
         49 => &mut b.eici_segunda_visita,
         50 => &mut b.tasa_if,
-        51 => &mut b.tramitacion_minimo,
-        52 => &mut b.tramitacion_minimo_memoria,
-        53 => &mut b.minimo_vivienda,
-        54 => &mut b.redaccion_minimo,
-        55 => &mut b.justif_rite_pct,
-        56 => &mut b.justif_rite_minimo,
-        57 => &mut b.rsif_circuito,
-        58 => &mut b.rsif_repetido,
-        59 => &mut b.rsif_minimo,
+        51 => &mut b.eici_if_primario,
+        52 => &mut b.tramitacion_minimo,
+        53 => &mut b.tramitacion_minimo_memoria,
+        54 => &mut b.minimo_vivienda,
+        55 => &mut b.redaccion_minimo,
+        56 => &mut b.justif_rite_pct,
+        57 => &mut b.justif_rite_minimo,
+        58 => &mut b.rsif_circuito,
+        59 => &mut b.rsif_repetido,
+        60 => &mut b.rsif_minimo,
         _ => unreachable!("campo fuera de rango"),
     }
 }
@@ -602,6 +604,8 @@ impl Aplicacion {
                                     "proyecto con sala",
                                 );
                             });
+                        ui.checkbox(&mut v.e.if_primario, "Circuito primario")
+                            .on_hover_text("Adicional de la EICI de frigoríficas por circuito primario");
                         ui.end_row();
                         if v.e.documento == Documento::Proyecto {
                             ui.label("Revisiones de arquitectura").on_hover_text(
