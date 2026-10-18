@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.4] - 2026-10-18
+
 ### Añadido — biblioteca de precios (paso 1)
 - Crate `ppto-biblioteca`: partidas con descompuesto y versiones; por
   fabricante, descuentos (general y por grupo), tarifas por año con
