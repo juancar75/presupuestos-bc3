@@ -244,9 +244,10 @@ pub struct Baremo {
     pub horas_redaccion_pci: Horas,
     /// Proyectos: planos as-built y cálculos justificativos, aparte.
     pub horas_planos: Horas,
-    /// Cada revisión de los planos de arquitectura añade este % de las horas
-    /// de planos as-built.
-    pub pct_revision_planos: Decimal,
+    /// Horas por plano en cada revisión de los planos de arquitectura.
+    pub horas_revision_plano: Decimal,
+    /// Horas por plano as-built, para estimar el nº de planos si no se indica.
+    pub horas_por_plano: Decimal,
     pub horas_calculos: Horas,
     /// Cálculos PCI según los sistemas: fijas, hidráulico de BIE y
     /// cobertura y baterías de detección.
@@ -379,7 +380,8 @@ impl Default for Baremo {
                 documentacion: d(80),
             },
             horas_planos: Horas::default(),
-            pct_revision_planos: z,
+            horas_revision_plano: z,
+            horas_por_plano: z,
             horas_calculos: Horas::default(),
             horas_calc_pci_base: z,
             horas_calc_bie: z,
@@ -516,7 +518,8 @@ impl Baremo {
                 por_vivienda: Decimal::ZERO,
                 minimo: Decimal::ZERO,
             },
-            pct_revision_planos: d(40),
+            horas_revision_plano: Decimal::new(15, 1),
+            horas_por_plano: d(2),
             horas_calc_pci_base: d(1),
             horas_calc_bie: d(4),
             horas_calc_deteccion: d(3),
@@ -730,6 +733,8 @@ pub struct Expediente {
     /// Revisiones de los planos de arquitectura que obligan a rehacer los
     /// planos as-built.
     pub revisiones_arquitectura: u32,
+    /// Nº de planos as-built (0 = se estima con las horas de planos).
+    pub planos: u32,
     /// Visitas de dirección de obra y segundas visitas de la OCA.
     pub visitas_obra: u32,
     pub segundas_visitas: u32,
@@ -773,6 +778,7 @@ impl Expediente {
             modelos_rsif: 0,
             registro_if: None,
             revisiones_arquitectura: 0,
+            planos: 0,
             visitas_obra: if documento == Documento::Proyecto { 2 } else { 1 },
             segundas_visitas: 0,
             km: Decimal::ZERO,
@@ -1108,11 +1114,20 @@ pub fn calcular(b: &Baremo, e: &Expediente) -> Calculo {
         for (titulo, que, horas, reparto) in tareas {
             let mut h = horas.de(e.pem, n_viv);
             let mut regla = horas.texto(n_viv);
-            if titulo == "Planos as-built" && revisiones > 0 && !b.pct_revision_planos.is_zero() {
-                h = h * (CIEN + d(revisiones) * b.pct_revision_planos) / CIEN;
+            if titulo == "Planos as-built" && revisiones > 0 && !b.horas_revision_plano.is_zero() {
+                let (n, estimado) = if e.planos > 0 {
+                    (d(e.planos), false)
+                } else if b.horas_por_plano > Decimal::ZERO {
+                    ((h / b.horas_por_plano).ceil().max(Decimal::ONE), true)
+                } else {
+                    (Decimal::ONE, true)
+                };
+                h += d(revisiones) * n * b.horas_revision_plano;
                 regla.push_str(&format!(
-                    "; + {revisiones} revisiones de arquitectura × {} %",
-                    corto(b.pct_revision_planos)
+                    "; + {revisiones} revisiones de arquitectura × {} planos{} × {} h",
+                    n,
+                    if estimado { " (estimados)" } else { "" },
+                    corto(b.horas_revision_plano)
                 ));
             }
             if h > Decimal::ZERO {
@@ -1804,10 +1819,15 @@ mod tests {
         assert_eq!(horas(&c, "Tramitación"), dec!(28)); // 8 + 1 × 20
         assert_eq!(horas(&c, "Redacción del proyecto de legalización"), dec!(42)); // 12 + 1,5 × 20
         assert_eq!(horas(&c, "Planos as-built"), dec!(11)); // 6 + 0,25 × 20
-        // 2 revisiones de arquitectura × 40 %: 11 × 1,8.
+        // 2 revisiones × 6 planos estimados (11 h / 2 h) × 1,5 h = 18 h.
         let mut r = e.clone();
         r.revisiones_arquitectura = 2;
-        assert_eq!(horas(&calcular(&b(), &r), "Planos as-built"), dec!(19.8));
+        assert_eq!(horas(&calcular(&b(), &r), "Planos as-built"), dec!(29));
+        // Con 10 planos indicados: 2 × 10 × 1,5 = 30 h.
+        r.planos = 10;
+        let c = calcular(&b(), &r);
+        assert_eq!(horas(&c, "Planos as-built"), dec!(41));
+        assert!(!bloque(&c, "Planos as-built").unwrap().regla.contains("estimados"));
         assert_eq!(horas(&c, "Cálculos"), dec!(8)); // 4 + 0,2 × 20
         assert!(bloque(&c, "Justificación RITE").is_none());
         e.ajeno = true;
