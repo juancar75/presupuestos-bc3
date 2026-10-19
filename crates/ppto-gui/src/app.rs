@@ -3128,6 +3128,7 @@ mod pruebas {
                     autor: "IA".into(),
                     estado: E::Pendiente,
                     descuentos: Default::default(),
+                    nueva: None,
                 },
             );
         }
@@ -3216,6 +3217,7 @@ mod pruebas {
                 autor: "IA".into(),
                 estado: E::Pendiente,
                 descuentos: Default::default(),
+                nueva: None,
             },
         );
         app.aplicar(vec![Accion::AceptarPropuesta(1)]);

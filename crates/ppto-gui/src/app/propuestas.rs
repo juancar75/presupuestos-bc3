@@ -246,7 +246,13 @@ impl Aplicacion {
                         "#{} {}  {}",
                         prop.id,
                         prop.partida,
-                        c.map(|c| super::corto(&c.resumen, 50)).unwrap_or_default()
+                        c.map(|c| super::corto(&c.resumen, 50))
+                            .or_else(|| prop.nueva.as_ref().map(|n| format!(
+                                "NUEVA en {}: {}",
+                                n.capitulo,
+                                super::corto(&n.resumen, 40)
+                            )))
+                            .unwrap_or_default()
                     )))
                     .on_hover_text("Ir a la partida")
                     .clicked()
@@ -261,15 +267,25 @@ impl Aplicacion {
             });
             match &sim {
                 Ok(s) => {
-                    let q = self.calc.cantidades.get(&prop.partida).copied().unwrap_or_default();
+                    let q = self
+                        .calc
+                        .cantidades
+                        .get(&prop.partida)
+                        .copied()
+                        .or_else(|| prop.nueva.as_ref().map(|n| n.cantidad))
+                        .unwrap_or_default();
+                    let unidad = c
+                        .map(|c| c.unidad.as_str())
+                        .or_else(|| prop.nueva.as_ref().map(|n| n.unidad.as_str()))
+                        .unwrap_or("");
                     ui.label(
                         RichText::new(format!(
                             "actual {} €  ·  propuesto {} €/{}  ·  {} {}  ·  importe {} €",
                             eur(s.precio_antes),
                             eur(s.precio_despues),
-                            c.map(|c| c.unidad.as_str()).unwrap_or(""),
+                            unidad,
                             num(q, 2),
-                            c.map(|c| c.unidad.as_str()).unwrap_or(""),
+                            unidad,
                             eur(ppto_core::redondear(s.precio_despues * q, 2))
                         ))
                         .strong(),
