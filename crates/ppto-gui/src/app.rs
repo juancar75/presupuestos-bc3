@@ -88,6 +88,8 @@ enum Accion {
     ReaplicarAceptadas,
     /// Descuento de un fabricante (puntos).
     Descuento(String, Decimal),
+    /// Margen propio de una partida (% sobre su precio; `None` = el general).
+    Margen(String, Option<Decimal>),
     /// PVP de tarifa de un recurso ligado a un fabricante.
     Pvp(String, Decimal),
     /// Grupo de producto de un recurso con tarifa (vacío = sin grupo).
@@ -268,6 +270,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::AceptarPropuesta(id) => (format!("propuesta IA #{id}"), None),
         Accion::ReaplicarAceptadas => ("reaplicar propuestas aceptadas".into(), None),
         Accion::Descuento(f, _) => (format!("descuento {f}"), None),
+        Accion::Margen(c, _) => (format!("margen de {c}"), None),
         Accion::Pvp(c, _) => (format!("PVP de {c}"), None),
         Accion::GrupoTarifa(c, _) => (format!("grupo de {c}"), None),
         Accion::QuitarDescuento(k) => (format!("quitar descuento {k}"), None),
@@ -892,6 +895,7 @@ impl Aplicacion {
                     }
                     Err(e) => Err(ppto_core::ErrorMotor::ValorInvalido(e)),
                 },
+                Accion::Margen(c, m) => self.p.fijar_margen(&c, m),
                 Accion::Descuento(fab, pct) => self.p.fijar_descuento(&fab, pct).map(|v| {
                     self.info(format!(
                         "Descuento {} {} %: {} recursos recalculados.",
@@ -1549,7 +1553,7 @@ impl Aplicacion {
                 ))
                 .size(15.0),
             );
-            self.coste_y_venta(ui, &hijo, &c.unidad, l);
+            self.coste_y_venta(ui, &hijo, &c.unidad, l, acciones);
         }
         ui.add_space(6.0);
 
@@ -2387,11 +2391,12 @@ impl Aplicacion {
 
     /// Coste y venta de la partida seleccionada, paso a paso: coste directo
     /// (por naturaleza) → costes indirectos → PEM → GG → BI → venta.
-    fn coste_y_venta(&self, ui: &mut Ui, hijo: &str, unidad: &str, l: &LineaValorada) {
+    fn coste_y_venta(&mut self, ui: &mut Ui, hijo: &str, unidad: &str, l: &LineaValorada, acciones: &mut Vec<Accion>) {
         let d = self.p.decimales.importe;
         let q = l.cantidad;
         let coste = self.calc.precios.get(hijo).copied().unwrap_or_default();
-        let v = venta::venta_partida(l.precio, self.gg, self.bi, d);
+        let margen_propio = self.p.conceptos.get(hijo).and_then(|c| c.margen);
+        let v = venta::venta_con_margen(l.precio, margen_propio, self.gg, self.bi, d);
         let imp = |x: Decimal| ppto_core::redondear(x * q, d);
         let (mut mo, mut mat, mut sub, mut maq, mut otr) = (
             Decimal::ZERO,
@@ -2461,20 +2466,42 @@ impl Aplicacion {
                         );
                         fila(ui, "= Precio de ejecución material".into(), l.precio, true);
                     }
-                    fila(ui, format!("+ Gastos generales {} %", num(self.gg, 2)), v.gastos_generales, false);
-                    fila(ui, format!("+ Beneficio industrial {} %", num(self.bi, 2)), v.beneficio_industrial, false);
+                    match v.margen_propio {
+                        Some(m) => fila(ui, format!("+ Margen de esta partida {} %", num(m, 2)), v.margen, false),
+                        None => {
+                            fila(
+                                ui,
+                                format!("+ Gastos generales {} %", num(self.gg, 2)),
+                                v.gastos_generales,
+                                false,
+                            );
+                            fila(
+                                ui,
+                                format!("+ Beneficio industrial {} %", num(self.bi, 2)),
+                                v.beneficio_industrial,
+                                false,
+                            );
+                        }
+                    }
                     fila(ui, "= VENTA (sin IVA)".into(), v.venta, true);
                 });
-            if let Ok(m) = venta::margen_obtenido(coste, v.venta) {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Margen de esta partida %").strong());
+                if let Some(n) = self
+                    .edicion
+                    .opcional(ui, &format!("margen|{hijo}"), margen_propio, 2, 60.0)
+                {
+                    acciones.push(Accion::Margen(hijo.to_owned(), n));
+                }
                 ui.label(
                     RichText::new(format!(
-                        "Margen sobre venta {} %  ·  beneficio {} € en esta partida. GG y BI se cambian en «Resumen y venta».",
-                        num(m, 2),
-                        eur(imp(v.venta) - imp(coste))
+                        "vacío = el general de la obra ({} %, cambiar en «Resumen y venta»)",
+                        num(self.gg + self.bi, 2)
                     ))
                     .weak(),
                 );
-            }
+            });
+            ui.label(RichText::new(format!("Ganas {} € en esta partida.", eur(imp(v.venta) - imp(coste)))).weak());
         });
     }
 
@@ -2489,7 +2516,7 @@ impl Aplicacion {
             .show(ui, |ui| {
                 egui::Grid::new("tabla_cv_grid")
                     .striped(true)
-                    .num_columns(9)
+                    .num_columns(10)
                     .show(ui, |ui| {
                         for t in [
                             "Capítulo",
@@ -2498,6 +2525,7 @@ impl Aplicacion {
                             "Cantidad",
                             "Ud",
                             "Coste €/ud",
+                            "Margen %",
                             "Venta €/ud",
                             "Importe coste",
                             "Importe venta",
@@ -2516,7 +2544,7 @@ impl Aplicacion {
                             };
                             let Some(c) = self.p.conceptos.get(&hijo) else { continue };
                             let coste = self.calc.precios.get(&hijo).copied().unwrap_or_default();
-                            let v = venta::venta_partida(l.precio, self.gg, self.bi, d);
+                            let v = venta::venta_con_margen(l.precio, c.margen, self.gg, self.bi, d);
                             let ic = ppto_core::redondear(coste * l.cantidad, d);
                             let iv = ppto_core::redondear(v.venta * l.cantidad, d);
                             tc += ic;
@@ -2533,12 +2561,20 @@ impl Aplicacion {
                             ui.label(cant(l.cantidad, self.p.decimales.medicion));
                             ui.label(&c.unidad);
                             ui.label(eur(coste));
+                            match c.margen {
+                                Some(m) => ui
+                                    .label(RichText::new(num(m, 2)).strong())
+                                    .on_hover_text("Margen propio de esta partida"),
+                                None => ui
+                                    .label(RichText::new(num(self.gg + self.bi, 2)).weak())
+                                    .on_hover_text("El general de la obra"),
+                            };
                             ui.label(eur(v.venta));
                             ui.label(eur(ic));
                             ui.label(eur(iv));
                             ui.end_row();
                         }
-                        for _ in 0..6 {
+                        for _ in 0..7 {
                             ui.label("");
                         }
                         ui.label(RichText::new("Total").strong());
@@ -2549,7 +2585,7 @@ impl Aplicacion {
             });
         ui.label(
             RichText::new(
-                "La suma de las ventas por partida puede diferir unos céntimos del resumen, que aplica GG y BI al PEM total (redondeo).",
+                "Margen en negrita: propio de la partida (se cambia en su pestaña). En gris: el general de la obra.",
             )
             .weak(),
         );
@@ -3389,6 +3425,27 @@ mod pruebas {
             });
             out.textures_delta.clear();
         }
+        // Margen propio: la partida pasa a PEM × 1,30 y se puede deshacer
+        app.aplicar(vec![Accion::Margen(hijo.clone(), Some(dec!(30)))]);
+        let m = app.p.concepto(&hijo).unwrap().margen;
+        assert_eq!(m, Some(dec!(30)));
+        let v = venta::venta_con_margen(l.precio, m, app.gg, app.bi, 2);
+        assert_eq!(v.venta, l.precio + ppto_core::redondear(l.precio * dec!(0.30), 2));
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let mut acc = Vec::new();
+                egui::CentralPanel::default_margins().show(ui, |ui| {
+                    app.pestana_partida(ui, &mut acc);
+                    app.pestana_resumen(ui, &mut acc);
+                });
+            });
+            out.textures_delta.clear();
+        }
+        app.deshacer();
+        assert_eq!(app.p.concepto(&hijo).unwrap().margen, None);
+        // Solo partidas
+        app.aplicar(vec![Accion::Margen(cap.clone(), Some(dec!(10)))]);
+        assert_eq!(app.p.concepto(&cap).unwrap().margen, None);
     }
 
     #[test]

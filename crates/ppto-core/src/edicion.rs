@@ -244,6 +244,25 @@ impl Presupuesto {
         Ok(borrados)
     }
 
+    /// Margen propio de una partida, en % sobre su precio (`None`: el general
+    /// de la obra). Admite de −50 % a 1.000 %.
+    pub fn fijar_margen(&mut self, partida: &str, margen: Option<Decimal>) -> Result<(), ErrorMotor> {
+        if let Some(m) = margen
+            && !(Decimal::from(-50)..=Decimal::from(1000)).contains(&m)
+        {
+            return Err(ErrorMotor::ValorInvalido(format!("margen {m} % fuera de rango")));
+        }
+        let c = self
+            .conceptos
+            .get_mut(partida)
+            .ok_or_else(|| ErrorMotor::ConceptoInexistente(partida.into()))?;
+        if c.naturaleza != Naturaleza::Partida {
+            return Err(ErrorMotor::ValorInvalido(format!("«{partida}» no es una partida")));
+        }
+        c.margen = margen;
+        Ok(())
+    }
+
     /// Sube (`arriba`) o baja una posición la línea `hijo` dentro de `padre`.
     /// El orden importa: los porcentajes se aplican sobre las líneas anteriores.
     pub fn mover_linea(&mut self, padre: &str, hijo: &str, arriba: bool) -> Result<(), ErrorMotor> {

@@ -208,3 +208,24 @@ fn instaladora_con_precios_de_venta_por_partida() {
     assert_eq!(d["base"], eur(esperado).as_str());
     assert!(esperado > v.pem);
 }
+
+/// Una partida con margen propio sale en el PDF a PEM + su margen; las
+/// demás, con GG + BI.
+#[test]
+fn margen_propio_de_partida_en_el_pdf() {
+    use ppto_core::formato::eur;
+    use ppto_core::{redondear, venta};
+    let mut p = suelo_radiante();
+    p.fijar_margen("SR.M2", Some(dec!(30))).unwrap();
+    let mut o = opciones();
+    ppto_pdf::Perfil::instaladora().aplicar(&mut o);
+    o.gastos_generales = dec!(13);
+    o.beneficio_industrial = dec!(6);
+    let d = datos(&p, &o, None).unwrap();
+    let texto = d.to_string();
+    let v = p.valorar().unwrap();
+    let l = v.lineas.values().flatten().find(|l| l.hijo == "SR.M2").unwrap();
+    let pv = venta::venta_con_margen(l.precio, Some(dec!(30)), dec!(13), dec!(6), 2).venta;
+    assert_eq!(pv, l.precio + redondear(l.precio * dec!(0.3), 2));
+    assert!(texto.contains(&format!("\"precio\":\"{}\"", eur(pv))), "{texto}");
+}

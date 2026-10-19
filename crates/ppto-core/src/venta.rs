@@ -97,6 +97,10 @@ pub fn resumen(pem: Decimal, gg_pct: Decimal, bi_pct: Decimal, iva_pct: Decimal,
 pub struct VentaPartida {
     /// Precio de ejecución material (coste directo + costes indirectos).
     pub pem: Decimal,
+    /// Margen propio de la partida (% sobre el PEM) en lugar de GG + BI.
+    pub margen_propio: Option<Decimal>,
+    /// Importe del margen propio (cero si usa GG + BI).
+    pub margen: Decimal,
     pub gastos_generales: Decimal,
     pub beneficio_industrial: Decimal,
     /// PEM + GG + BI.
@@ -107,9 +111,36 @@ pub fn venta_partida(pem: Decimal, gg_pct: Decimal, bi_pct: Decimal, decimales: 
     let r = resumen(pem, gg_pct, bi_pct, Decimal::ZERO, decimales);
     VentaPartida {
         pem,
+        margen_propio: None,
+        margen: Decimal::ZERO,
         gastos_generales: r.gastos_generales,
         beneficio_industrial: r.beneficio_industrial,
         venta: r.base,
+    }
+}
+
+/// Como [`venta_partida`], pero con el margen propio de la partida si lo
+/// tiene: venta = PEM + PEM × margen (sin GG ni BI).
+pub fn venta_con_margen(
+    pem: Decimal,
+    margen_propio: Option<Decimal>,
+    gg_pct: Decimal,
+    bi_pct: Decimal,
+    decimales: u32,
+) -> VentaPartida {
+    match margen_propio {
+        None => venta_partida(pem, gg_pct, bi_pct, decimales),
+        Some(m) => {
+            let margen = redondear(pem * pct(m), decimales);
+            VentaPartida {
+                pem,
+                margen_propio: Some(m),
+                margen,
+                gastos_generales: Decimal::ZERO,
+                beneficio_industrial: Decimal::ZERO,
+                venta: pem + margen,
+            }
+        }
     }
 }
 
@@ -128,6 +159,13 @@ mod tests {
         assert_eq!(v.gastos_generales, dec!(77.88));
         assert_eq!(v.beneficio_industrial, dec!(35.94));
         assert_eq!(v.venta, dec!(712.87));
+        // Margen propio del 30 %: 599,05 + 179,72 = 778,77
+        let m = venta_con_margen(dec!(599.05), Some(dec!(30)), dec!(13), dec!(6), 2);
+        assert_eq!(
+            (m.margen, m.venta, m.gastos_generales),
+            (dec!(179.72), dec!(778.77), dec!(0))
+        );
+        assert_eq!(venta_con_margen(dec!(599.05), None, dec!(13), dec!(6), 2), v);
     }
 
     #[test]
