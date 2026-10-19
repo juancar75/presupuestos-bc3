@@ -90,6 +90,29 @@ pub fn resumen(pem: Decimal, gg_pct: Decimal, bi_pct: Decimal, iva_pct: Decimal,
     }
 }
 
+/// Precio de venta de una partida (sin IVA) desde su precio de ejecución
+/// material: `precio + GG + BI`, con GG y BI redondeados como en el resumen.
+/// Es el desglose que justifica la venta partida a partida.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VentaPartida {
+    /// Precio de ejecución material (coste directo + costes indirectos).
+    pub pem: Decimal,
+    pub gastos_generales: Decimal,
+    pub beneficio_industrial: Decimal,
+    /// PEM + GG + BI.
+    pub venta: Decimal,
+}
+
+pub fn venta_partida(pem: Decimal, gg_pct: Decimal, bi_pct: Decimal, decimales: u32) -> VentaPartida {
+    let r = resumen(pem, gg_pct, bi_pct, Decimal::ZERO, decimales);
+    VentaPartida {
+        pem,
+        gastos_generales: r.gastos_generales,
+        beneficio_industrial: r.beneficio_industrial,
+        venta: r.base,
+    }
+}
+
 /// Valores habituales en obra pública (art. 131 RGLCAP): GG 13 %, BI 6 %.
 pub const GG_HABITUAL: Decimal = dec!(13);
 pub const BI_HABITUAL: Decimal = dec!(6);
@@ -98,6 +121,14 @@ pub const IVA_GENERAL: Decimal = dec!(21);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn venta_de_una_partida() {
+        let v = venta_partida(dec!(599.05), dec!(13), dec!(6), 2);
+        assert_eq!(v.gastos_generales, dec!(77.88));
+        assert_eq!(v.beneficio_industrial, dec!(35.94));
+        assert_eq!(v.venta, dec!(712.87));
+    }
 
     #[test]
     fn margen_30_sobre_venta_frente_a_recargo_30_sobre_coste() {

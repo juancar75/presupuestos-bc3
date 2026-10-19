@@ -8,6 +8,13 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [0.1.0-alpha.8] - 2026-10-19
 
 ### Añadido
+- **Coste y venta partida a partida.** En la pestaña Partida, debajo del
+  precio, el desglose completo por unidad y por importe: mano de obra,
+  material, subcontrata, maquinaria y otros → coste directo → costes
+  indirectos → PEM → gastos generales → beneficio industrial → **venta sin
+  IVA**, con el margen de la partida. En «Resumen y venta», tabla de todas las
+  partidas con coste y venta (unitarios e importes); al pulsar un código se
+  abre su desglose.
 - Exportar BC3 para **Presto antiguo** (menú «📤 Exportar BC3» → «Presto
   antiguo (códigos de 12 caracteres)»; MCP `exportar_bc3` con
   `longitud_codigo`). Las versiones antiguas cortan los códigos al importar y
