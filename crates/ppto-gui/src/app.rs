@@ -2320,6 +2320,13 @@ impl Aplicacion {
                 ui.end_row();
             }
         });
+        ui.label(
+            RichText::new(format!(
+                "Margen de la obra: {} % (GG + BI). Es el que llevan todas las partidas salvo las que tengan el suyo.",
+                num(self.gg + self.bi, 2)
+            ))
+            .strong(),
+        );
         let r = venta::resumen(pem, self.gg, self.bi, self.iva, 2);
         ui.add_space(6.0);
         egui::Grid::new("resumen")
@@ -2487,19 +2494,26 @@ impl Aplicacion {
                 });
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Margen de esta partida %").strong());
-                if let Some(n) = self
-                    .edicion
-                    .opcional(ui, &format!("margen|{hijo}"), margen_propio, 2, 60.0)
-                {
-                    acciones.push(Accion::Margen(hijo.to_owned(), n));
+                // Relleno con el de la obra; si se escribe otro, la partida tiene el suyo
+                let general = self.gg + self.bi;
+                let mostrado = margen_propio.unwrap_or(general);
+                if let Some(n) = self.edicion.decimal(ui, &format!("margen|{hijo}"), mostrado, 2, 60.0) {
+                    let nuevo = (n != general).then_some(n);
+                    if nuevo != margen_propio {
+                        acciones.push(Accion::Margen(hijo.to_owned(), nuevo));
+                    }
                 }
-                ui.label(
-                    RichText::new(format!(
-                        "vacío = el general de la obra ({} %, cambiar en «Resumen y venta»)",
-                        num(self.gg + self.bi, 2)
-                    ))
-                    .weak(),
-                );
+                if margen_propio.is_some() {
+                    ui.label(RichText::new("propio").strong());
+                    if ui
+                        .small_button(format!("Volver al de la obra ({} %)", num(general, 2)))
+                        .clicked()
+                    {
+                        acciones.push(Accion::Margen(hijo.to_owned(), None));
+                    }
+                } else {
+                    ui.label(RichText::new("el de la obra (se cambia en «Resumen y venta»)").weak());
+                }
             });
             ui.label(RichText::new(format!("Ganas {} € en esta partida.", eur(imp(v.venta) - imp(coste)))).weak());
         });

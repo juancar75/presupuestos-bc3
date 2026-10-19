@@ -9,8 +9,9 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ### Añadido
 - **Margen propio por partida.** En la pestaña Partida, «Margen de esta
-  partida %»: vacío usa el general de la obra (GG + BI); con un valor, la
-  venta de esa partida es su precio × (1 + margen). Se ve en el desglose, en
+  partida %» sale relleno con el margen de la obra (GG + BI); si se escribe
+  otro, esa partida tiene el suyo (venta = precio × (1 + margen)) y un botón
+  la devuelve al de la obra. Se ve en el desglose, en
   la columna «Margen %» de la tabla de «Resumen y venta» (en negrita los
   propios) y en el PDF de instaladora. Se guarda con la obra y se puede
   deshacer.
