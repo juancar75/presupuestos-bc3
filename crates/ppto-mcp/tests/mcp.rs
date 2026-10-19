@@ -316,6 +316,24 @@ fn propuestas_a_la_obra_activa() {
         1,
         "la segunda propuesta de P.VAL sustituye a la primera"
     );
+    // Contradictorio: partida nueva; «nueva» como objeto o como texto JSON
+    for nueva in [
+        json!({"capitulo":"ADIC","capitulo_resumen":"ADICIONALES","despues_de":"C01","unidad":"ud","resumen":"Vaciado","cantidad":1}),
+        json!(r#"{"capitulo":"ADIC","unidad":"ud","resumen":"Vaciado","cantidad":1}"#),
+    ] {
+        let (t, err) = llamar(
+            &mut e,
+            "proponer",
+            json!({
+                "partida": "ADIC01",
+                "lineas": [{"codigo":"MO.OF1F","rendimiento":2}],
+                "confianza": "media",
+                "justificacion": "x",
+                "nueva": nueva
+            }),
+        );
+        assert!(!err && t.contains("ADIC01") && t.contains("49,00"), "{t}");
+    }
 }
 
 #[test]
