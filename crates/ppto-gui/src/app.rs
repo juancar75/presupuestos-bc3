@@ -26,7 +26,6 @@ use ppto_core::presupuesto::LineaValorada;
 use ppto_core::subcontrata::{Asignacion, Contratacion, PaqueteTrabajo, ResultadoEscenario, simular};
 use ppto_core::{Decimal, Presupuesto, venta};
 use ppto_db::{Almacen, InfoRevision};
-use rust_decimal_macros::dec;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
@@ -191,7 +190,6 @@ pub struct Aplicacion {
     gg: Decimal,
     bi: Decimal,
     iva: Decimal,
-    margen: Decimal,
     ofertas: Vec<PaqueteTrabajo>,
     form: FormOferta,
     informe: Option<ppto_bc3::Importacion>,
@@ -335,7 +333,6 @@ impl Aplicacion {
             gg: venta::GG_HABITUAL,
             bi: venta::BI_HABITUAL,
             iva: venta::IVA_GENERAL,
-            margen: dec!(30),
             ofertas: ofertas_montaje_suelo_radiante().to_vec(),
             form: FormOferta::default(),
             informe: None,
@@ -2371,33 +2368,6 @@ impl Aplicacion {
         egui::CollapsingHeader::new(RichText::new("Coste y venta partida a partida").strong())
             .default_open(true)
             .show(ui, |ui| self.tabla_coste_venta(ui));
-
-        ui.add_space(14.0);
-        ui.label(RichText::new("Precio de venta a partir del PEM").strong());
-        ui.horizontal(|ui| {
-            ui.label("Margen sobre venta %");
-            if let Some(n) = self.edicion.decimal(ui, "pct|margen", self.margen, 2, 60.0) {
-                self.margen = n;
-            }
-        });
-        match venta::venta_por_margen(pem, self.margen, 2) {
-            Ok(pv) => {
-                let rec = venta::recargo_equivalente(self.margen).unwrap_or_default();
-                ui.label(format!("Venta: {} €   (beneficio {} €)", eur(pv), eur(pv - pem)));
-                ui.label(
-                    RichText::new(format!(
-                        "Equivale a un recargo del {} % sobre coste. Un recargo del {} % daría {} €.",
-                        num(rec, 2),
-                        num(self.margen, 2),
-                        eur(venta::venta_por_recargo(pem, self.margen, 2))
-                    ))
-                    .weak(),
-                );
-            }
-            Err(e) => {
-                ui.label(RichText::new(e.to_string()).color(Color32::from_rgb(220, 80, 60)));
-            }
-        }
     }
 
     /// Coste y venta de la partida seleccionada, paso a paso: coste directo
@@ -2874,6 +2844,7 @@ mod pruebas {
     //! Edición desde la interfaz (P-014): acciones y pintado sin ventana.
     use super::*;
     use eframe::egui::{Context, RawInput};
+    use rust_decimal_macros::dec;
 
     /// Pinta árbol, pestaña Partida y ventana de alta; devuelve las acciones pedidas.
     fn pintar(app: &mut Aplicacion) -> Vec<Accion> {
