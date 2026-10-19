@@ -328,6 +328,7 @@ fn importar(
             beneficio_industrial: k.beneficio_industrial,
             iva: k.iva,
             fecha: None,
+            descuentos_visibles: true,
         };
         exportar_bc3(p, &o, b)?;
     }

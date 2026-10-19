@@ -10,7 +10,7 @@
 //! El precio neto se guarda en `precio`, de modo que el resto del motor,
 //! los informes y el BC3 (que solo lleva netos) no cambian.
 
-use crate::concepto::PrecioTarifa;
+use crate::concepto::{Concepto, LineaDescomposicion, Naturaleza, PrecioTarifa};
 use crate::error::ErrorMotor;
 use crate::presupuesto::Presupuesto;
 use crate::redondear;
@@ -226,5 +226,101 @@ impl Presupuesto {
             }
         }
         m.into_values().collect()
+    }
+
+    /// Copia del presupuesto con los descuentos **a la vista** en los
+    /// descompuestos: cada recurso con tarifa y descuento pasa a su PVP y,
+    /// detrás de cada línea suya, se añade una línea porcentual negativa
+    /// «Descuento FABRICANTE −x %» cuya máscara es el código del recurso
+    /// (`<código>%`), de modo que solo se aplica a él. Es lo que se exporta al
+    /// BC3 para que Presto muestre PVP y descuento.
+    ///
+    /// Los recursos que no se pueden mostrar así se dejan a neto y se avisa:
+    /// cuelgan directamente de un capítulo, su código tiene «%» o «&» o pasa
+    /// de 19 caracteres, u otra línea del mismo descompuesto empieza igual.
+    /// El importe puede diferir algún céntimo del neto por el redondeo de la
+    /// línea porcentual.
+    pub fn con_descuentos_visibles(&self) -> (Presupuesto, Vec<String>) {
+        let mut p = self.clone();
+        let mut avisos = Vec::new();
+        // Recursos con descuento > 0 y si se pueden mostrar.
+        let mut candidatos: BTreeMap<String, (Decimal, String)> = BTreeMap::new();
+        for c in self.conceptos.values() {
+            let Some(t) = &c.tarifa else { continue };
+            let d = self.descuento_tarifa(t);
+            if d.is_zero() {
+                continue;
+            }
+            if c.codigo.contains(['%', '&']) || c.codigo.chars().count() > 19 {
+                avisos.push(format!(
+                    "«{}» se exporta a neto: su código no admite línea de descuento (tiene % o & o pasa de 19 caracteres)",
+                    c.codigo
+                ));
+                continue;
+            }
+            candidatos.insert(c.codigo.clone(), (d, self.clave_aplicada(t)));
+        }
+        // No se puede si cuelga de un capítulo o si la máscara alcanza a otra línea.
+        for c in self.conceptos.values() {
+            for l in &c.descomposicion {
+                if !candidatos.contains_key(&l.hijo) {
+                    continue;
+                }
+                let choca = c
+                    .descomposicion
+                    .iter()
+                    .any(|o| o.hijo != l.hijo && o.hijo.starts_with(&l.hijo));
+                if c.naturaleza == Naturaleza::Capitulo || choca {
+                    avisos.push(format!(
+                        "«{}» se exporta a neto: {}",
+                        l.hijo,
+                        if choca {
+                            format!("en «{}» otra línea empieza por el mismo código", c.codigo)
+                        } else {
+                            format!("cuelga directamente del capítulo «{}»", c.codigo)
+                        }
+                    ));
+                    candidatos.remove(&l.hijo);
+                }
+            }
+        }
+        // Solo los que se usan en algún descompuesto (sin conceptos huérfanos).
+        candidatos.retain(|k, _| {
+            self.conceptos
+                .values()
+                .any(|c| c.descomposicion.iter().any(|l| &l.hijo == k))
+        });
+        if candidatos.is_empty() {
+            return (p, avisos);
+        }
+        // Recursos a PVP y una línea de descuento por recurso.
+        for (codigo, (d, clave)) in &candidatos {
+            if let Some(c) = p.conceptos.get_mut(codigo)
+                && let Some(t) = &c.tarifa
+            {
+                c.precio = t.pvp;
+            }
+            let pc = format!("{codigo}%");
+            let resumen = format!("Descuento {clave} {} %", d.normalize());
+            p.conceptos.insert(pc.clone(), Concepto::porcentaje(pc, resumen));
+        }
+        for c in p.conceptos.values_mut() {
+            if c.naturaleza == Naturaleza::Capitulo
+                || !c.descomposicion.iter().any(|l| candidatos.contains_key(&l.hijo))
+            {
+                continue;
+            }
+            let mut nuevas = Vec::with_capacity(c.descomposicion.len() + 2);
+            for l in c.descomposicion.drain(..) {
+                let dto = candidatos.get(&l.hijo).map(|x| x.0);
+                let pc = format!("{}%", l.hijo);
+                nuevas.push(l);
+                if let Some(d) = dto {
+                    nuevas.push(LineaDescomposicion::new(pc, -d));
+                }
+            }
+            c.descomposicion = nuevas;
+        }
+        (p, avisos)
     }
 }

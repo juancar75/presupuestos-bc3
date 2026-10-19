@@ -539,6 +539,7 @@ impl Aplicacion {
             beneficio_industrial: Some(self.bi),
             iva: Some(self.iva),
             fecha: None,
+            descuentos_visibles: true,
         };
         match ppto_bc3::exportar_fichero(&self.p, &o, &ruta) {
             Ok(avisos) if avisos.is_empty() => self.info(format!("BC3 exportado en {}", ruta.display())),
@@ -1590,7 +1591,29 @@ impl Aplicacion {
                                 ui.label(&h.codigo);
                             }
                             ui.label(&h.unidad);
-                            ui.label(corto(&h.resumen, 46)).on_hover_text(&h.resumen);
+                            match &h.tarifa {
+                                // Material de tarifa: PVP y descuento a la vista (en el BC3
+                                // sale a PVP con su línea «Descuento …»).
+                                Some(t) => {
+                                    let d = self.p.descuento_tarifa(t).normalize();
+                                    ui.vertical(|ui| {
+                                        ui.label(corto(&h.resumen, 46)).on_hover_text(&h.resumen);
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "PVP {} € − {} % {}",
+                                                num(t.pvp, dec.precio),
+                                                num(d, d.scale()),
+                                                self.p.clave_aplicada(t)
+                                            ))
+                                            .small()
+                                            .weak(),
+                                        );
+                                    });
+                                }
+                                None => {
+                                    ui.label(corto(&h.resumen, 46)).on_hover_text(&h.resumen);
+                                }
+                            }
                             ui.label(
                                 RichText::new(nombre_naturaleza(h.naturaleza))
                                     .color(color_naturaleza(h.naturaleza, ui.visuals().dark_mode)),

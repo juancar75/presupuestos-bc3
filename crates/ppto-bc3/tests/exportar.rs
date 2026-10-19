@@ -93,6 +93,7 @@ fn formato_como_presto_8_8() {
         beneficio_industrial: Some(dec!(6)),
         iva: Some(dec!(21)),
         fecha: Some("101026".into()),
+        ..Default::default()
     };
     let ex = exportar(&p, &o).unwrap();
     let texto = encoding_rs::WINDOWS_1252.decode(&ex.bytes).0.into_owned();
@@ -142,4 +143,67 @@ fn subcontrata_se_avisa() {
     .unwrap();
     let ex = exportar(&p, &OpcionesExportacion::default()).unwrap();
     assert!(ex.avisos.iter().any(|a| a.contains("subcontrata")));
+}
+
+/// Con `descuentos_visibles` el material sale a PVP con su línea de
+/// descuento negativa y la partida vale lo mismo (al céntimo) que a neto.
+#[test]
+fn descuentos_visibles_en_el_descompuesto() {
+    use ppto_core::LineaDescomposicion;
+    let mut p = Presupuesto::new("dto", "OBRA", "Obra");
+    p.insertar(Concepto::basico(
+        "MD.REJ",
+        "ud",
+        "Rejilla",
+        Naturaleza::Material,
+        dec!(0),
+    ))
+    .unwrap();
+    p.insertar(Concepto::basico(
+        "MO.OF",
+        "h",
+        "Oficial",
+        Naturaleza::ManoObra,
+        dec!(28),
+    ))
+    .unwrap();
+    p.insertar(Concepto::porcentaje("%MA", "Medios auxiliares")).unwrap();
+    p.insertar(Concepto::partida(
+        "P1",
+        "ud",
+        "Rejilla colocada",
+        vec![
+            LineaDescomposicion::new("MD.REJ", dec!(1)),
+            LineaDescomposicion::new("MO.OF", dec!(0.5)),
+            LineaDescomposicion::new("%MA", dec!(2)),
+        ],
+    ))
+    .unwrap();
+    p.nuevo_capitulo("OBRA", "C1", "Difusión").unwrap();
+    p.anadir_linea("C1", "P1", dec!(10)).unwrap();
+    p.fijar_tarifa("MD.REJ", "MADEL", dec!(80.49)).unwrap();
+    p.fijar_descuento("MADEL", dec!(35)).unwrap();
+    let neto = p.precio("P1").unwrap();
+
+    let o = OpcionesExportacion {
+        descuentos_visibles: true,
+        ..Default::default()
+    };
+    let ex = exportar(&p, &o).unwrap();
+    let texto = String::from_utf8_lossy(&ex.bytes);
+    assert!(texto.contains("~C|MD.REJ|ud|Rejilla|80.49|"), "{texto}");
+    assert!(texto.contains("MD.REJ%\\1\\-0.35\\"), "{texto}");
+    assert!(texto.contains("Descuento MADEL 35 %"), "{texto}");
+
+    let q = importar(&ex.bytes).unwrap().presupuesto;
+    let lineas: Vec<_> = q
+        .concepto("P1")
+        .unwrap()
+        .descomposicion
+        .iter()
+        .map(|l| l.hijo.clone())
+        .collect();
+    assert_eq!(lineas, ["MD.REJ", "MD.REJ%", "MO.OF", "%MA"]);
+    let visible = q.precio("P1").unwrap();
+    assert!((visible - neto).abs() <= dec!(0.01), "{visible} frente a {neto}");
 }
