@@ -8,7 +8,9 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [0.1.0-alpha.9] - 2026-10-19
 
 ### Añadido
-- **Margen propio por partida.** En la pestaña Partida, «Margen de esta
+- **Sobrecoste y margen sobre venta** en cada partida y en la tabla de
+  «Resumen y venta» (y el total de la obra).
+- **Sobrecoste propio por partida.** En la pestaña Partida, «Sobrecoste de esta
   partida %» sale relleno con el margen de la obra (GG + BI); si se escribe
   otro, esa partida tiene el suyo (venta = precio × (1 + margen)) y un botón
   la devuelve al de la obra. Se ve en el desglose, en

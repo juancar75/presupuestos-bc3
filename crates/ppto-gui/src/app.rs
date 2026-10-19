@@ -2322,7 +2322,7 @@ impl Aplicacion {
         });
         ui.label(
             RichText::new(format!(
-                "Margen de la obra: {} % (GG + BI). Es el que llevan todas las partidas salvo las que tengan el suyo.",
+                "Sobrecoste de la obra: {} % (GG + BI). Es el que llevan todas las partidas salvo las que tengan el suyo.",
                 num(self.gg + self.bi, 2)
             ))
             .strong(),
@@ -2474,7 +2474,12 @@ impl Aplicacion {
                         fila(ui, "= Precio de ejecución material".into(), l.precio, true);
                     }
                     match v.margen_propio {
-                        Some(m) => fila(ui, format!("+ Margen de esta partida {} %", num(m, 2)), v.margen, false),
+                        Some(m) => fila(
+                            ui,
+                            format!("+ Sobrecoste de esta partida {} %", num(m, 2)),
+                            v.margen,
+                            false,
+                        ),
                         None => {
                             fila(
                                 ui,
@@ -2493,7 +2498,7 @@ impl Aplicacion {
                     fila(ui, "= VENTA (sin IVA)".into(), v.venta, true);
                 });
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Margen de esta partida %").strong());
+                ui.label(RichText::new("Sobrecoste de esta partida %").strong());
                 // Relleno con el de la obra; si se escribe otro, la partida tiene el suyo
                 let general = self.gg + self.bi;
                 let mostrado = margen_propio.unwrap_or(general);
@@ -2515,7 +2520,16 @@ impl Aplicacion {
                     ui.label(RichText::new("el de la obra (se cambia en «Resumen y venta»)").weak());
                 }
             });
-            ui.label(RichText::new(format!("Ganas {} € en esta partida.", eur(imp(v.venta) - imp(coste)))).weak());
+            let (sc, mv) = sobrecoste_y_margen(imp(coste), imp(v.venta));
+            ui.label(
+                RichText::new(format!(
+                    "Sobrecoste {} %   ·   Margen sobre venta {} %   ·   Ganas {} € en esta partida",
+                    sc.map(|x| num(x, 2)).unwrap_or_else(|| "—".into()),
+                    mv.map(|x| num(x, 2)).unwrap_or_else(|| "—".into()),
+                    eur(imp(v.venta) - imp(coste))
+                ))
+                .strong(),
+            );
         });
     }
 
@@ -2530,7 +2544,7 @@ impl Aplicacion {
             .show(ui, |ui| {
                 egui::Grid::new("tabla_cv_grid")
                     .striped(true)
-                    .num_columns(10)
+                    .num_columns(11)
                     .show(ui, |ui| {
                         for t in [
                             "Capítulo",
@@ -2539,8 +2553,9 @@ impl Aplicacion {
                             "Cantidad",
                             "Ud",
                             "Coste €/ud",
-                            "Margen %",
+                            "Sobrecoste %",
                             "Venta €/ud",
+                            "Margen s/venta %",
                             "Importe coste",
                             "Importe venta",
                         ] {
@@ -2575,23 +2590,31 @@ impl Aplicacion {
                             ui.label(cant(l.cantidad, self.p.decimales.medicion));
                             ui.label(&c.unidad);
                             ui.label(eur(coste));
-                            match c.margen {
-                                Some(m) => ui
-                                    .label(RichText::new(num(m, 2)).strong())
-                                    .on_hover_text("Margen propio de esta partida"),
-                                None => ui
-                                    .label(RichText::new(num(self.gg + self.bi, 2)).weak())
-                                    .on_hover_text("El general de la obra"),
-                            };
+                            let (sc, mv) = sobrecoste_y_margen(ic, iv);
+                            let pct = |x: Option<Decimal>| x.map(|x| num(x, 2)).unwrap_or_else(|| "—".into());
+                            if c.margen.is_some() {
+                                ui.label(RichText::new(pct(sc)).strong())
+                                    .on_hover_text("Sobrecoste propio de esta partida");
+                            } else {
+                                ui.label(RichText::new(pct(sc)).weak()).on_hover_text("El de la obra");
+                            }
                             ui.label(eur(v.venta));
+                            ui.label(pct(mv));
                             ui.label(eur(ic));
                             ui.label(eur(iv));
                             ui.end_row();
                         }
-                        for _ in 0..7 {
+                        let (sc, mv) = sobrecoste_y_margen(tc, tv);
+                        let pct = |x: Option<Decimal>| x.map(|x| num(x, 2)).unwrap_or_else(|| "—".into());
+                        ui.label("");
+                        ui.label("");
+                        ui.label(RichText::new("Total de la obra").strong());
+                        for _ in 0..3 {
                             ui.label("");
                         }
-                        ui.label(RichText::new("Total").strong());
+                        ui.label(RichText::new(pct(sc)).strong());
+                        ui.label("");
+                        ui.label(RichText::new(pct(mv)).strong());
                         ui.label(RichText::new(eur(tc)).strong());
                         ui.label(RichText::new(eur(tv)).strong());
                         ui.end_row();
@@ -2599,7 +2622,7 @@ impl Aplicacion {
             });
         ui.label(
             RichText::new(
-                "Margen en negrita: propio de la partida (se cambia en su pestaña). En gris: el general de la obra.",
+                "Sobrecoste = (venta − coste) / coste. Margen sobre venta = (venta − coste) / venta. Sobrecoste en negrita: propio de la partida; en gris: el de la obra.",
             )
             .weak(),
         );
@@ -2615,6 +2638,14 @@ impl Aplicacion {
             None => codigo.to_owned(),
         }
     }
+}
+
+/// Sobrecoste ((venta − coste) / coste) y margen sobre venta
+/// ((venta − coste) / venta), en %, de unos importes.
+fn sobrecoste_y_margen(coste: Decimal, venta: Decimal) -> (Option<Decimal>, Option<Decimal>) {
+    let b = venta - coste;
+    let pct = |base: Decimal| (!base.is_zero()).then(|| b / base * Decimal::ONE_HUNDRED);
+    (pct(coste), pct(venta))
 }
 
 impl eframe::App for Aplicacion {
@@ -3455,6 +3486,11 @@ mod pruebas {
             });
             out.textures_delta.clear();
         }
+        // Fancoil: coste 599,05 → venta 712,87: sobrecoste 19 %, margen 15,97 %
+        let (sc, mv) = sobrecoste_y_margen(dec!(599.05), dec!(712.87));
+        assert_eq!(sc.unwrap().round_dp(2), dec!(19.00));
+        assert_eq!(mv.unwrap().round_dp(2), dec!(15.97));
+        assert_eq!(sobrecoste_y_margen(dec!(0), dec!(0)), (None, None));
         app.deshacer();
         assert_eq!(app.p.concepto(&hijo).unwrap().margen, None);
         // Solo partidas
