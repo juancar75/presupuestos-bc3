@@ -203,7 +203,13 @@ fn descuentos_visibles_en_el_descompuesto() {
         .iter()
         .map(|l| l.hijo.clone())
         .collect();
-    assert_eq!(lineas, ["MD.REJ", "MD.REJ%", "MO.OF", "%MA"]);
+    // Al volver a leerlo, la línea de descuento se convierte otra vez en
+    // tarifa del recurso y descuento del fabricante
+    assert_eq!(lineas, ["MD.REJ", "MO.OF", "%MA"]);
+    let t = q.concepto("MD.REJ").unwrap().tarifa.clone().unwrap();
+    assert_eq!((t.fabricante.as_str(), t.pvp), ("MADEL", dec!(80.49)));
+    assert_eq!(q.descuentos.get("MADEL"), Some(&dec!(35)));
+    assert!(!q.conceptos.contains_key("MD.REJ%"));
     let visible = q.precio("P1").unwrap();
     assert!((visible - neto).abs() <= dec!(0.01), "{visible} frente a {neto}");
 }
@@ -270,8 +276,17 @@ fn codigos_cortos_para_presto_antiguo() {
     // Cortados a 12 seguirían siendo únicos
     let cortos: std::collections::BTreeSet<String> = q.conceptos.keys().map(|c| c.chars().take(12).collect()).collect();
     assert_eq!(cortos.len(), q.conceptos.len());
-    // El descuento sigue a la vista
-    assert!(q.conceptos.keys().any(|c| c.ends_with('%') && c != "%MA"));
+    // El descuento sigue enganchado a su recurso: al leerlo se recupera
+    assert!(q.conceptos.values().filter(|c| c.tarifa.is_some()).count() == 2);
+    assert_eq!(q.descuentos.get("ITALSAN"), Some(&dec!(50)));
+    // y en el fichero va a la vista, con códigos cortos
+    let texto = String::from_utf8_lossy(&ex.bytes);
+    assert!(
+        texto
+            .lines()
+            .any(|l| l.starts_with("~C|") && l.contains("%|%|Descuento ITALSAN 50 %")),
+        "{texto}"
+    );
     let despues = q.valorar().unwrap().pem;
     assert_eq!(despues, antes);
 }
