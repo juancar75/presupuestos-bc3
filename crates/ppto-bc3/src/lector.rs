@@ -27,7 +27,17 @@ pub fn importar(bytes: &[u8]) -> Result<Importacion, ErrorBc3> {
     let mut l = Lector::default();
     let texto = l.decodificar(bytes);
     l.leer_registros(&texto);
-    l.construir()
+    let mut imp = l.construir()?;
+    // Descuentos a la vista de nuestra exportación → tarifa y descuento del fabricante
+    for m in imp.presupuesto.recuperar_descuentos_visibles() {
+        imp.incidencias.push(crate::Incidencia {
+            gravedad: crate::Gravedad::Info,
+            linea: 0,
+            registro: String::new(),
+            mensaje: m,
+        });
+    }
+    Ok(imp)
 }
 
 // ---------------------------------------------------------------------------

@@ -330,4 +330,104 @@ impl Presupuesto {
         }
         (p, avisos)
     }
+
+    /// Inverso de [`Self::con_descuentos_visibles`]: al leer un BC3 que trae
+    /// los descuentos a la vista (recurso a PVP seguido de la línea
+    /// `<código>%` «Descuento FABRICANTE x %»), los convierte otra vez en
+    /// tarifa del recurso y descuento del fabricante, y quita esas líneas.
+    /// El importe de la obra no cambia (salvo algún céntimo de redondeo).
+    /// Devuelve los fabricantes recuperados y los avisos.
+    pub fn recuperar_descuentos_visibles(&mut self) -> Vec<String> {
+        let mut avisos = Vec::new();
+        // (recurso, línea %, clave, descuento)
+        let mut hallados: Vec<(String, String, String, Decimal)> = Vec::new();
+        for c in self.conceptos.values() {
+            if c.naturaleza != Naturaleza::Porcentaje {
+                continue;
+            }
+            let Some(recurso) = c.codigo.strip_suffix('%') else {
+                continue;
+            };
+            if recurso.is_empty() || recurso.contains(['%', '&']) {
+                continue;
+            }
+            let Some((clave, d)) = leer_resumen_descuento(&c.resumen) else {
+                continue;
+            };
+            if !self.conceptos.get(recurso).is_some_and(|r| r.naturaleza.es_basico()) {
+                continue;
+            }
+            // Todas sus líneas deben ser el mismo −d
+            let coherente = self
+                .conceptos
+                .values()
+                .flat_map(|p| p.descomposicion.iter())
+                .filter(|l| l.hijo == c.codigo)
+                .all(|l| l.rendimiento == -d);
+            if !coherente {
+                avisos.push(format!(
+                    "«{}»: líneas de descuento distintas entre partidas; se deja como está",
+                    c.codigo
+                ));
+                continue;
+            }
+            hallados.push((recurso.to_owned(), c.codigo.clone(), clave, d));
+        }
+        // Un descuento por clave
+        let mut por_clave: BTreeMap<String, Decimal> = BTreeMap::new();
+        hallados.retain(|(r, _, k, d)| match por_clave.get(k) {
+            Some(x) if x != d => {
+                avisos.push(format!(
+                    "«{r}»: {k} con {d} % y {x} % en el mismo BC3; se deja como está"
+                ));
+                false
+            }
+            _ => {
+                por_clave.insert(k.clone(), *d);
+                true
+            }
+        });
+        for (k, d) in &por_clave {
+            self.descuentos.entry(k.clone()).or_insert(*d);
+        }
+        let mut n = 0;
+        for (recurso, linea, clave, _) in &hallados {
+            let pvp = self.conceptos[recurso].precio;
+            let (f, g) = partes(clave);
+            if self.fijar_tarifa_grupo(recurso, &f, g.as_deref(), pvp).is_err() {
+                continue;
+            }
+            for c in self.conceptos.values_mut() {
+                c.descomposicion.retain(|l| &l.hijo != linea);
+            }
+            self.conceptos.remove(linea);
+            n += 1;
+        }
+        if n > 0 {
+            avisos.insert(
+                0,
+                format!(
+                    "descuentos por fabricante recuperados del BC3: {} ({n} recursos a PVP con su descuento)",
+                    por_clave
+                        .iter()
+                        .map(|(k, d)| format!("{k} {} %", d.normalize()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            );
+        }
+        avisos
+    }
+}
+
+/// «Descuento ITALSAN 50 %» → («ITALSAN», 50).
+fn leer_resumen_descuento(resumen: &str) -> Option<(String, Decimal)> {
+    let r = resumen.trim().strip_prefix("Descuento ")?.strip_suffix('%')?.trim_end();
+    let (clave, num) = r.rsplit_once(' ')?;
+    let d: Decimal = num.replace(',', ".").parse().ok()?;
+    let clave = clave.trim();
+    (!clave.is_empty() && d > Decimal::ZERO && d < Decimal::ONE_HUNDRED).then(|| {
+        let (f, g) = partes(clave);
+        (self::clave(&f, g.as_deref()), d)
+    })
 }

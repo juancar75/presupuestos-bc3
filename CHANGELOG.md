@@ -5,6 +5,14 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.11] - 2026-10-19
+
+### Añadido
+- Al importar un BC3 exportado con los descuentos a la vista (recurso a PVP
+  + línea «Descuento FABRICANTE x %»), se recuperan la tarifa del recurso y
+  el descuento del fabricante, y se quitan esas líneas: la obra vuelve a
+  tener sus «Descuentos por fabricante» editables. El importe no cambia.
+
 ## [0.1.0-alpha.10] - 2026-10-19
 
 ### Quitado
