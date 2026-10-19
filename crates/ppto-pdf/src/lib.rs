@@ -87,7 +87,7 @@ pub struct OpcionesPdf {
     /// Sin desglose (instaladora): GG y BI van **dentro de cada partida**
     /// (precio de venta = PEM + GG + BI, como
     /// [`ppto_core::venta::venta_partida`]) y los capítulos y el total suman
-    /// esos importes. Con GG y BI a cero no cambia nada.
+    /// esos importes. Las partidas con margen propio usan el suyo.
     pub precios_venta: bool,
     /// Plantilla Typst propia; `None` usa [`PLANTILLA`].
     pub plantilla: Option<PathBuf>,
@@ -213,8 +213,12 @@ pub fn guardar_pdf(p: &Presupuesto, o: &OpcionesPdf, ruta: impl AsRef<Path>) -> 
 pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<Value, ErrorPdf> {
     let mut v = p.valorar()?;
     let dec = p.decimales;
-    let venta_dentro =
-        !o.desglose_contrata && o.precios_venta && !(o.gastos_generales.is_zero() && o.beneficio_industrial.is_zero());
+    let sin_margen = o.gastos_generales.is_zero()
+        && o.beneficio_industrial.is_zero()
+        && p.conceptos
+            .values()
+            .all(|c| c.margen.is_none() && c.venta_fija.is_none());
+    let venta_dentro = !o.desglose_contrata && o.precios_venta && !sin_margen;
     if venta_dentro {
         v.pem = a_venta(
             p,
@@ -357,7 +361,10 @@ fn a_venta(
                 l.precio = *t;
                 l.importe = ppto_core::redondear(*t * l.cantidad, d);
             } else {
-                l.precio = venta::venta_partida(l.precio, gg, bi, d).venta;
+                l.precio = match p.conceptos.get(&l.hijo) {
+                    Some(c) => venta::venta_concepto(l.precio, c, gg, bi, d).venta,
+                    None => venta::venta_partida(l.precio, gg, bi, d).venta,
+                };
                 l.importe = ppto_core::redondear(l.precio * l.cantidad, d);
             }
             total += l.importe;

@@ -523,6 +523,8 @@ impl Lector {
                     descomposicion: Vec::new(),
                     texto: self.textos.remove(codigo),
                     tarifa: None,
+                    margen: None,
+                    venta_fija: None,
                 },
             );
         }

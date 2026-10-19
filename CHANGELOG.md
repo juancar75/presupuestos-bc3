@@ -5,6 +5,23 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.9] - 2026-10-19
+
+### Añadido
+- **Venta bloqueada por partida**: «Venta bloqueada €/ud» o el botón
+  «🔒 Bloquear en …»; la partida se vende a ese importe aunque cambie su
+  coste (sobrecoste y margen se recalculan; en rojo si se pierde dinero).
+  Se ve con 🔒 en la tabla y sale en el PDF.
+- **Sobrecoste y margen sobre venta** en cada partida y en la tabla de
+  «Resumen y venta» (y el total de la obra).
+- **Sobrecoste propio por partida.** En la pestaña Partida, «Sobrecoste de esta
+  partida %» sale relleno con el margen de la obra (GG + BI); si se escribe
+  otro, esa partida tiene el suyo (venta = precio × (1 + margen)) y un botón
+  la devuelve al de la obra. Se ve en el desglose, en
+  la columna «Margen %» de la tabla de «Resumen y venta» (en negrita los
+  propios) y en el PDF de instaladora. Se guarda con la obra y se puede
+  deshacer.
+
 ## [0.1.0-alpha.8] - 2026-10-19
 
 ### Añadido

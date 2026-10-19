@@ -49,6 +49,8 @@ const MIGRACIONES: &[&str] = &[
     include_str!("../migrations/0003_redondear_auxiliares.sql"),
     include_str!("../migrations/0004_descuentos_fabricante.sql"),
     include_str!("../migrations/0005_grupo_descuento.sql"),
+    include_str!("../migrations/0006_margen_partida.sql"),
+    include_str!("../migrations/0007_venta_fija.sql"),
 ];
 
 pub struct Almacen {
@@ -244,7 +246,7 @@ impl Almacen {
 
         let mut conceptos = BTreeMap::new();
         let mut st = self.con.prepare(
-            "SELECT codigo, unidad, resumen, naturaleza, precio, texto, tarifa_fabricante, tarifa_pvp, tarifa_grupo
+            "SELECT codigo, unidad, resumen, naturaleza, precio, texto, tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija
              FROM conceptos WHERE revision_id = ?1",
         )?;
         let filas = st.query_map([rev], |r| {
@@ -261,11 +263,13 @@ impl Almacen {
                     r.get::<_, Option<String>>(6)?,
                     r.get::<_, Option<String>>(7)?,
                     r.get::<_, Option<String>>(8)?,
+                    r.get::<_, Option<String>>(9)?,
+                    r.get::<_, Option<String>>(10)?,
                 ),
             ))
         })?;
         for f in filas {
-            let ((codigo, unidad, resumen, nat, precio, texto), (fab, pvp, grupo)) = f?;
+            let ((codigo, unidad, resumen, nat, precio, texto), (fab, pvp, grupo, margen, venta_fija)) = f?;
             let tarifa = match (fab, pvp) {
                 (Some(fabricante), Some(pvp)) => Some(ppto_core::PrecioTarifa {
                     fabricante,
@@ -285,6 +289,8 @@ impl Almacen {
                     descomposicion: Vec::new(),
                     texto,
                     tarifa,
+                    margen: margen.as_deref().map(dec_de).transpose()?,
+                    venta_fija: venta_fija.as_deref().map(dec_de).transpose()?,
                 },
             );
         }
@@ -438,8 +444,8 @@ fn escribir_contenido(tx: &Transaction, rev: i64, p: &Presupuesto) -> Resultado<
     {
         let mut st = tx.prepare(
             "INSERT INTO conceptos (revision_id, codigo, unidad, resumen, naturaleza, precio, texto,
-                tarifa_fabricante, tarifa_pvp, tarifa_grupo)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         )?;
         for c in p.conceptos.values() {
             st.execute(params![
@@ -452,7 +458,9 @@ fn escribir_contenido(tx: &Transaction, rev: i64, p: &Presupuesto) -> Resultado<
                 c.texto,
                 c.tarifa.as_ref().map(|t| t.fabricante.clone()),
                 c.tarifa.as_ref().map(|t| t.pvp.to_string()),
-                c.tarifa.as_ref().and_then(|t| t.grupo.clone())
+                c.tarifa.as_ref().and_then(|t| t.grupo.clone()),
+                c.margen.map(|m| m.to_string()),
+                c.venta_fija.map(|v| v.to_string())
             ])?;
         }
     }
@@ -702,10 +710,15 @@ mod tests {
         p.fijar_tarifa_grupo("MT.TUBO16", "SCHAKO", Some("g1"), dec!(2))
             .unwrap();
         assert_eq!(p.concepto("MT.TUBO16").unwrap().precio, dec!(1));
+        p.fijar_margen("SR.M2", Some(dec!(30))).unwrap();
+        p.fijar_venta("SR.COL8", Some(dec!(99.5))).unwrap();
         let r1 = a.guardar_revision(id, "R1", "j", &p).unwrap();
         let r2 = a.derivar_revision(r1, "R2", "j").unwrap();
         for r in [r1, r2] {
-            assert_eq!(a.cargar_revision(r).unwrap(), p);
+            let leido = a.cargar_revision(r).unwrap();
+            assert_eq!(leido.concepto("SR.M2").unwrap().margen, Some(dec!(30)));
+            assert_eq!(leido.concepto("SR.COL8").unwrap().venta_fija, Some(dec!(99.5)));
+            assert_eq!(leido, p);
         }
         // Cambiar el neto a mano desliga la tarifa también en la base de datos
         a.actualizar_precio(r2, "MT.PANEL", dec!(9), "j").unwrap();

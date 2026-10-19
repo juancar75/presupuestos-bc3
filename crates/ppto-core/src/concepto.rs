@@ -79,6 +79,14 @@ pub struct Concepto {
     /// con el descuento del fabricante del presupuesto (ver `descuentos`).
     #[serde(default)]
     pub tarifa: Option<PrecioTarifa>,
+    /// Margen propio de la partida, en % sobre su precio (venta = precio ×
+    /// (1 + margen/100)). `None`: el general de la obra (GG + BI).
+    #[serde(default)]
+    pub margen: Option<Decimal>,
+    /// Precio de venta bloqueado (sin IVA): la partida se vende a este
+    /// importe aunque cambie su coste; prevalece sobre el margen.
+    #[serde(default)]
+    pub venta_fija: Option<Decimal>,
 }
 
 /// PVP de tarifa y fabricante de un recurso.
@@ -109,6 +117,8 @@ impl Concepto {
             descomposicion: Vec::new(),
             texto: None,
             tarifa: None,
+            margen: None,
+            venta_fija: None,
         }
     }
 
@@ -127,6 +137,8 @@ impl Concepto {
             descomposicion: lineas,
             texto: None,
             tarifa: None,
+            margen: None,
+            venta_fija: None,
         }
     }
 
@@ -140,6 +152,8 @@ impl Concepto {
             descomposicion: Vec::new(),
             texto: None,
             tarifa: None,
+            margen: None,
+            venta_fija: None,
         }
     }
 
