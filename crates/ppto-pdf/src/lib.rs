@@ -84,6 +84,11 @@ pub struct OpcionesPdf {
     /// (ingeniería, obra pública). `false`: suma de capítulos, IVA y total,
     /// sin PEM, GG ni BI (instaladora: el margen ya va en los precios).
     pub desglose_contrata: bool,
+    /// Sin desglose (instaladora): GG y BI van **dentro de cada partida**
+    /// (precio de venta = PEM + GG + BI, como
+    /// [`ppto_core::venta::venta_partida`]) y los capítulos y el total suman
+    /// esos importes. Con GG y BI a cero no cambia nada.
+    pub precios_venta: bool,
     /// Plantilla Typst propia; `None` usa [`PLANTILLA`].
     pub plantilla: Option<PathBuf>,
 }
@@ -111,6 +116,7 @@ impl Default for OpcionesPdf {
             mostrar_mediciones: true,
             mostrar_textos: true,
             desglose_contrata: true,
+            precios_venta: false,
             plantilla: None,
         }
     }
@@ -205,8 +211,20 @@ pub fn guardar_pdf(p: &Presupuesto, o: &OpcionesPdf, ruta: impl AsRef<Path>) -> 
 /// Datos que recibe la plantilla (`datos.json`). Público para pruebas y para
 /// quien quiera diseñar su propia plantilla.
 pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<Value, ErrorPdf> {
-    let v = p.valorar()?;
+    let mut v = p.valorar()?;
     let dec = p.decimales;
+    let venta_dentro =
+        !o.desglose_contrata && o.precios_venta && !(o.gastos_generales.is_zero() && o.beneficio_industrial.is_zero());
+    if venta_dentro {
+        v.pem = a_venta(
+            p,
+            &mut v.lineas,
+            &p.raiz,
+            o.gastos_generales,
+            o.beneficio_industrial,
+            dec.importe,
+        );
+    }
     let raiz = p.concepto(&p.raiz)?;
     let titulo = if o.titulo.trim().is_empty() {
         raiz.resumen.clone()
@@ -239,7 +257,8 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
         }));
     }
 
-    // Sin desglose (instaladora) no se aplican ni se imprimen GG ni BI
+    // Sin desglose (instaladora) GG y BI no se imprimen: o no se aplican o
+    // ya van dentro de cada partida (`precios_venta`).
     let (gg, bi) = if o.desglose_contrata {
         (o.gastos_generales, o.beneficio_industrial)
     } else {
@@ -300,6 +319,51 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
         "total_letra": en_letra(r.total),
         "observaciones": o.observaciones.iter().filter(|s| !s.trim().is_empty()).collect::<Vec<_>>(),
     }))
+}
+
+/// Pasa a precio de venta (PEM + GG + BI por partida) las líneas de los
+/// capítulos colgados de `cap` y devuelve la suma de sus importes.
+fn a_venta(
+    p: &Presupuesto,
+    lineas: &mut HashMap<String, Vec<LineaValorada>>,
+    cap: &str,
+    gg: Decimal,
+    bi: Decimal,
+    d: u32,
+) -> Decimal {
+    let hijos: Vec<(String, bool)> = lineas
+        .get(cap)
+        .into_iter()
+        .flatten()
+        .map(|l| {
+            let es_cap = p
+                .conceptos
+                .get(&l.hijo)
+                .is_some_and(|c| c.naturaleza == Naturaleza::Capitulo);
+            (l.hijo.clone(), es_cap)
+        })
+        .collect();
+    let mut sub_caps = HashMap::new();
+    for (h, es_cap) in &hijos {
+        if *es_cap {
+            let t = a_venta(p, lineas, h, gg, bi, d);
+            sub_caps.insert(h.clone(), t);
+        }
+    }
+    let mut total = Decimal::ZERO;
+    if let Some(ls) = lineas.get_mut(cap) {
+        for l in ls.iter_mut() {
+            if let Some(t) = sub_caps.get(&l.hijo) {
+                l.precio = *t;
+                l.importe = ppto_core::redondear(*t * l.cantidad, d);
+            } else {
+                l.precio = venta::venta_partida(l.precio, gg, bi, d).venta;
+                l.importe = ppto_core::redondear(l.precio * l.cantidad, d);
+            }
+            total += l.importe;
+        }
+    }
+    total
 }
 
 struct Ctx<'a> {

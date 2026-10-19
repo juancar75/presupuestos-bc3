@@ -15,6 +15,12 @@ versionado [semántico](https://semver.org/lang/es/).
   IVA**, con el margen de la partida. En «Resumen y venta», tabla de todas las
   partidas con coste y venta (unitarios e importes); al pulsar un código se
   abre su desglose.
+- **PDF de instaladora con precios de venta**: casilla «Precios de venta en
+  cada partida» (marcada por defecto en el perfil Instaladora). Cada partida
+  sale a PEM + GG + BI con los porcentajes de «Resumen y venta», igual que su
+  desglose en pantalla, y capítulos y total suman esos importes. Antes el PDF
+  de instaladora imprimía el precio de ejecución material (el coste si no hay
+  costes indirectos).
 - Exportar BC3 para **Presto antiguo** (menú «📤 Exportar BC3» → «Presto
   antiguo (códigos de 12 caracteres)»; MCP `exportar_bc3` con
   `longitud_codigo`). Las versiones antiguas cortan los códigos al importar y

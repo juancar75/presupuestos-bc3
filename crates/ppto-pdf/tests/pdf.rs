@@ -112,9 +112,11 @@ fn perfil_instaladora_sin_pem_gg_ni_bi() {
     assert_eq!(d["total"], "8.476,23");
     assert_eq!(d["tipo_documento"], "Oferta");
     assert!(d["observaciones"][1].as_str().unwrap().contains("puesta en marcha"));
-    // Aunque el perfil tuviera GG/BI, sin desglose no se aplican
+    // Sin desglose y sin precios de venta, GG/BI no se aplican
     o.gastos_generales = dec!(13);
+    o.precios_venta = false;
     assert_eq!(datos(&suelo_radiante(), &o, None).unwrap()["total"], "8.476,23");
+    o.precios_venta = true;
     assert!(pdf(&suelo_radiante(), &o).unwrap().starts_with(b"%PDF-"));
 
     // Ingeniería: PEM + 13 % + 6 % + IVA = 10.086,72
@@ -149,4 +151,60 @@ fn perfiles_se_guardan_y_el_logo_se_copia() {
     r.borrar_activo();
     assert_eq!(r.lista.len(), 1, "siempre queda uno");
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Instaladora con precios de venta: cada partida sale a PEM + GG + BI (lo
+/// mismo que su desglose en el programa) y capítulos y total suman esos
+/// importes; ni PEM ni GG ni BI aparecen en el resumen.
+#[test]
+fn instaladora_con_precios_de_venta_por_partida() {
+    use ppto_core::formato::eur;
+    use ppto_core::{Naturaleza, redondear, venta};
+    let p = suelo_radiante();
+    let mut o = opciones();
+    ppto_pdf::Perfil::instaladora().aplicar(&mut o);
+    assert!(o.precios_venta);
+    o.gastos_generales = dec!(13);
+    o.beneficio_industrial = dec!(6);
+    let d = datos(&p, &o, None).unwrap();
+    assert!(d["recargos"].as_array().unwrap().is_empty());
+    assert_eq!(d["mostrar_pem"], false);
+
+    // Partida a partida, como el programa
+    let v = p.valorar().unwrap();
+    let mut esperado = ppto_core::Decimal::ZERO;
+    let mut vistas = 0;
+    fn partidas(x: &serde_json::Value, out: &mut Vec<serde_json::Value>) {
+        for e in x["elementos"].as_array().into_iter().flatten() {
+            if e["tipo"] == "partida" {
+                out.push(e.clone());
+            } else {
+                partidas(e, out);
+            }
+        }
+    }
+    let mut todas = Vec::new();
+    for c in d["capitulos"].as_array().unwrap() {
+        partidas(c, &mut todas);
+    }
+    for (cap, ls) in &v.lineas {
+        if p.conceptos[cap].naturaleza != Naturaleza::Capitulo {
+            continue;
+        }
+        for l in ls {
+            if p.conceptos[&l.hijo].naturaleza == Naturaleza::Capitulo {
+                continue;
+            }
+            let pv = venta::venta_partida(l.precio, dec!(13), dec!(6), 2).venta;
+            let imp = redondear(pv * l.cantidad, 2);
+            esperado += imp;
+            let j = todas.iter().find(|j| j["codigo"] == l.hijo.as_str()).unwrap();
+            assert_eq!(j["precio"], eur(pv).as_str());
+            assert_eq!(j["importe"], eur(imp).as_str());
+            vistas += 1;
+        }
+    }
+    assert!(vistas > 0);
+    assert_eq!(d["base"], eur(esperado).as_str());
+    assert!(esperado > v.pem);
 }
