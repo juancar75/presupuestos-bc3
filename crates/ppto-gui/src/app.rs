@@ -520,7 +520,7 @@ impl Aplicacion {
         None
     }
 
-    fn exportar_bc3(&mut self) {
+    fn exportar_bc3(&mut self, longitud_codigo: Option<usize>) {
         let nombre = format!(
             "{}.bc3",
             self.p
@@ -540,6 +540,7 @@ impl Aplicacion {
             iva: Some(self.iva),
             fecha: None,
             descuentos_visibles: true,
+            longitud_codigo,
         };
         match ppto_bc3::exportar_fichero(&self.p, &o, &ruta) {
             Ok(avisos) if avisos.is_empty() => self.info(format!("BC3 exportado en {}", ruta.display())),
@@ -1156,13 +1157,26 @@ impl Aplicacion {
                     self.devolver_valorado();
                 }
             });
-            if ui
-                .button("📤 Exportar BC3…")
-                .on_hover_text("FIEBDC-3/2002 en ANSI, como lo exporta Presto 8.8")
-                .clicked()
-            {
-                self.exportar_bc3();
-            }
+            ui.menu_button("📤 Exportar BC3", |ui| {
+                if ui
+                    .button("Presto 8.8 o posterior…")
+                    .on_hover_text("FIEBDC-3/2002 en ANSI, como lo exporta Presto 8.8")
+                    .clicked()
+                {
+                    ui.close();
+                    self.exportar_bc3(None);
+                }
+                if ui
+                    .button("Presto antiguo (códigos de 12 caracteres)…")
+                    .on_hover_text(
+                        "Para versiones que cortan los códigos al importar: los códigos largos se renombran para que no se mezclen conceptos",
+                    )
+                    .clicked()
+                {
+                    ui.close();
+                    self.exportar_bc3(Some(12));
+                }
+            });
             if ui
                 .button("📊 Excel…")
                 .on_hover_text("Resumen, presupuesto, descompuestos, mediciones, recursos y horas por oficio")

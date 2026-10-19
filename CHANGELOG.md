@@ -5,6 +5,17 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.8] - 2026-10-19
+
+### Añadido
+- Exportar BC3 para **Presto antiguo** (menú «📤 Exportar BC3» → «Presto
+  antiguo (códigos de 12 caracteres)»; MCP `exportar_bc3` con
+  `longitud_codigo`). Las versiones antiguas cortan los códigos al importar y
+  juntaban conceptos distintos (p. ej. un tubo y su línea de descuento, o dos
+  rejillas de la misma serie), cambiando el precio de la obra. Ahora los
+  códigos largos se renombran a códigos únicos y cada línea de descuento
+  sigue a su recurso; el importe no cambia.
+
 ## [0.1.0-alpha.7] - 2026-10-19
 
 ### Corregido

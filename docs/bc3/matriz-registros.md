@@ -76,6 +76,16 @@ material de tarifa sale a PVP y en su descompuesto lleva detrás una línea
 máscara = código del recurso para que solo le afecte. Pendiente de abrir en
 Presto 8.8 (P-012).
 
+**Presto antiguo, códigos cortados** (2026-10-19): una versión antigua de
+Presto corta los códigos a unos 12-13 caracteres al importar. Los conceptos
+que empiezan igual se funden en uno (`IT26.TNIRCL7511` y su
+`IT26.TNIRCL7511%` → el tubo se queda sin material; las rejillas
+`UMAD22DMT200xx` → todas al mismo precio) y la obra cambia de importe
+(−4.485 € en distribución hidráulica, −18.142 € en varios en un caso real).
+La exportación con `longitud_codigo` renombra los códigos de más de N
+caracteres a códigos únicos de N−1 como mucho, y cada `<código>%` sigue a su
+recurso. Comprobado: mismo PEM antes y después de renombrar.
+
 Contraste: con los precios de partida que declara Presto, el programa
 reproduce **al céntimo** los 5 capítulos y el PEM (157.310,88 €) y el coste
 directo (108.489,57 €), lo que valida la aplicación de CI por partida.

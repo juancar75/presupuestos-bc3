@@ -16,6 +16,7 @@
 //! - El presupuesto es inmutable para los cálculos de escenarios: un escenario
 //!   nunca modifica el presupuesto de origen.
 
+pub mod codigos;
 pub mod concepto;
 pub mod decimales;
 pub mod descuentos;

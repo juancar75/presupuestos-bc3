@@ -26,6 +26,10 @@ pub struct OpcionesExportacion {
     /// cada descompuesto, en lugar de a neto (ver
     /// [`Presupuesto::con_descuentos_visibles`]).
     pub descuentos_visibles: bool,
+    /// Longitud máxima de los códigos para programas antiguos que los cortan
+    /// al importar (Presto antiguo: 12). Los más largos se renombran (ver
+    /// [`Presupuesto::con_codigos_cortos`]). `None`: sin límite.
+    pub longitud_codigo: Option<usize>,
 }
 
 /// Fichero BC3 generado y avisos sobre datos que no caben en el formato.
@@ -37,9 +41,23 @@ pub struct Exportacion {
 
 pub fn exportar(p: &Presupuesto, o: &OpcionesExportacion) -> Result<Exportacion, ErrorMotor> {
     let mut e = Escritor::default();
+    let corto;
+    let p = if let Some(max) = o.longitud_codigo {
+        let (q, avisos) = p.con_codigos_cortos(max);
+        if !avisos.is_empty() {
+            e.avisos.push(format!(
+                "{} código(s) de más de {max} caracteres renombrados para Presto antiguo",
+                avisos.len()
+            ));
+        }
+        corto = q;
+        &corto
+    } else {
+        p
+    };
     let visible;
     let p = if o.descuentos_visibles {
-        let (q, avisos) = p.con_descuentos_visibles();
+        let (q, avisos) = p.con_descuentos_visibles_hasta(o.longitud_codigo.unwrap_or(20));
         e.avisos.extend(avisos);
         visible = q;
         &visible
