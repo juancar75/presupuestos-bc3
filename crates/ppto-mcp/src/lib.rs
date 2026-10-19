@@ -297,7 +297,16 @@ fn herramientas() -> Value {
                 }, "required": ["codigo", "rendimiento"] } },
                 "descuentos": { "type": "array", "description": "Descuento estimado del instalador sobre tarifa por fabricante, o por grupo de producto con fabricante «S&P/E08» (solo se usa si la obra no tiene ya ese descuento)", "items": { "type": "object", "properties": { "fabricante": { "type": "string" }, "porcentaje": num }, "required": ["fabricante", "porcentaje"] } },
                 "confianza": { "type": "string", "enum": ["alta", "media", "baja"] },
-                "justificacion": { "type": "string", "description": "De dónde salen precios y rendimientos (obra anterior, tarifa, estimación…)" }
+                "justificacion": { "type": "string", "description": "De dónde salen precios y rendimientos (obra anterior, tarifa, estimación…)" },
+                "nueva": { "type": "object", "description": "Solo para una partida que NO está en el presupuesto (contradictorio o adicional): se crea al aceptar, con su capítulo si falta (colocado detrás de despues_de). Código de partida nuevo en «partida».", "properties": {
+                    "capitulo": { "type": "string" },
+                    "capitulo_resumen": { "type": "string" },
+                    "despues_de": { "type": "string", "description": "Capítulo de primer nivel tras el que va el capítulo nuevo" },
+                    "unidad": { "type": "string" },
+                    "resumen": { "type": "string" },
+                    "texto": { "type": "string" },
+                    "cantidad": num
+                }, "required": ["capitulo", "unidad", "resumen", "cantidad"] }
             }, "required": ["partida", "lineas", "confianza", "justificacion"] }
         },
         {
@@ -322,7 +331,8 @@ fn herramientas() -> Value {
                     "partida": { "type": "string" },
                     "lineas": { "type": "array", "items": {} },
                     "confianza": { "type": "string", "enum": ["alta", "media", "baja"] },
-                    "justificacion": { "type": "string" }
+                    "justificacion": { "type": "string" },
+                    "nueva": { "type": "object", "description": "Partida nueva (contradictorio): como en proponer" }
                 }, "required": ["partida", "lineas"] } }
             }, "required": ["propuestas"] }
         },
@@ -1186,6 +1196,7 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
         autor: "IA (MCP)".into(),
         estado: EstadoPropuesta::Pendiente,
         descuentos: leer_descuentos(a)?,
+        nueva: leer_nueva(a)?,
     };
     let sim = p
         .simular_propuesta(&prop)
@@ -1229,6 +1240,29 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
         );
     }
     Ok(t)
+}
+
+/// Partida nueva (contradictorio): `nueva: {capitulo, capitulo_resumen,
+/// despues_de, unidad, resumen, texto, cantidad}`.
+fn leer_nueva(a: &Value) -> Result<Option<ppto_core::propuesta::NuevaPartida>, String> {
+    let Some(n) = a.get("nueva").filter(|n| !n.is_null()) else {
+        return Ok(None);
+    };
+    let s = |k: &str| n.get(k).and_then(Value::as_str).map(str::trim).unwrap_or("").to_owned();
+    let capitulo = s("capitulo");
+    if capitulo.is_empty() {
+        return Err("nueva: indique el capítulo".into());
+    }
+    let cantidad = dec_campo(n, "cantidad")?.ok_or("nueva: indique la cantidad")?;
+    Ok(Some(ppto_core::propuesta::NuevaPartida {
+        capitulo,
+        capitulo_resumen: s("capitulo_resumen"),
+        despues_de: Some(s("despues_de")).filter(|d| !d.is_empty()),
+        unidad: s("unidad"),
+        resumen: s("resumen"),
+        texto: Some(s("texto")).filter(|t| !t.is_empty()),
+        cantidad,
+    }))
 }
 
 /// Máximo de propuestas por llamada a `proponer_lote`.
@@ -1303,6 +1337,9 @@ fn proponer_lote(estado: &mut Estado, a: &Value) -> Result<String, String> {
             });
             if let Some(d) = a.get("descuentos") {
                 uno["descuentos"] = d.clone();
+            }
+            if let Some(n) = pr.get("nueva") {
+                uno["nueva"] = n.clone();
             }
             proponer(estado, &uno)
         })();

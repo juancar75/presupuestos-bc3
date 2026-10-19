@@ -5,6 +5,15 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.6] - 2026-10-19
+
+### Añadido
+- Contradictorios y adicionales: una propuesta puede traer `nueva` (capítulo,
+  unidad, resumen, texto y cantidad) para una partida que no está en el
+  presupuesto; al aceptarla se crea la partida y, si falta, su capítulo detrás
+  del indicado. MCP `proponer` y `proponer_lote` aceptan `nueva`; la tarjeta
+  de la propuesta la marca como «NUEVA en …».
+
 ## [0.1.0-alpha.5] - 2026-10-19
 
 ### Añadido

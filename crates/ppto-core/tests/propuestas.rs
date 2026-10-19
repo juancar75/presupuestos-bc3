@@ -30,6 +30,7 @@ fn propuesta(partida: &str, contenido: Contenido) -> Propuesta {
         autor: "IA".into(),
         estado: EstadoPropuesta::Pendiente,
         descuentos: Default::default(),
+        nueva: None,
     }
 }
 
@@ -247,4 +248,51 @@ fn propuesta_sobre_unidad_de_obra_otros_en_capitulo() {
     // Un recurso básico que no cuelga de un capítulo sigue sin admitirse
     let mal = propuesta("MO.OF1F", Contenido::Descompuesto(vec![linea("MT.TUBO", dec!(1))]));
     assert!(p.aplicar_propuesta(&mal).is_err());
+}
+
+/// Contradictorio: la partida no existe y se crea, con su capítulo detrás
+/// del indicado, al aceptar la propuesta.
+#[test]
+fn contradictorio_crea_partida_y_capitulo() {
+    use ppto_core::propuesta::NuevaPartida;
+    let mut p = ppto_core::ejemplos::suelo_radiante();
+    let raiz = p.raiz.clone();
+    let primero = p.concepto(&raiz).unwrap().descomposicion[0].hijo.clone();
+    let mut prop = propuesta(
+        "AD01",
+        Contenido::Descompuesto(vec![LineaPropuesta {
+            naturaleza: Some(ppto_core::Naturaleza::ManoObra),
+            unidad: "h".into(),
+            resumen: "Oficial".into(),
+            precio: Some(dec!(28)),
+            ..linea("MO.NUEVO", dec!(16))
+        }]),
+    );
+    prop.nueva = Some(NuevaPartida {
+        capitulo: "ADIC".into(),
+        capitulo_resumen: "ADICIONALES".into(),
+        despues_de: Some(primero.clone()),
+        unidad: "ud".into(),
+        resumen: "Vaciado y llenado del circuito".into(),
+        texto: Some("Incluye purga".into()),
+        cantidad: dec!(1),
+    });
+    let r = p.aplicar_propuesta(&prop).unwrap();
+    assert_eq!(r.precio_despues, dec!(448));
+    let caps: Vec<_> = p
+        .concepto(&raiz)
+        .unwrap()
+        .descomposicion
+        .iter()
+        .map(|l| l.hijo.clone())
+        .collect();
+    assert_eq!(caps[0], primero);
+    assert_eq!(caps[1], "ADIC");
+    assert_eq!(p.concepto("ADIC").unwrap().descomposicion[0].hijo, "AD01");
+    assert_eq!(p.concepto("AD01").unwrap().texto.as_deref(), Some("Incluye purga"));
+    // Una segunda en el mismo capítulo no lo duplica.
+    let mut otra = prop.clone();
+    otra.partida = "AD02".into();
+    p.aplicar_propuesta(&otra).unwrap();
+    assert_eq!(p.concepto("ADIC").unwrap().descomposicion.len(), 2);
 }

@@ -14,6 +14,10 @@
 //! - Los nuevos se dan de alta con la naturaleza, unidad y precio propuestos.
 //! - El descompuesto de la partida se sustituye por el propuesto.
 //!
+//! - Si la propuesta trae `nueva` y la partida no existe, se crea antes en el
+//!   capítulo indicado (y el capítulo, si falta, detrás de `despues_de`), con
+//!   su unidad, resumen, texto y cantidad: es un contradictorio o adicional.
+//!
 //! Si algo no es válido, el presupuesto no cambia.
 
 use crate::concepto::{Concepto, LineaDescomposicion, Naturaleza};
@@ -86,6 +90,24 @@ pub enum EstadoPropuesta {
     Rechazada,
 }
 
+/// Partida que no está en el presupuesto (contradictorio o adicional): se
+/// crea al aceptar la propuesta.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct NuevaPartida {
+    /// Capítulo donde se cuelga (se crea en la raíz si no existe).
+    pub capitulo: String,
+    #[serde(default)]
+    pub capitulo_resumen: String,
+    /// Capítulo de la raíz detrás del que se coloca el capítulo nuevo.
+    #[serde(default)]
+    pub despues_de: Option<String>,
+    pub unidad: String,
+    pub resumen: String,
+    #[serde(default)]
+    pub texto: Option<String>,
+    pub cantidad: Decimal,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Propuesta {
     pub id: u64,
@@ -101,6 +123,9 @@ pub struct Propuesta {
     /// fabricantes que la obra aún no tiene: los del usuario mandan.
     #[serde(default)]
     pub descuentos: std::collections::BTreeMap<String, Decimal>,
+    /// Partida nueva (contradictorio): se crea al aceptar.
+    #[serde(default)]
+    pub nueva: Option<NuevaPartida>,
 }
 
 /// Resultado de aplicar una propuesta.
@@ -135,8 +160,57 @@ impl Presupuesto {
         self.clone().aplicar_propuesta_sin_deshacer(prop)
     }
 
+    /// Crea la partida de un contradictorio (y su capítulo si falta).
+    fn crear_partida_nueva(&mut self, partida: &str, n: &NuevaPartida) -> Result<(), ErrorMotor> {
+        crate::edicion::validar_codigo(partida)?;
+        if n.unidad.trim().is_empty() || n.resumen.trim().is_empty() {
+            return Err(ErrorMotor::ValorInvalido(format!(
+                "«{partida}» nueva sin unidad o sin resumen"
+            )));
+        }
+        if n.cantidad <= Decimal::ZERO {
+            return Err(ErrorMotor::ValorInvalido(format!("«{partida}» nueva sin cantidad")));
+        }
+        match self.conceptos.get(&n.capitulo) {
+            Some(c) if c.naturaleza != Naturaleza::Capitulo => {
+                return Err(ErrorMotor::ValorInvalido(format!("«{}» no es un capítulo", n.capitulo)));
+            }
+            Some(_) => {}
+            None => {
+                let resumen = if n.capitulo_resumen.trim().is_empty() {
+                    "ADICIONALES"
+                } else {
+                    n.capitulo_resumen.trim()
+                };
+                let raiz = self.raiz.clone();
+                self.nuevo_capitulo(&raiz, &n.capitulo, resumen)?;
+                if let Some(tras) = &n.despues_de {
+                    let lineas = &mut self
+                        .conceptos
+                        .get_mut(&raiz)
+                        .ok_or_else(|| ErrorMotor::ValorInvalido("sin raíz".into()))?
+                        .descomposicion;
+                    if let Some(i) = lineas.iter().position(|l| &l.hijo == tras)
+                        && let Some(nueva) = lineas.pop()
+                    {
+                        lineas.insert(i + 1, nueva);
+                    }
+                }
+            }
+        }
+        let mut c = Concepto::partida(partida, n.unidad.trim(), n.resumen.trim(), Vec::new());
+        c.texto = n.texto.clone().filter(|t| !t.trim().is_empty());
+        self.insertar(c)?;
+        self.anadir_linea(&n.capitulo, partida, n.cantidad)
+    }
+
     fn aplicar_propuesta_sin_deshacer(&mut self, prop: &Propuesta) -> Result<Aplicada, ErrorMotor> {
         let partida = prop.partida.as_str();
+        if let Some(n) = &prop.nueva
+            && !self.conceptos.contains_key(partida)
+        {
+            self.crear_partida_nueva(partida, n)?;
+        }
         let c = self.concepto(partida)?;
         if c.naturaleza != Naturaleza::Partida {
             // Unidad de obra importada sin tipo (p. ej. un ciego de Presto):
