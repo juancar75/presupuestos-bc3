@@ -22,6 +22,10 @@ pub struct OpcionesExportacion {
     pub iva: Option<Decimal>,
     /// Fecha de los precios en formato `DDMMAA` (vacía si `None`).
     pub fecha: Option<String>,
+    /// Recursos de tarifa a PVP con una línea «Descuento FABRICANTE −x %» en
+    /// cada descompuesto, en lugar de a neto (ver
+    /// [`Presupuesto::con_descuentos_visibles`]).
+    pub descuentos_visibles: bool,
 }
 
 /// Fichero BC3 generado y avisos sobre datos que no caben en el formato.
@@ -33,6 +37,15 @@ pub struct Exportacion {
 
 pub fn exportar(p: &Presupuesto, o: &OpcionesExportacion) -> Result<Exportacion, ErrorMotor> {
     let mut e = Escritor::default();
+    let visible;
+    let p = if o.descuentos_visibles {
+        let (q, avisos) = p.con_descuentos_visibles();
+        e.avisos.extend(avisos);
+        visible = q;
+        &visible
+    } else {
+        p
+    };
     e.escribir(p, o)?;
     let bytes = e.codificar();
     Ok(Exportacion {

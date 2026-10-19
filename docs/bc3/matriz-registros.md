@@ -69,6 +69,13 @@ porcentajes de descuento (`%PANASONIC −0.65`, `%KOOLAIR −0.48`…), accesori
 | Porcentajes | `~C` del `%` lleva el porcentaje en puntos (−48), `~D` la fracción (−0.48); la máscara vacía aplica a todas las líneas anteriores, incluidos otros `%` |
 | Materiales descompuestos | Tipo 3 con `~D` es habitual (tuberías, PVC): ahora es *info*, no aviso |
 
+**Descuentos a la vista** (exportador): con `descuentos_visibles`, cada
+material de tarifa sale a PVP y en su descompuesto lleva detrás una línea
+`<código>%` con la fracción negativa (`MD26.AXO400%\1\-0.35\`, resumen
+«Descuento MADEL 35 %»), como los `%PANASONIC −0.65` de esta obra pero con
+máscara = código del recurso para que solo le afecte. Pendiente de abrir en
+Presto 8.8 (P-012).
+
 Contraste: con los precios de partida que declara Presto, el programa
 reproduce **al céntimo** los 5 capítulos y el PEM (157.310,88 €) y el coste
 directo (108.489,57 €), lo que valida la aplicación de CI por partida.

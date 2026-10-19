@@ -505,6 +505,7 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
                 beneficio_industrial: Some(estado.bi),
                 iva: Some(estado.iva),
                 fecha: None,
+                descuentos_visibles: true,
             };
             let avisos = ppto_bc3::exportar_fichero(estado.p()?, &o, &ruta)?;
             let mut t = format!("BC3 creado: {ruta}");

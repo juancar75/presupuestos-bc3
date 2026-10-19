@@ -5,6 +5,13 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- Descuentos a la vista: al exportar a BC3, cada material de tarifa sale a
+  su PVP con una línea porcentual negativa «Descuento FABRICANTE x %» detrás
+  (máscara = código del recurso), para que Presto muestre PVP y descuento.
+  El importe puede variar algún céntimo por el redondeo de la línea. En la
+  ventana, bajo el resumen del material se ve «PVP … − x % FABRICANTE».
+
 ## [0.1.0-alpha.4] - 2026-10-18
 
 ### Añadido — biblioteca de precios (paso 1)
