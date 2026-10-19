@@ -824,9 +824,8 @@ impl Aplicacion {
                         ui.separator();
                         if v.e.rol == Rol::Instalador {
                             ui.label(format!(
-                                "Margen: el de la obra (costes indirectos {} % por partida; margen sobre venta {} % en «Resumen y venta»)",
-                                num(self.p.costes_indirectos, 2),
-                                num(self.margen, 2)
+                                "Margen: el de la obra (sobrecoste {} % en «Resumen y venta»), o el propio de la partida",
+                                num(self.gg + self.bi, 2)
                             ));
                         } else {
                         ui.label("Encargo");
@@ -851,9 +850,10 @@ impl Aplicacion {
                         ui.label(RichText::new(format!("Total partida: {} €", eur(c.total()))).strong());
                     });
                     // En el rol instalador, la tarifa con el margen de la obra.
-                    let tarifa = if v.e.rol == Rol::Instalador && self.margen < Decimal::ONE_HUNDRED {
-                        c.honorarios() * (Decimal::ONE_HUNDRED + self.p.costes_indirectos)
-                            / (Decimal::ONE_HUNDRED - self.margen)
+                    let tarifa = if v.e.rol == Rol::Instalador {
+                        c.honorarios() * (Decimal::ONE_HUNDRED + self.p.costes_indirectos) / Decimal::ONE_HUNDRED
+                            * (Decimal::ONE_HUNDRED + self.gg + self.bi)
+                            / Decimal::ONE_HUNDRED
                     } else {
                         c.honorarios()
                     };

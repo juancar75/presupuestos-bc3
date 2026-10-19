@@ -5,6 +5,17 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.10] - 2026-10-19
+
+### Quitado
+- «Precio de venta a partir del PEM» en «Resumen y venta»: era una
+  calculadora que no cambiaba ningún precio. El margen se ve y se fija
+  partida a partida (sobrecoste, margen sobre venta, venta bloqueada).
+
+### Cambiado
+- Legalización (rol instalador): la tarifa de comparación usa el sobrecoste
+  de la obra (GG + BI) en lugar de la calculadora quitada.
+
 ## [0.1.0-alpha.9] - 2026-10-19
 
 ### Añadido
