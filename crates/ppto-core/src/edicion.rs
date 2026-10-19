@@ -263,6 +263,26 @@ impl Presupuesto {
         Ok(())
     }
 
+    /// Bloquea (o desbloquea con `None`) el precio de venta de una partida.
+    pub fn fijar_venta(&mut self, partida: &str, venta: Option<Decimal>) -> Result<(), ErrorMotor> {
+        if let Some(v) = venta
+            && v < Decimal::ZERO
+        {
+            return Err(ErrorMotor::ValorInvalido(
+                "el precio de venta no puede ser negativo".into(),
+            ));
+        }
+        let c = self
+            .conceptos
+            .get_mut(partida)
+            .ok_or_else(|| ErrorMotor::ConceptoInexistente(partida.into()))?;
+        if c.naturaleza != Naturaleza::Partida {
+            return Err(ErrorMotor::ValorInvalido(format!("«{partida}» no es una partida")));
+        }
+        c.venta_fija = venta;
+        Ok(())
+    }
+
     /// Sube (`arriba`) o baja una posición la línea `hijo` dentro de `padre`.
     /// El orden importa: los porcentajes se aplican sobre las líneas anteriores.
     pub fn mover_linea(&mut self, padre: &str, hijo: &str, arriba: bool) -> Result<(), ErrorMotor> {

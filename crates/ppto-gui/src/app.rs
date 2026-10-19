@@ -90,6 +90,8 @@ enum Accion {
     Descuento(String, Decimal),
     /// Margen propio de una partida (% sobre su precio; `None` = el general).
     Margen(String, Option<Decimal>),
+    /// Precio de venta bloqueado de una partida (`None` = desbloquear).
+    VentaFija(String, Option<Decimal>),
     /// PVP de tarifa de un recurso ligado a un fabricante.
     Pvp(String, Decimal),
     /// Grupo de producto de un recurso con tarifa (vacío = sin grupo).
@@ -271,6 +273,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::ReaplicarAceptadas => ("reaplicar propuestas aceptadas".into(), None),
         Accion::Descuento(f, _) => (format!("descuento {f}"), None),
         Accion::Margen(c, _) => (format!("margen de {c}"), None),
+        Accion::VentaFija(c, _) => (format!("venta bloqueada de {c}"), None),
         Accion::Pvp(c, _) => (format!("PVP de {c}"), None),
         Accion::GrupoTarifa(c, _) => (format!("grupo de {c}"), None),
         Accion::QuitarDescuento(k) => (format!("quitar descuento {k}"), None),
@@ -896,6 +899,7 @@ impl Aplicacion {
                     Err(e) => Err(ppto_core::ErrorMotor::ValorInvalido(e)),
                 },
                 Accion::Margen(c, m) => self.p.fijar_margen(&c, m),
+                Accion::VentaFija(c, v) => self.p.fijar_venta(&c, v),
                 Accion::Descuento(fab, pct) => self.p.fijar_descuento(&fab, pct).map(|v| {
                     self.info(format!(
                         "Descuento {} {} %: {} recursos recalculados.",
@@ -2402,8 +2406,12 @@ impl Aplicacion {
         let d = self.p.decimales.importe;
         let q = l.cantidad;
         let coste = self.calc.precios.get(hijo).copied().unwrap_or_default();
-        let margen_propio = self.p.conceptos.get(hijo).and_then(|c| c.margen);
-        let v = venta::venta_con_margen(l.precio, margen_propio, self.gg, self.bi, d);
+        let Some(concepto) = self.p.conceptos.get(hijo).cloned() else {
+            return;
+        };
+        let margen_propio = concepto.margen;
+        let fija = concepto.venta_fija;
+        let v = venta::venta_concepto(l.precio, &concepto, self.gg, self.bi, d);
         let imp = |x: Decimal| ppto_core::redondear(x * q, d);
         let (mut mo, mut mat, mut sub, mut maq, mut otr) = (
             Decimal::ZERO,
@@ -2474,6 +2482,7 @@ impl Aplicacion {
                         fila(ui, "= Precio de ejecución material".into(), l.precio, true);
                     }
                     match v.margen_propio {
+                        _ if v.bloqueada => fila(ui, "+ Hasta la venta bloqueada 🔒".into(), v.margen, false),
                         Some(m) => fila(
                             ui,
                             format!("+ Sobrecoste de esta partida {} %", num(m, 2)),
@@ -2519,17 +2528,48 @@ impl Aplicacion {
                 } else {
                     ui.label(RichText::new("el de la obra (se cambia en «Resumen y venta»)").weak());
                 }
+                if fija.is_some() {
+                    ui.label(RichText::new("(no se usa: la venta está bloqueada)").weak());
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("Venta bloqueada €/{unidad}")).strong());
+                if let Some(n) = self.edicion.opcional(ui, &format!("venta_fija|{hijo}"), fija, 2, 80.0) {
+                    acciones.push(Accion::VentaFija(hijo.to_owned(), n));
+                }
+                match fija {
+                    Some(_) => {
+                        ui.label(RichText::new("🔒 bloqueada").strong());
+                        if ui.small_button("Desbloquear").clicked() {
+                            acciones.push(Accion::VentaFija(hijo.to_owned(), None));
+                        }
+                    }
+                    None => {
+                        if ui
+                            .small_button(format!("🔒 Bloquear en {} €", eur(v.venta)))
+                            .on_hover_text("La partida se venderá siempre a este precio aunque cambie su coste")
+                            .clicked()
+                        {
+                            acciones.push(Accion::VentaFija(hijo.to_owned(), Some(v.venta)));
+                        }
+                    }
+                }
             });
             let (sc, mv) = sobrecoste_y_margen(imp(coste), imp(v.venta));
-            ui.label(
-                RichText::new(format!(
-                    "Sobrecoste {} %   ·   Margen sobre venta {} %   ·   Ganas {} € en esta partida",
-                    sc.map(|x| num(x, 2)).unwrap_or_else(|| "—".into()),
-                    mv.map(|x| num(x, 2)).unwrap_or_else(|| "—".into()),
-                    eur(imp(v.venta) - imp(coste))
-                ))
-                .strong(),
-            );
+            let ganancia = imp(v.venta) - imp(coste);
+            let texto = RichText::new(format!(
+                "Sobrecoste {} %   ·   Margen sobre venta {} %   ·   {} {} € en esta partida",
+                sc.map(|x| num(x, 2)).unwrap_or_else(|| "—".into()),
+                mv.map(|x| num(x, 2)).unwrap_or_else(|| "—".into()),
+                if ganancia < Decimal::ZERO { "Pierdes" } else { "Ganas" },
+                eur(ganancia.abs())
+            ))
+            .strong();
+            if ganancia < Decimal::ZERO {
+                ui.label(texto.color(Color32::from_rgb(220, 80, 60)));
+            } else {
+                ui.label(texto);
+            }
         });
     }
 
@@ -2573,7 +2613,7 @@ impl Aplicacion {
                             };
                             let Some(c) = self.p.conceptos.get(&hijo) else { continue };
                             let coste = self.calc.precios.get(&hijo).copied().unwrap_or_default();
-                            let v = venta::venta_con_margen(l.precio, c.margen, self.gg, self.bi, d);
+                            let v = venta::venta_concepto(l.precio, c, self.gg, self.bi, d);
                             let ic = ppto_core::redondear(coste * l.cantidad, d);
                             let iv = ppto_core::redondear(v.venta * l.cantidad, d);
                             tc += ic;
@@ -2598,8 +2638,17 @@ impl Aplicacion {
                             } else {
                                 ui.label(RichText::new(pct(sc)).weak()).on_hover_text("El de la obra");
                             }
-                            ui.label(eur(v.venta));
-                            ui.label(pct(mv));
+                            if v.bloqueada {
+                                ui.label(RichText::new(format!("🔒 {}", eur(v.venta))).strong())
+                                    .on_hover_text("Venta bloqueada");
+                            } else {
+                                ui.label(eur(v.venta));
+                            }
+                            if iv < ic {
+                                ui.label(RichText::new(pct(mv)).color(Color32::from_rgb(220, 80, 60)));
+                            } else {
+                                ui.label(pct(mv));
+                            }
                             ui.label(eur(ic));
                             ui.label(eur(iv));
                             ui.end_row();
@@ -3493,6 +3542,29 @@ mod pruebas {
         assert_eq!(sobrecoste_y_margen(dec!(0), dec!(0)), (None, None));
         app.deshacer();
         assert_eq!(app.p.concepto(&hijo).unwrap().margen, None);
+        // Venta bloqueada: prevalece sobre el margen y se pinta
+        app.aplicar(vec![
+            Accion::Margen(hijo.clone(), Some(dec!(30))),
+            Accion::VentaFija(hijo.clone(), Some(dec!(1))),
+        ]);
+        let c = app.p.concepto(&hijo).unwrap().clone();
+        let b = venta::venta_concepto(l.precio, &c, app.gg, app.bi, 2);
+        assert!(b.bloqueada && b.venta == dec!(1));
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let mut acc = Vec::new();
+                egui::CentralPanel::default_margins().show(ui, |ui| {
+                    app.pestana_partida(ui, &mut acc);
+                    app.pestana_resumen(ui, &mut acc);
+                });
+            });
+            out.textures_delta.clear();
+        }
+        app.aplicar(vec![
+            Accion::VentaFija(hijo.clone(), None),
+            Accion::Margen(hijo.clone(), None),
+        ]);
+        assert_eq!(app.p.concepto(&hijo).unwrap().venta_fija, None);
         // Solo partidas
         app.aplicar(vec![Accion::Margen(cap.clone(), Some(dec!(10)))]);
         assert_eq!(app.p.concepto(&cap).unwrap().margen, None);

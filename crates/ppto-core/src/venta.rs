@@ -99,8 +99,11 @@ pub struct VentaPartida {
     pub pem: Decimal,
     /// Margen propio de la partida (% sobre el PEM) en lugar de GG + BI.
     pub margen_propio: Option<Decimal>,
-    /// Importe del margen propio (cero si usa GG + BI).
+    /// Importe del margen propio (cero si usa GG + BI); con la venta
+    /// bloqueada, venta − PEM.
     pub margen: Decimal,
+    /// La venta está bloqueada a un importe.
+    pub bloqueada: bool,
     pub gastos_generales: Decimal,
     pub beneficio_industrial: Decimal,
     /// PEM + GG + BI.
@@ -113,6 +116,7 @@ pub fn venta_partida(pem: Decimal, gg_pct: Decimal, bi_pct: Decimal, decimales: 
         pem,
         margen_propio: None,
         margen: Decimal::ZERO,
+        bloqueada: false,
         gastos_generales: r.gastos_generales,
         beneficio_industrial: r.beneficio_industrial,
         venta: r.base,
@@ -136,11 +140,35 @@ pub fn venta_con_margen(
                 pem,
                 margen_propio: Some(m),
                 margen,
+                bloqueada: false,
                 gastos_generales: Decimal::ZERO,
                 beneficio_industrial: Decimal::ZERO,
                 venta: pem + margen,
             }
         }
+    }
+}
+
+/// Venta de una partida según su configuración: precio bloqueado si lo
+/// tiene; si no, su margen propio; si no, GG + BI de la obra.
+pub fn venta_concepto(
+    pem: Decimal,
+    c: &crate::Concepto,
+    gg_pct: Decimal,
+    bi_pct: Decimal,
+    decimales: u32,
+) -> VentaPartida {
+    match c.venta_fija {
+        Some(v) => VentaPartida {
+            pem,
+            margen_propio: None,
+            margen: v - pem,
+            bloqueada: true,
+            gastos_generales: Decimal::ZERO,
+            beneficio_industrial: Decimal::ZERO,
+            venta: v,
+        },
+        None => venta_con_margen(pem, c.margen, gg_pct, bi_pct, decimales),
     }
 }
 
@@ -166,6 +194,12 @@ mod tests {
             (dec!(179.72), dec!(778.77), dec!(0))
         );
         assert_eq!(venta_con_margen(dec!(599.05), None, dec!(13), dec!(6), 2), v);
+        // Venta bloqueada: 700 € aunque el margen dijera otra cosa
+        let mut c = crate::Concepto::partida("P", "ud", "Fancoil", Vec::new());
+        c.margen = Some(dec!(30));
+        c.venta_fija = Some(dec!(700));
+        let b = venta_concepto(dec!(599.05), &c, dec!(13), dec!(6), 2);
+        assert_eq!((b.venta, b.margen, b.bloqueada), (dec!(700), dec!(100.95), true));
     }
 
     #[test]

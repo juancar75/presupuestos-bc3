@@ -215,7 +215,9 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
     let dec = p.decimales;
     let sin_margen = o.gastos_generales.is_zero()
         && o.beneficio_industrial.is_zero()
-        && p.conceptos.values().all(|c| c.margen.is_none());
+        && p.conceptos
+            .values()
+            .all(|c| c.margen.is_none() && c.venta_fija.is_none());
     let venta_dentro = !o.desglose_contrata && o.precios_venta && !sin_margen;
     if venta_dentro {
         v.pem = a_venta(
@@ -359,8 +361,10 @@ fn a_venta(
                 l.precio = *t;
                 l.importe = ppto_core::redondear(*t * l.cantidad, d);
             } else {
-                let margen = p.conceptos.get(&l.hijo).and_then(|c| c.margen);
-                l.precio = venta::venta_con_margen(l.precio, margen, gg, bi, d).venta;
+                l.precio = match p.conceptos.get(&l.hijo) {
+                    Some(c) => venta::venta_concepto(l.precio, c, gg, bi, d).venta,
+                    None => venta::venta_partida(l.precio, gg, bi, d).venta,
+                };
                 l.importe = ppto_core::redondear(l.precio * l.cantidad, d);
             }
             total += l.importe;

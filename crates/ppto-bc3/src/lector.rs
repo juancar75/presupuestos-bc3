@@ -524,6 +524,7 @@ impl Lector {
                     texto: self.textos.remove(codigo),
                     tarifa: None,
                     margen: None,
+                    venta_fija: None,
                 },
             );
         }
