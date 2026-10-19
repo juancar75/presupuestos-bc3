@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.5] - 2026-10-19
+
 ### Añadido
 - Descuentos a la vista: al exportar a BC3, cada material de tarifa sale a
   su PVP con una línea porcentual negativa «Descuento FABRICANTE x %» detrás
