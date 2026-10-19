@@ -329,6 +329,7 @@ fn importar(
             iva: k.iva,
             fecha: None,
             descuentos_visibles: true,
+            longitud_codigo: None,
         };
         exportar_bc3(p, &o, b)?;
     }

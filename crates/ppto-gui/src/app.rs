@@ -520,7 +520,7 @@ impl Aplicacion {
         None
     }
 
-    fn exportar_bc3(&mut self) {
+    fn exportar_bc3(&mut self, longitud_codigo: Option<usize>) {
         let nombre = format!(
             "{}.bc3",
             self.p
@@ -540,6 +540,7 @@ impl Aplicacion {
             iva: Some(self.iva),
             fecha: None,
             descuentos_visibles: true,
+            longitud_codigo,
         };
         match ppto_bc3::exportar_fichero(&self.p, &o, &ruta) {
             Ok(avisos) if avisos.is_empty() => self.info(format!("BC3 exportado en {}", ruta.display())),
@@ -1156,13 +1157,26 @@ impl Aplicacion {
                     self.devolver_valorado();
                 }
             });
-            if ui
-                .button("📤 Exportar BC3…")
-                .on_hover_text("FIEBDC-3/2002 en ANSI, como lo exporta Presto 8.8")
-                .clicked()
-            {
-                self.exportar_bc3();
-            }
+            ui.menu_button("📤 Exportar BC3", |ui| {
+                if ui
+                    .button("Presto 8.8 o posterior…")
+                    .on_hover_text("FIEBDC-3/2002 en ANSI, como lo exporta Presto 8.8")
+                    .clicked()
+                {
+                    ui.close();
+                    self.exportar_bc3(None);
+                }
+                if ui
+                    .button("Presto antiguo (códigos de 12 caracteres)…")
+                    .on_hover_text(
+                        "Para versiones que cortan los códigos al importar: los códigos largos se renombran para que no se mezclen conceptos",
+                    )
+                    .clicked()
+                {
+                    ui.close();
+                    self.exportar_bc3(Some(12));
+                }
+            });
             if ui
                 .button("📊 Excel…")
                 .on_hover_text("Resumen, presupuesto, descompuestos, mediciones, recursos y horas por oficio")
@@ -1524,18 +1538,6 @@ impl Aplicacion {
             }
         });
         if let Some(l) = &linea_cap {
-            let coste = self.calc.precios.get(&hijo).copied().unwrap_or_default();
-            if coste != l.precio {
-                ui.label(
-                    RichText::new(format!(
-                        "Coste directo {} €/{}  +  {} % costes indirectos",
-                        eur(coste),
-                        c.unidad,
-                        num(self.p.costes_indirectos, 2)
-                    ))
-                    .weak(),
-                );
-            }
             ui.label(
                 RichText::new(format!(
                     "Cantidad {} {}   ·   Precio {} €/{}   ·   Importe {} €",
@@ -1547,6 +1549,7 @@ impl Aplicacion {
                 ))
                 .size(15.0),
             );
+            self.coste_y_venta(ui, &hijo, &c.unidad, l);
         }
         ui.add_space(6.0);
 
@@ -2350,6 +2353,11 @@ impl Aplicacion {
             });
 
         ui.add_space(14.0);
+        egui::CollapsingHeader::new(RichText::new("Coste y venta partida a partida").strong())
+            .default_open(true)
+            .show(ui, |ui| self.tabla_coste_venta(ui));
+
+        ui.add_space(14.0);
         ui.label(RichText::new("Precio de venta a partir del PEM").strong());
         ui.horizontal(|ui| {
             ui.label("Margen sobre venta %");
@@ -2374,6 +2382,180 @@ impl Aplicacion {
             Err(e) => {
                 ui.label(RichText::new(e.to_string()).color(Color32::from_rgb(220, 80, 60)));
             }
+        }
+    }
+
+    /// Coste y venta de la partida seleccionada, paso a paso: coste directo
+    /// (por naturaleza) → costes indirectos → PEM → GG → BI → venta.
+    fn coste_y_venta(&self, ui: &mut Ui, hijo: &str, unidad: &str, l: &LineaValorada) {
+        let d = self.p.decimales.importe;
+        let q = l.cantidad;
+        let coste = self.calc.precios.get(hijo).copied().unwrap_or_default();
+        let v = venta::venta_partida(l.precio, self.gg, self.bi, d);
+        let imp = |x: Decimal| ppto_core::redondear(x * q, d);
+        let (mut mo, mut mat, mut sub, mut maq, mut otr) = (
+            Decimal::ZERO,
+            Decimal::ZERO,
+            Decimal::ZERO,
+            Decimal::ZERO,
+            Decimal::ZERO,
+        );
+        for lv in self.calc.lineas.get(hijo).into_iter().flatten() {
+            match lv.naturaleza {
+                Naturaleza::ManoObra => mo += lv.importe,
+                Naturaleza::Material => mat += lv.importe,
+                Naturaleza::Subcontrata => sub += lv.importe,
+                Naturaleza::Maquinaria => maq += lv.importe,
+                _ => otr += lv.importe,
+            }
+        }
+        egui::CollapsingHeader::new(RichText::new(format!(
+            "Coste {} €/{unidad}  →  Venta {} €/{unidad}   ·   Importe venta {} €",
+            eur(coste),
+            eur(v.venta),
+            eur(imp(v.venta))
+        )))
+        .id_salt(("coste_venta", hijo))
+        .default_open(true)
+        .show(ui, |ui| {
+            egui::Grid::new(("cv", hijo))
+                .striped(true)
+                .num_columns(3)
+                .min_col_width(110.0)
+                .show(ui, |ui| {
+                    ui.label(RichText::new("Concepto").weak());
+                    ui.label(RichText::new(format!("€/{unidad}")).weak());
+                    ui.label(RichText::new(format!("× {} = €", cant(q, self.p.decimales.medicion))).weak());
+                    ui.end_row();
+                    let fila = |ui: &mut Ui, t: String, u: Decimal, fuerte: bool| {
+                        let (a, b, c) = (RichText::new(t), RichText::new(eur(u)), RichText::new(eur(imp(u))));
+                        if fuerte {
+                            ui.label(a.strong());
+                            ui.label(b.strong());
+                            ui.label(c.strong());
+                        } else {
+                            ui.label(a);
+                            ui.label(b);
+                            ui.label(c);
+                        }
+                        ui.end_row();
+                    };
+                    for (t, x) in [
+                        ("   Mano de obra", mo),
+                        ("   Material", mat),
+                        ("   Subcontrata", sub),
+                        ("   Maquinaria", maq),
+                        ("   Otros y medios auxiliares", otr),
+                    ] {
+                        if !x.is_zero() {
+                            fila(ui, t.into(), x, false);
+                        }
+                    }
+                    fila(ui, "Coste directo".into(), coste, true);
+                    if l.precio != coste {
+                        fila(
+                            ui,
+                            format!("+ Costes indirectos {} %", num(self.p.costes_indirectos, 2)),
+                            l.precio - coste,
+                            false,
+                        );
+                        fila(ui, "= Precio de ejecución material".into(), l.precio, true);
+                    }
+                    fila(ui, format!("+ Gastos generales {} %", num(self.gg, 2)), v.gastos_generales, false);
+                    fila(ui, format!("+ Beneficio industrial {} %", num(self.bi, 2)), v.beneficio_industrial, false);
+                    fila(ui, "= VENTA (sin IVA)".into(), v.venta, true);
+                });
+            if let Ok(m) = venta::margen_obtenido(coste, v.venta) {
+                ui.label(
+                    RichText::new(format!(
+                        "Margen sobre venta {} %  ·  beneficio {} € en esta partida. GG y BI se cambian en «Resumen y venta».",
+                        num(m, 2),
+                        eur(imp(v.venta) - imp(coste))
+                    ))
+                    .weak(),
+                );
+            }
+        });
+    }
+
+    /// Tabla de todas las partidas con su coste y su venta.
+    fn tabla_coste_venta(&mut self, ui: &mut Ui) {
+        let d = self.p.decimales.importe;
+        let mut ir: Option<(String, String)> = None;
+        let (mut tc, mut tv) = (Decimal::ZERO, Decimal::ZERO);
+        egui::ScrollArea::both()
+            .max_height(420.0)
+            .id_salt("tabla_cv")
+            .show(ui, |ui| {
+                egui::Grid::new("tabla_cv_grid")
+                    .striped(true)
+                    .num_columns(9)
+                    .show(ui, |ui| {
+                        for t in [
+                            "Capítulo",
+                            "Código",
+                            "Resumen",
+                            "Cantidad",
+                            "Ud",
+                            "Coste €/ud",
+                            "Venta €/ud",
+                            "Importe coste",
+                            "Importe venta",
+                        ] {
+                            ui.label(RichText::new(t).strong());
+                        }
+                        ui.end_row();
+                        for (cap, hijo) in self.orden_partidas() {
+                            let Some(l) = self
+                                .calc
+                                .lineas
+                                .get(&cap)
+                                .and_then(|v| v.iter().find(|l| l.hijo == hijo))
+                            else {
+                                continue;
+                            };
+                            let Some(c) = self.p.conceptos.get(&hijo) else { continue };
+                            let coste = self.calc.precios.get(&hijo).copied().unwrap_or_default();
+                            let v = venta::venta_partida(l.precio, self.gg, self.bi, d);
+                            let ic = ppto_core::redondear(coste * l.cantidad, d);
+                            let iv = ppto_core::redondear(v.venta * l.cantidad, d);
+                            tc += ic;
+                            tv += iv;
+                            ui.label(&cap);
+                            if ui
+                                .link(&hijo)
+                                .on_hover_text("Ver el desglose de esta partida")
+                                .clicked()
+                            {
+                                ir = Some((cap.clone(), hijo.clone()));
+                            }
+                            ui.label(corto(&c.resumen, 48));
+                            ui.label(cant(l.cantidad, self.p.decimales.medicion));
+                            ui.label(&c.unidad);
+                            ui.label(eur(coste));
+                            ui.label(eur(v.venta));
+                            ui.label(eur(ic));
+                            ui.label(eur(iv));
+                            ui.end_row();
+                        }
+                        for _ in 0..6 {
+                            ui.label("");
+                        }
+                        ui.label(RichText::new("Total").strong());
+                        ui.label(RichText::new(eur(tc)).strong());
+                        ui.label(RichText::new(eur(tv)).strong());
+                        ui.end_row();
+                    });
+            });
+        ui.label(
+            RichText::new(
+                "La suma de las ventas por partida puede diferir unos céntimos del resumen, que aplica GG y BI al PEM total (redondeo).",
+            )
+            .weak(),
+        );
+        if let Some((cap, hijo)) = ir {
+            self.sel = Some((cap, hijo));
+            self.pestana = Pestana::Partida;
         }
     }
 
@@ -3184,6 +3366,31 @@ mod pruebas {
             out.textures_delta.clear();
         }
     }
+    /// Coste y venta partida a partida: el desglose de la partida y la
+    /// tabla de «Resumen y venta» se pintan y la venta sale de PEM + GG + BI.
+    #[test]
+    fn coste_y_venta_partida_a_partida() {
+        let mut app = Aplicacion::sin_ventana();
+        app.gg = dec!(13);
+        app.bi = dec!(6);
+        let (cap, hijo) = app.sel.clone().unwrap();
+        let l = app.calc.lineas[&cap].iter().find(|l| l.hijo == hijo).unwrap().clone();
+        let v = venta::venta_partida(l.precio, app.gg, app.bi, 2);
+        assert_eq!(v.venta, l.precio + v.gastos_generales + v.beneficio_industrial);
+        assert!(v.venta > l.precio);
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let mut acc = Vec::new();
+                egui::CentralPanel::default_margins().show(ui, |ui| {
+                    app.pestana_partida(ui, &mut acc);
+                    app.pestana_resumen(ui, &mut acc);
+                });
+            });
+            out.textures_delta.clear();
+        }
+    }
+
     #[test]
     fn reaplicar_propuestas_aceptadas_tras_reabrir() {
         use ppto_core::propuesta::{Confianza, Contenido, EstadoPropuesta as E, LineaPropuesta, Propuesta};

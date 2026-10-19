@@ -431,7 +431,7 @@ fn herramientas() -> Value {
         {
             "name": "exportar_bc3",
             "description": "Exporta el presupuesto a BC3 (FIEBDC-3/2002, ANSI, como Presto 8.8) en un fichero nuevo.",
-            "inputSchema": { "type": "object", "properties": { "ruta": { "type": "string", "description": "Ruta del .bc3 a crear" } }, "required": ["ruta"] }
+            "inputSchema": { "type": "object", "properties": { "ruta": { "type": "string", "description": "Ruta del .bc3 a crear" }, "longitud_codigo": { "type": ["integer", "string"], "description": "Para un Presto antiguo que corta los códigos al importar: longitud máxima (p. ej. 12). Los códigos más largos se renombran." } }, "required": ["ruta"] }
         }
     ])
 }
@@ -516,6 +516,11 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
                 iva: Some(estado.iva),
                 fecha: None,
                 descuentos_visibles: true,
+                longitud_codigo: a.get("longitud_codigo").and_then(|v| {
+                    v.as_u64()
+                        .or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))
+                        .map(|n| n as usize)
+                }),
             };
             let avisos = ppto_bc3::exportar_fichero(estado.p()?, &o, &ruta)?;
             let mut t = format!("BC3 creado: {ruta}");

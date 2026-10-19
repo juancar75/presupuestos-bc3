@@ -5,6 +5,30 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.8] - 2026-10-19
+
+### Añadido
+- **Coste y venta partida a partida.** En la pestaña Partida, debajo del
+  precio, el desglose completo por unidad y por importe: mano de obra,
+  material, subcontrata, maquinaria y otros → coste directo → costes
+  indirectos → PEM → gastos generales → beneficio industrial → **venta sin
+  IVA**, con el margen de la partida. En «Resumen y venta», tabla de todas las
+  partidas con coste y venta (unitarios e importes); al pulsar un código se
+  abre su desglose.
+- **PDF de instaladora con precios de venta**: casilla «Precios de venta en
+  cada partida» (marcada por defecto en el perfil Instaladora). Cada partida
+  sale a PEM + GG + BI con los porcentajes de «Resumen y venta», igual que su
+  desglose en pantalla, y capítulos y total suman esos importes. Antes el PDF
+  de instaladora imprimía el precio de ejecución material (el coste si no hay
+  costes indirectos).
+- Exportar BC3 para **Presto antiguo** (menú «📤 Exportar BC3» → «Presto
+  antiguo (códigos de 12 caracteres)»; MCP `exportar_bc3` con
+  `longitud_codigo`). Las versiones antiguas cortan los códigos al importar y
+  juntaban conceptos distintos (p. ej. un tubo y su línea de descuento, o dos
+  rejillas de la misma serie), cambiando el precio de la obra. Ahora los
+  códigos largos se renombran a códigos únicos y cada línea de descuento
+  sigue a su recurso; el importe no cambia.
+
 ## [0.1.0-alpha.7] - 2026-10-19
 
 ### Corregido

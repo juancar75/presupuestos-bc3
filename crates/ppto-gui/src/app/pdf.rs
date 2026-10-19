@@ -97,6 +97,7 @@ impl Aplicacion {
         let mut generar = false;
         let titulo_obra = self.p.conceptos[&self.p.raiz].resumen.clone();
         let raiz = self.p.raiz.clone();
+        let (gg_obra, bi_obra) = (self.gg, self.bi);
         let mut mensaje: Option<(String, bool)> = None;
         egui::Window::new("Presupuesto en PDF")
             .open(&mut abierta)
@@ -208,8 +209,22 @@ impl Aplicacion {
                             "Resumen con PEM, gastos generales y beneficio industrial",
                         )
                         .on_hover_text(
-                            "Desmarcado (instaladora): suma de capítulos, IVA y total. GG y BI no se aplican.",
+                            "Desmarcado (instaladora): suma de capítulos, IVA y total, sin PEM, GG ni BI a la vista.",
                         );
+                        if !p.desglose_contrata {
+                            ui.checkbox(
+                                &mut p.precios_venta,
+                                format!(
+                                    "Precios de venta en cada partida (GG {} % + BI {} % de «Resumen y venta»)",
+                                    num(gg_obra, 2),
+                                    num(bi_obra, 2)
+                                ),
+                            )
+                            .on_hover_text(
+                                "Cada partida sale a PEM + GG + BI, igual que su desglose en la pestaña Partida. \
+                                 Desmarcado: precios de ejecución material (coste si no hay costes indirectos).",
+                            );
+                        }
                     }
                     ui.horizontal(|ui| {
                         let desglose = v.perfiles.activo().desglose_contrata;
@@ -269,6 +284,11 @@ impl Aplicacion {
                 Ok(()) => {
                     let mut o = v.obra.clone();
                     v.perfiles.activo().aplicar(&mut o);
+                    if !o.desglose_contrata && o.precios_venta {
+                        // Los mismos GG y BI que el desglose de cada partida
+                        o.gastos_generales = gg_obra;
+                        o.beneficio_industrial = bi_obra;
+                    }
                     if self.generar_pdf(&o) {
                         abierta = false;
                     }

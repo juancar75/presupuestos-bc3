@@ -241,6 +241,12 @@ impl Presupuesto {
     /// El importe puede diferir algún céntimo del neto por el redondeo de la
     /// línea porcentual.
     pub fn con_descuentos_visibles(&self) -> (Presupuesto, Vec<String>) {
+        self.con_descuentos_visibles_hasta(20)
+    }
+
+    /// Como [`Self::con_descuentos_visibles`], con códigos de `max` caracteres
+    /// como mucho: la línea `<código>%` tiene que caber.
+    pub fn con_descuentos_visibles_hasta(&self, max: usize) -> (Presupuesto, Vec<String>) {
         let mut p = self.clone();
         let mut avisos = Vec::new();
         // Recursos con descuento > 0 y si se pueden mostrar.
@@ -251,10 +257,11 @@ impl Presupuesto {
             if d.is_zero() {
                 continue;
             }
-            if c.codigo.contains(['%', '&']) || c.codigo.chars().count() > 19 {
+            if c.codigo.contains(['%', '&']) || c.codigo.chars().count() + 1 > max {
                 avisos.push(format!(
-                    "«{}» se exporta a neto: su código no admite línea de descuento (tiene % o & o pasa de 19 caracteres)",
-                    c.codigo
+                    "«{}» se exporta a neto: su código no admite línea de descuento (tiene % o & o pasa de {} caracteres)",
+                    c.codigo,
+                    max.saturating_sub(1)
                 ));
                 continue;
             }

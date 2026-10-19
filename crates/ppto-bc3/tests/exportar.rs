@@ -207,3 +207,71 @@ fn descuentos_visibles_en_el_descompuesto() {
     let visible = q.precio("P1").unwrap();
     assert!((visible - neto).abs() <= dec!(0.01), "{visible} frente a {neto}");
 }
+
+/// Para un Presto antiguo que corta los códigos: ningún código pasa del
+/// límite, los que empezaban igual siguen siendo distintos (también un
+/// recurso y su línea de descuento) y la obra vale lo mismo.
+#[test]
+fn codigos_cortos_para_presto_antiguo() {
+    use ppto_core::LineaDescomposicion;
+    let mut p = Presupuesto::new("cortos", "OBRA", "Obra");
+    for (c, precio) in [("IT26.TNIRCL7511", dec!(0)), ("IT26.TNIRCL6311", dec!(0))] {
+        p.insertar(Concepto::basico(c, "m", "Tubo", Naturaleza::Material, precio))
+            .unwrap();
+    }
+    p.insertar(Concepto::basico(
+        "MO.OF",
+        "h",
+        "Oficial",
+        Naturaleza::ManoObra,
+        dec!(28),
+    ))
+    .unwrap();
+    for (partida, tubo) in [("ICS011075I", "IT26.TNIRCL7511"), ("ICS011063I", "IT26.TNIRCL6311")] {
+        p.insertar(Concepto::partida(
+            partida,
+            "m",
+            "Tubo instalado",
+            vec![
+                LineaDescomposicion::new(tubo, dec!(1.2)),
+                LineaDescomposicion::new("MO.OF", dec!(0.4)),
+            ],
+        ))
+        .unwrap();
+    }
+    p.nuevo_capitulo("OBRA", "C1", "Hidráulica").unwrap();
+    p.anadir_linea("C1", "ICS011075I", dec!(20)).unwrap();
+    p.anadir_linea("C1", "ICS011063I", dec!(3)).unwrap();
+    p.fijar_tarifa("IT26.TNIRCL7511", "ITALSAN", dec!(24.67)).unwrap();
+    p.fijar_tarifa("IT26.TNIRCL6311", "ITALSAN", dec!(18.80)).unwrap();
+    p.fijar_descuento("ITALSAN", dec!(50)).unwrap();
+    let o = OpcionesExportacion {
+        descuentos_visibles: true,
+        ..Default::default()
+    };
+    // Mismo importe que la exportación normal (solo cambian los códigos)
+    let antes = importar(&exportar(&p, &o).unwrap().bytes)
+        .unwrap()
+        .presupuesto
+        .valorar()
+        .unwrap()
+        .pem;
+    let o = OpcionesExportacion {
+        longitud_codigo: Some(12),
+        ..o
+    };
+    let ex = exportar(&p, &o).unwrap();
+    let q = importar(&ex.bytes).unwrap().presupuesto;
+    assert!(
+        q.conceptos.keys().all(|c| c.chars().count() <= 12),
+        "{:?}",
+        q.conceptos.keys()
+    );
+    // Cortados a 12 seguirían siendo únicos
+    let cortos: std::collections::BTreeSet<String> = q.conceptos.keys().map(|c| c.chars().take(12).collect()).collect();
+    assert_eq!(cortos.len(), q.conceptos.len());
+    // El descuento sigue a la vista
+    assert!(q.conceptos.keys().any(|c| c.ends_with('%') && c != "%MA"));
+    let despues = q.valorar().unwrap().pem;
+    assert_eq!(despues, antes);
+}

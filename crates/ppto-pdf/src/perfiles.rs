@@ -36,6 +36,8 @@ pub struct Perfil {
     pub observaciones: Vec<String>,
     /// Resumen con PEM + GG + BI (`true`) o solo suma, IVA y total (`false`).
     pub desglose_contrata: bool,
+    /// Instaladora: GG y BI dentro del precio de cada partida (precios de venta).
+    pub precios_venta: bool,
     pub gastos_generales: Decimal,
     pub beneficio_industrial: Decimal,
     pub iva: Decimal,
@@ -64,6 +66,7 @@ impl Perfil {
             logo: None,
             observaciones: OBSERVACIONES_INSTALADORA.iter().map(|s| (*s).to_owned()).collect(),
             desglose_contrata: false,
+            precios_venta: true,
             gastos_generales: Decimal::ZERO,
             beneficio_industrial: Decimal::ZERO,
             iva: venta::IVA_GENERAL,
@@ -83,6 +86,7 @@ impl Perfil {
                 .map(|s| (*s).to_owned())
                 .collect(),
             desglose_contrata: true,
+            precios_venta: false,
             gastos_generales: venta::GG_HABITUAL,
             beneficio_industrial: venta::BI_HABITUAL,
             ..Self::instaladora()
@@ -101,6 +105,7 @@ impl Perfil {
         o.logo.clone_from(&self.logo);
         o.observaciones.clone_from(&self.observaciones);
         o.desglose_contrata = self.desglose_contrata;
+        o.precios_venta = self.precios_venta;
         o.gastos_generales = self.gastos_generales;
         o.beneficio_industrial = self.beneficio_industrial;
         o.iva = self.iva;
