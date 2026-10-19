@@ -5,6 +5,12 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.7] - 2026-10-19
+
+### Corregido
+- MCP `proponer`: `nueva` se acepta también como texto JSON (clientes con el
+  esquema de herramientas anterior lo envían así).
+
 ## [0.1.0-alpha.6] - 2026-10-19
 
 ### Añadido

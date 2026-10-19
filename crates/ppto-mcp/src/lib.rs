@@ -1248,6 +1248,15 @@ fn leer_nueva(a: &Value) -> Result<Option<ppto_core::propuesta::NuevaPartida>, S
     let Some(n) = a.get("nueva").filter(|n| !n.is_null()) else {
         return Ok(None);
     };
+    // Algunos clientes con el esquema antiguo envían el objeto como texto JSON.
+    let leido;
+    let n = match n.as_str() {
+        Some(t) => {
+            leido = serde_json::from_str::<Value>(t).map_err(|e| format!("nueva: JSON no válido ({e})"))?;
+            &leido
+        }
+        None => n,
+    };
     let s = |k: &str| n.get(k).and_then(Value::as_str).map(str::trim).unwrap_or("").to_owned();
     let capitulo = s("capitulo");
     if capitulo.is_empty() {
