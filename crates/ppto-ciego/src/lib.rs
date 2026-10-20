@@ -28,7 +28,7 @@ pub enum ErrorCiego {
     #[error("no se pudo leer el Excel: {0}")]
     Lectura(String),
     #[error(
-        "no se encuentra la fila de cabecera de Presto (Código, Nat, Ud, Resumen, … CanPres, PrPres) en ninguna hoja"
+        "no se encuentra la fila de cabecera de Presto (Código, Nat, Ud, Resumen, … CanPres, PrPres o Pres) en ninguna hoja"
     )]
     SinCabecera,
     #[error(transparent)]
@@ -116,7 +116,16 @@ impl Columnas {
         let mut c = [None; 13];
         for (j, v) in fila.iter().enumerate() {
             let t = texto(v).to_lowercase();
-            if let Some(k) = COLUMNAS.iter().position(|n| *n == t.trim()) {
+            // Otras exportaciones de Presto rotulan «Pres» en lugar de «PrPres»
+            let t = match t.trim() {
+                "pres" | "precio" => "prpres",
+                "importe" => "imppres",
+                "cantidad" => "canpres",
+                "naturaleza" => "nat",
+                "codigo" => "código",
+                otro => otro,
+            };
+            if let Some(k) = COLUMNAS.iter().position(|n| *n == t) {
                 c[k] = Some(inicio + u32::try_from(j).ok()?);
             }
         }
@@ -237,6 +246,25 @@ impl Lector {
             .unwrap_or(&Data::Empty)
     }
 
+    /// Código que cierra una fila de total: en Parcial (formato habitual de
+    /// Presto) o, en otras exportaciones, «Total CÓDIGO» en la columna Resumen
+    /// de una fila sin código ni naturaleza.
+    fn total_de(&self, f: &[Data]) -> String {
+        let parcial = texto(self.valor(f, 9)).trim().to_owned();
+        if !parcial.is_empty() {
+            return parcial;
+        }
+        if !texto(self.valor(f, 0)).trim().is_empty() || !texto(self.valor(f, 1)).trim().is_empty() {
+            return String::new();
+        }
+        texto(self.valor(f, 3))
+            .trim()
+            .strip_prefix("Total ")
+            .map(|c| c.trim().to_owned())
+            .filter(|c| !c.is_empty() && !c.contains(' '))
+            .unwrap_or_default()
+    }
+
     fn leer(mut self, filas: &[&[Data]], f0: u32, desde: usize) -> Result<Ciego, ErrorCiego> {
         // Pasada previa: el código de la raíz es el de la última fila de total
         // que no corresponde a ningún capítulo (p. ej. «08_2024»).
@@ -250,7 +278,7 @@ impl Lector {
             .iter()
             .skip(desde)
             .rev()
-            .map(|f| texto(self.valor(f, 9)).trim().to_owned())
+            .map(|f| self.total_de(f))
             .find(|j| !j.is_empty() && !codigos.contains(j) && !j.starts_with('='));
         if let Some(r) = raiz.filter(|r| ppto_core::edicion::validar_codigo(r).is_ok()) {
             let resumen = self.p.concepto("OBRA")?.resumen.clone();
@@ -281,7 +309,7 @@ impl Lector {
         let codigo = texto(self.valor(f, 0)).trim().to_owned();
         let nat = texto(self.valor(f, 1)).trim().to_lowercase();
         let resumen = texto(self.valor(f, 3)).trim().to_owned();
-        let total_de = texto(self.valor(f, 9)).trim().to_owned();
+        let total_de = self.total_de(f);
         let dims: Vec<Option<Decimal>> = (5..=8).map(|k| decimal(self.valor(f, k))).collect();
         let col_precio = self.c.0[11].unwrap_or(0);
 
