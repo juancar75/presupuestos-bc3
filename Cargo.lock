@@ -3372,7 +3372,7 @@ checksum = "4a6394b9e965e73d0a289ee54f589087e2c676aedf60885baf52c76b771e4958"
 
 [[package]]
 name = "ppto-asistente"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "base64 0.23.1",
  "ppto-core",
@@ -3386,7 +3386,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-bc3"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "encoding_rs",
  "ppto-core",
@@ -3396,7 +3396,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-biblioteca"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "ppto-core",
  "ppto-propuestas",
@@ -3408,7 +3408,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-ciego"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "calamine",
  "ppto-bc3",
@@ -3425,7 +3425,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-cli"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "ppto-bc3",
  "ppto-ciego",
@@ -3440,7 +3440,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-core"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
@@ -3450,7 +3450,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-db"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "ppto-core",
  "rusqlite",
@@ -3461,7 +3461,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-gui"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "eframe",
  "egui_extras",
@@ -3484,7 +3484,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-informes"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "calamine",
  "ppto-core",
@@ -3495,7 +3495,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-legalizacion"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "ppto-core",
  "ppto-propuestas",
@@ -3507,7 +3507,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-mcp"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "calamine",
  "pdf-extract",
@@ -3525,7 +3525,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-pdf"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "ppto-core",
  "rust_decimal",
@@ -3542,7 +3542,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-propuestas"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "ppto-core",
  "rust_decimal",
@@ -3553,7 +3553,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-tarifas"
-version = "0.1.0-alpha.14"
+version = "0.1.0-alpha.15"
 dependencies = [
  "calamine",
  "ppto-core",
@@ -4118,9 +4118,9 @@ checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -5838,9 +5838,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
-version = "1.0.9"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b96554aa2acc8ccdb7e1c9a58a7a68dd5d13bccc69cd124cb09406db612a1c9b"
+checksum = "58ec80e73fd8baf57bf0d9615554c75348bda990d6d5bbeab964dd068319fecb"
 dependencies = [
  "rustls-pki-types",
 ]
