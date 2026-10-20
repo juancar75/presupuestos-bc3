@@ -145,9 +145,13 @@ impl Escritor {
                 Naturaleza::Maquinaria => ("2", Some(c.precio)),
                 Naturaleza::Material => ("3", Some(c.precio)),
                 Naturaleza::Porcentaje => ("0", None),
+                // FIEBDC-3/2002 no tiene tipo de subcontrata. Con tipo 0 y sin
+                // descompuesto Presto la toma por una unidad de obra; como
+                // material (tipo 3) suma en el material y basta marcarla
+                // «Subcontratado» en Presto.
                 Naturaleza::Subcontrata => {
                     subcontratas += 1;
-                    ("0", Some(c.precio))
+                    ("3", Some(c.precio))
                 }
                 _ => ("0", declarado.get(&c.codigo).copied()),
             };
@@ -179,7 +183,7 @@ impl Escritor {
         }
         if subcontratas > 0 {
             self.avisos.push(format!(
-                "{subcontratas} subcontrata(s) exportada(s) con tipo 0: FIEBDC-3/2002 no tiene tipo de subcontrata"
+                "{subcontratas} subcontrata(s) exportada(s) como material (tipo 3): FIEBDC-3/2002 no tiene tipo de subcontrata; en Presto se pueden marcar «Subcontratado»"
             ));
         }
 

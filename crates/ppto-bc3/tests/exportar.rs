@@ -143,6 +143,9 @@ fn subcontrata_se_avisa() {
     .unwrap();
     let ex = exportar(&p, &OpcionesExportacion::default()).unwrap();
     assert!(ex.avisos.iter().any(|a| a.contains("subcontrata")));
+    // Como material (tipo 3): Presto 8.8 no la toma por unidad de obra
+    let texto = String::from_utf8_lossy(&ex.bytes);
+    assert!(texto.contains("~C|SUB1|m2|Montaje subcontratado|9||3|"), "{texto}");
 }
 
 /// Con `descuentos_visibles` el material sale a PVP con su línea de

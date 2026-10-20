@@ -5,6 +5,13 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.13] - 2026-10-20
+
+### Cambiado
+- BC3: las subcontratas se exportan como **material (tipo 3)** en lugar de
+  tipo 0. Presto 8.8 tomaba el tipo 0 sin descompuesto por una unidad de
+  obra; como material suma en el material y basta marcarla «Subcontratado».
+
 ## [0.1.0-alpha.12] - 2026-10-20
 
 ### Corregido

@@ -115,8 +115,10 @@ Escribe el formato de Presto 8.8: `FIEBDC-3/2002`, ANSI (Windows-1252), CRLF.
 
 Saneado: `|`, `\` y `~` dentro de textos se sustituyen (`/`, `/`, `-`); los
 caracteres sin equivalente en Windows-1252 se escriben como `?`. Ambos casos
-se avisan. Las subcontratas salen con tipo 0 (FIEBDC-3/2002 no tiene tipo
-propio) y también se avisa.
+se avisan. Las subcontratas salen como **material (tipo 3)**: FIEBDC-3/2002
+no tiene tipo propio y, con tipo 0 y sin descompuesto, Presto 8.8 las toma
+por unidades de obra (comprobado 20-10-2026). Se avisa; en Presto basta
+marcarlas «Subcontratado». Al reimportar vuelven como material.
 
 Pruebas de ida y vuelta (`tests/exportar.rs`): exportar → importar conserva
 estructura, naturalezas, textos, mediciones, precios e importes al céntimo, y
