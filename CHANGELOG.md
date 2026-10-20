@@ -5,6 +5,13 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.15] - 2026-10-20
+
+### Corregido
+- Presupuesto en PDF: los datos de la obra (título, dirección, cliente y
+  referencia) se guardan por obra y se recuperan al volver a abrir la
+  ventana o el programa. Antes se vaciaban cada vez.
+
 ## [0.1.0-alpha.14] - 2026-10-20
 
 ### Corregido

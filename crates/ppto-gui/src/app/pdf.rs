@@ -36,6 +36,45 @@ pub(super) fn ruta_perfiles() -> Option<PathBuf> {
     carpeta_config().map(|c| c.join("perfiles.json"))
 }
 
+/// Datos de cada obra para el PDF (título, dirección, cliente, referencia),
+/// guardados por obra en `datos_obra.json` para que no se pierdan al cerrar
+/// la ventana o el programa.
+fn ruta_datos_obra() -> Option<PathBuf> {
+    carpeta_config().map(|c| c.join("datos_obra.json"))
+}
+
+type DatosObras = std::collections::BTreeMap<String, [String; 4]>;
+
+fn leer_datos_obras() -> DatosObras {
+    ruta_datos_obra()
+        .and_then(|r| std::fs::read_to_string(r).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn guardar_datos_obra(clave: &str, o: &OpcionesPdf) -> std::io::Result<()> {
+    let Some(r) = ruta_datos_obra() else {
+        return Ok(());
+    };
+    let mut todas = leer_datos_obras();
+    let d = [
+        o.titulo.clone(),
+        o.direccion.clone(),
+        o.cliente.clone(),
+        o.referencia.clone(),
+    ];
+    if d.iter().all(String::is_empty) {
+        todas.remove(clave);
+    } else {
+        todas.insert(clave.to_owned(), d);
+    }
+    if let Some(c) = r.parent() {
+        std::fs::create_dir_all(c)?;
+    }
+    let t = serde_json::to_string_pretty(&todas).map_err(std::io::Error::other)?;
+    std::fs::write(r, t)
+}
+
 impl VentanaPdf {
     /// Copia al perfil activo lo escrito en los campos de texto.
     fn volcar(&mut self) -> Result<(), String> {
@@ -77,6 +116,18 @@ impl Aplicacion {
             },
             ..OpcionesPdf::default()
         };
+        let mut obra = obra;
+        let mut guardados = leer_datos_obras();
+        // Si la obra se guardó después de rellenar sus datos, siguen bajo su nombre
+        let datos = guardados
+            .remove(&self.clave_obra())
+            .or_else(|| guardados.remove(&format!("nombre:{}", self.p.nombre)));
+        if let Some([t, d, c, r]) = datos {
+            obra.titulo = t;
+            obra.direccion = d;
+            obra.cliente = c;
+            obra.referencia = r;
+        }
         let mut v = VentanaPdf {
             perfiles,
             obra,
@@ -297,6 +348,11 @@ impl Aplicacion {
             }
         }
         // Los perfiles se guardan siempre al cerrar o generar
+        if (!abierta || generar)
+            && let Err(e) = guardar_datos_obra(&self.clave_obra(), &v.obra)
+        {
+            mensaje = Some((format!("No se pudieron guardar los datos de la obra: {e}"), true));
+        }
         if !abierta {
             let _ = v.volcar();
             if let Some(r) = ruta_perfiles()
@@ -312,6 +368,15 @@ impl Aplicacion {
         }
         if abierta {
             self.ventana_pdf = Some(v);
+        }
+    }
+
+    /// Clave de la obra para sus datos del PDF: el presupuesto guardado o,
+    /// si aún no se ha guardado, su nombre.
+    fn clave_obra(&self) -> String {
+        match self.presupuesto_id {
+            Some(id) => format!("id:{id}"),
+            None => format!("nombre:{}", self.p.nombre),
         }
     }
 
