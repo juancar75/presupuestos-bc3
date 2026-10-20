@@ -366,3 +366,75 @@ fn excel_valorado_y_pdf_dicen_lo_mismo() {
     // 13,59 × 28,375 = 385,616 → 385,62; 93,50 × 7 = 654,50; 13,59 × 4 = 54,36; 19,91 × 50 = 995,50 → 2.089,98
     assert_eq!(total, dec!(2089.98));
 }
+
+/// Exportación de Presto sin mediciones: cabecera «Pres» en lugar de
+/// «PrPres» y filas «Total CÓDIGO» en la columna Resumen (no en Parcial).
+#[test]
+fn listado_sin_mediciones_con_pres_y_totales_en_resumen() {
+    let mut wb = Workbook::new();
+    let h = wb.add_worksheet();
+    h.set_name("Hoja1").unwrap();
+    h.write(0, 0, "Presupuesto").unwrap();
+    for (j, t) in ["Código", "Nat", "Ud", "Resumen", "CanPres", "Pres", "ImpPres"]
+        .iter()
+        .enumerate()
+    {
+        h.write(1, j as u16, *t).unwrap();
+    }
+    let filas: &[(&str, &str, &str, &str, f64)] = &[
+        ("C17", "Capítulo", "", "PCI", 1.0),
+        ("PCI_01", "Capítulo", "", "DETECCIÓN", 1.0),
+        ("07.01.01", "Partida", "Ud", "Central", 1.0),
+        ("", "", "", "Central analógica de 1 lazo", 0.0),
+        ("06710604", "Partida", "Ud", "Detector", 99.0),
+        ("", "", "", "Total PCI_01", 1.0),
+        ("PCI_02", "Capítulo", "", "EXTINCIÓN", 1.0),
+        ("E26FJ180", "Partida", "Ud", "Extintor", 96.0),
+        ("", "", "", "Total PCI_02", 1.0),
+        ("", "", "", "Total C17", 1.0),
+        ("C18", "Capítulo", "", "VENTILACIÓN", 1.0),
+        ("VG04", "Partida", "Ud", "Ventilador", 6.0),
+        ("", "", "", "Total C18", 1.0),
+        ("", "", "", "Total 0", 1.0),
+    ];
+    for (i, (c, n, u, r, q)) in filas.iter().enumerate() {
+        let f = 2 + i as u32;
+        for (j, v) in [c, n, u, r].iter().enumerate() {
+            if !v.is_empty() {
+                h.write(f, j as u16, **v).unwrap();
+            }
+        }
+        if *q > 0.0 {
+            h.write(f, 4, *q).unwrap();
+            h.write(f, 5, 0.0).unwrap();
+            h.write_formula(f, 6, Formula::new(format!("=ROUND(E{0}*F{0},2)", f + 1)))
+                .unwrap();
+        }
+    }
+    let bytes = wb.save_to_buffer().unwrap();
+    let c = ppto_ciego::leer_bytes(&bytes, "pci.xlsx").unwrap();
+    let p = &c.presupuesto;
+    assert_eq!(p.raiz, "0");
+    let hijos = |cap: &str| {
+        p.concepto(cap)
+            .unwrap()
+            .descomposicion
+            .iter()
+            .map(|l| l.hijo.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(hijos("0"), ["C17", "C18"]);
+    assert_eq!(hijos("C17"), ["PCI_01", "PCI_02"]);
+    assert_eq!(hijos("PCI_01"), ["07.01.01", "06710604"]);
+    assert_eq!(hijos("C18"), ["VG04"]);
+    assert!(
+        c.incidencias.iter().all(|i| !i.contains("sin fila de total")),
+        "{:?}",
+        c.incidencias
+    );
+    assert_eq!(
+        p.concepto("07.01.01").unwrap().texto.as_deref(),
+        Some("Central analógica de 1 lazo")
+    );
+    assert_eq!(p.concepto("06710604").unwrap().naturaleza, Naturaleza::Partida);
+}

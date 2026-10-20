@@ -5,6 +5,14 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.14] - 2026-10-20
+
+### Corregido
+- Ciego en Excel: se aceptan las exportaciones de Presto sin mediciones,
+  con cabecera «Pres» (en lugar de «PrPres») y filas «Total CÓDIGO» en la
+  columna Resumen (en lugar de Parcial). Antes no se encontraba la cabecera
+  o los capítulos quedaban anidados mal.
+
 ## [0.1.0-alpha.13] - 2026-10-20
 
 ### Cambiado
