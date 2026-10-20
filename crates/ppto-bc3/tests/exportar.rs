@@ -290,3 +290,44 @@ fn codigos_cortos_para_presto_antiguo() {
     let despues = q.valorar().unwrap().pem;
     assert_eq!(despues, antes);
 }
+
+/// Con los descuentos a la vista el BC3 vale lo mismo que la obra al
+/// céntimo: donde aplicar el descuento al importe de la línea en vez de al
+/// precio unitario cambia algún céntimo, se añade una línea de ajuste.
+/// Al volver a importarlo, el ajuste desaparece con los descuentos.
+#[test]
+fn descuentos_visibles_cuadran_al_centimo() {
+    use ppto_core::LineaDescomposicion;
+    let mut p = Presupuesto::new("redondeo", "OBRA", "Obra");
+    // 24,67 al 50 % = 12,335 → 12,34 por unidad; × 56 m: 691,04 frente a 690,76 en la línea
+    p.insertar(Concepto::basico("IT.TUBO", "m", "Tubo", Naturaleza::Material, dec!(0)))
+        .unwrap();
+    p.insertar(Concepto::porcentaje("%MA", "Medios auxiliares")).unwrap();
+    p.insertar(Concepto::partida(
+        "P1",
+        "m",
+        "Tubo instalado",
+        vec![
+            LineaDescomposicion::new("IT.TUBO", dec!(1.2)),
+            LineaDescomposicion::new("%MA", dec!(2)),
+        ],
+    ))
+    .unwrap();
+    p.nuevo_capitulo("OBRA", "C1", "Hidráulica").unwrap();
+    p.anadir_linea("C1", "P1", dec!(56)).unwrap();
+    p.fijar_tarifa("IT.TUBO", "ITALSAN", dec!(24.67)).unwrap();
+    p.fijar_descuento("ITALSAN", dec!(50)).unwrap();
+    let pem = p.pem().unwrap();
+
+    let (q, _) = p.con_descuentos_visibles();
+    assert_eq!(q.precio("P1").unwrap(), p.precio("P1").unwrap());
+    assert_eq!(q.pem().unwrap(), pem);
+    let o = OpcionesExportacion {
+        descuentos_visibles: true,
+        ..Default::default()
+    };
+    let ex = exportar(&p, &o).unwrap();
+    let r = importar(&ex.bytes).unwrap().presupuesto;
+    assert_eq!(r.pem().unwrap(), pem);
+    assert!(!r.conceptos.contains_key("AJ.REDONDEO"));
+}
