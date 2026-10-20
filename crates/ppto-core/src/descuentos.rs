@@ -328,7 +328,95 @@ impl Presupuesto {
             }
             c.descomposicion = nuevas;
         }
+        p.ajustar_redondeo_descuentos(self, &candidatos.keys().map(|k| format!("{k}%")).collect());
         (p, avisos)
+    }
+
+    /// Con los descuentos a la vista, el neto ya no se redondea por unidad
+    /// sino sobre el importe de la línea, y una partida puede variar algún
+    /// céntimo. Para que el BC3 valga lo mismo que la obra, se añade antes
+    /// de los medios auxiliares una línea «Ajuste de redondeo» (0,01 € ×
+    /// céntimos) en las partidas que lo necesitan.
+    fn ajustar_redondeo_descuentos(&mut self, original: &Presupuesto, lineas_dto: &std::collections::BTreeSet<String>) {
+        const AJUSTE: &str = "AJ.REDONDEO";
+        let Ok(vo) = original.valorar() else { return };
+        let un_centimo = Decimal::new(1, 2);
+        // Base (suma de líneas antes del primer porcentaje que no sea descuento)
+        let base = |p: &Presupuesto, lineas: &[crate::presupuesto::LineaValorada]| {
+            lineas
+                .iter()
+                .take_while(|l| {
+                    lineas_dto.contains(&l.hijo)
+                        || p.conceptos
+                            .get(&l.hijo)
+                            .is_none_or(|c| c.naturaleza != Naturaleza::Porcentaje)
+                })
+                .map(|l| l.importe)
+                .sum::<Decimal>()
+        };
+        // De abajo arriba: solo se ajusta una partida cuando sus hijas ya cuadran
+        for _ in 0..6 {
+            let Ok(vq) = self.valorar() else { return };
+            let distinto = |c: &str| vo.precios.get(c) != vq.precios.get(c);
+            let mut ajustes = Vec::new();
+            for (codigo, c) in &self.conceptos {
+                if c.naturaleza == Naturaleza::Capitulo || c.descomposicion.is_empty() || !distinto(codigo) {
+                    continue;
+                }
+                let hijas_ok = c.descomposicion.iter().all(|l| {
+                    self.conceptos.get(&l.hijo).is_none_or(|h| h.descomposicion.is_empty()) || !distinto(&l.hijo)
+                });
+                if !hijas_ok {
+                    continue;
+                }
+                let (Some(lo), Some(lq)) = (vo.lineas.get(codigo), vq.lineas.get(codigo)) else {
+                    continue;
+                };
+                let a = base(original, lo) - base(self, lq);
+                if !a.is_zero() {
+                    ajustes.push((codigo.clone(), a));
+                }
+            }
+            if ajustes.is_empty() {
+                return;
+            }
+            if !self.conceptos.contains_key(AJUSTE) {
+                let mut c = Concepto::basico(
+                    AJUSTE,
+                    "€",
+                    "Ajuste de redondeo de descuentos",
+                    Naturaleza::Otros,
+                    un_centimo,
+                );
+                c.texto = Some(
+                    "Céntimos de diferencia entre aplicar el descuento al precio unitario o al importe de la línea."
+                        .into(),
+                );
+                self.conceptos.insert(AJUSTE.into(), c);
+            }
+            for (codigo, a) in ajustes {
+                let Some(c) = self.conceptos.get_mut(&codigo) else {
+                    continue;
+                };
+                let rend = a / un_centimo;
+                if let Some(l) = c.descomposicion.iter_mut().find(|l| l.hijo == AJUSTE) {
+                    l.rendimiento += rend;
+                    continue;
+                }
+                let pos = c
+                    .descomposicion
+                    .iter()
+                    .position(|l| {
+                        !lineas_dto.contains(&l.hijo)
+                            && original
+                                .conceptos
+                                .get(&l.hijo)
+                                .is_some_and(|h| h.naturaleza == Naturaleza::Porcentaje)
+                    })
+                    .unwrap_or(c.descomposicion.len());
+                c.descomposicion.insert(pos, LineaDescomposicion::new(AJUSTE, rend));
+            }
+        }
     }
 
     /// Inverso de [`Self::con_descuentos_visibles`]: al leer un BC3 que trae
@@ -402,6 +490,19 @@ impl Presupuesto {
             }
             self.conceptos.remove(linea);
             n += 1;
+        }
+        // El ajuste de redondeo de la exportación ya no hace falta: el neto
+        // vuelve a redondearse por unidad
+        if n > 0
+            && self
+                .conceptos
+                .get("AJ.REDONDEO")
+                .is_some_and(|c| c.resumen == "Ajuste de redondeo de descuentos")
+        {
+            for c in self.conceptos.values_mut() {
+                c.descomposicion.retain(|l| l.hijo != "AJ.REDONDEO");
+            }
+            self.conceptos.remove("AJ.REDONDEO");
         }
         if n > 0 {
             avisos.insert(

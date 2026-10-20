@@ -5,6 +5,16 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.12] - 2026-10-20
+
+### Corregido
+- BC3 con descuentos a la vista: cuadra **al céntimo** con la obra. Aplicar
+  el descuento al importe de la línea (como hace Presto) en vez de al precio
+  unitario movía algún céntimo por partida (6,73 € en una obra real); ahora
+  se añade una línea «Ajuste de redondeo de descuentos» (AJ.REDONDEO,
+  0,01 € × céntimos) en las partidas que lo necesitan. Al reimportar el BC3
+  el ajuste se quita junto con las líneas de descuento.
+
 ## [0.1.0-alpha.11] - 2026-10-19
 
 ### Añadido
