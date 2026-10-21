@@ -5,6 +5,11 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Corregido
+- Instalador: espera a que el programa se cierre del todo y reintenta la
+  copia durante unos segundos. Antes podía fallar con «el archivo está siendo
+  utilizado por otro proceso» aunque el programa ya se hubiera cerrado.
+
 ## [0.1.0-alpha.15] - 2026-10-20
 
 ### Corregido
