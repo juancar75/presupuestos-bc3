@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.16] - 2026-10-21
+
 ### Corregido
 - BC3 con descuentos a la vista: la línea «Descuento FABRICANTE −x %» se
   exporta con la naturaleza del recurso descontado (material, mano de obra o
