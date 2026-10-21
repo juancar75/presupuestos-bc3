@@ -144,7 +144,21 @@ impl Escritor {
                 Naturaleza::ManoObra => ("1", Some(c.precio)),
                 Naturaleza::Maquinaria => ("2", Some(c.precio)),
                 Naturaleza::Material => ("3", Some(c.precio)),
-                Naturaleza::Porcentaje => ("0", None),
+                // Línea «Descuento FABRICANTE −x %» (código RECURSO%): con la
+                // naturaleza del recurso descontado, para que Presto la sume
+                // en material (o en mano de obra, maquinaria…) y no en «Otros».
+                Naturaleza::Porcentaje => (
+                    c.codigo
+                        .strip_suffix('%')
+                        .and_then(|base| p.conceptos.get(base))
+                        .map_or("0", |b| match b.naturaleza {
+                            Naturaleza::ManoObra => "1",
+                            Naturaleza::Maquinaria => "2",
+                            Naturaleza::Material | Naturaleza::Subcontrata => "3",
+                            _ => "0",
+                        }),
+                    None,
+                ),
                 // FIEBDC-3/2002 no tiene tipo de subcontrata. Con tipo 0 y sin
                 // descompuesto Presto la toma por una unidad de obra; como
                 // material (tipo 3) suma en el material y basta marcarla

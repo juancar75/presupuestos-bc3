@@ -197,6 +197,10 @@ fn descuentos_visibles_en_el_descompuesto() {
     assert!(texto.contains("~C|MD.REJ|ud|Rejilla|80.49|"), "{texto}");
     assert!(texto.contains("MD.REJ%\\1\\-0.35\\"), "{texto}");
     assert!(texto.contains("Descuento MADEL 35 %"), "{texto}");
+    // La línea de descuento lleva la naturaleza del recurso (material, tipo 3)
+    // para que Presto la sume en material y no en «Otros»
+    let c_dto = texto.lines().find(|l| l.starts_with("~C|MD.REJ%|")).unwrap();
+    assert!(c_dto.trim_end().ends_with("|3|"), "{c_dto}");
 
     let q = importar(&ex.bytes).unwrap().presupuesto;
     let lineas: Vec<_> = q

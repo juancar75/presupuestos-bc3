@@ -5,6 +5,12 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Corregido
+- BC3 con descuentos a la vista: la línea «Descuento FABRICANTE −x %» se
+  exporta con la naturaleza del recurso descontado (material, mano de obra o
+  maquinaria). Antes salía como «Otros» y en Presto restaba en OtrPres en
+  lugar de en MatPres.
+
 ## [0.1.0-alpha.15] - 2026-10-20
 
 ### Corregido
