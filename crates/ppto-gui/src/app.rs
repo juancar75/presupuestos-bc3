@@ -1377,15 +1377,27 @@ impl Aplicacion {
         for l in lineas {
             let c = &self.p.conceptos[&l.hijo];
             if c.naturaleza == Naturaleza::Capitulo {
-                let r = egui::CollapsingHeader::new(RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong())
-                    .id_salt(("cap", capitulo, &l.hijo))
-                    .default_open(self.calc.lineas.get(&l.hijo).is_none_or(|v| v.len() <= 40))
-                    .open(
-                        (self.desplazar_arbol
-                            && self.sel.as_ref().is_some_and(|(p, _)| self.p.ruta(p).contains(&l.hijo)))
-                        .then_some(true),
-                    )
-                    .show(ui, |ui| {
+                // Cabecera propia (en vez de CollapsingHeader) para que el título
+                // sirva a la vez para abrir/cerrar con clic y para arrastrar.
+                let id = ui.make_persistent_id(("cap", capitulo, &l.hijo));
+                let mut estado = egui::collapsing_header::CollapsingState::load_with_default_open(
+                    ui.ctx(),
+                    id,
+                    self.calc.lineas.get(&l.hijo).is_none_or(|v| v.len() <= 40),
+                );
+                if self.desplazar_arbol && self.sel.as_ref().is_some_and(|(p, _)| self.p.ruta(p).contains(&l.hijo)) {
+                    estado.set_open(true);
+                }
+                let (_, cabecera, cuerpo) = estado
+                    .show_header(ui, |ui| {
+                        ui.add(
+                            egui::Button::new(RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong())
+                                .frame(false)
+                                .wrap_mode(egui::TextWrapMode::Truncate)
+                                .sense(egui::Sense::click_and_drag()),
+                        )
+                    })
+                    .body(|ui| {
                         ui.label(RichText::new(format!("{} €", eur(l.importe))).weak());
                         self.rama(ui, &l.hijo, acciones);
                         if self.calc.lineas.get(&l.hijo).is_none_or(Vec::is_empty) {
@@ -1396,29 +1408,27 @@ impl Aplicacion {
                             );
                         }
                     });
-                // El título del capítulo también se arrastra (para moverlo a otro
-                // capítulo): una zona de arrastre encima, sin quitarle el clic de
-                // abrir y cerrar.
-                let asa = ui.interact(
-                    r.header_response.rect,
-                    ui.id().with(("arrastrar_cap", capitulo, &l.hijo)),
-                    egui::Sense::drag(),
-                );
-                asa.dnd_set_drag_payload(Arrastre {
+                let cab = cabecera.inner;
+                if cab.clicked() {
+                    let mut e = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true);
+                    e.toggle(ui);
+                    e.store(ui.ctx());
+                }
+                cab.dnd_set_drag_payload(Arrastre {
                     origen: capitulo.to_owned(),
                     hijo: l.hijo.clone(),
                 });
-                if asa.dragged() {
+                if cab.dragged() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
                 }
                 // Soltar una partida o un capítulo sobre el capítulo (o dentro de
                 // él, si está vacío): al final de él
                 let vacio = self.calc.lineas.get(&l.hijo).is_none_or(Vec::is_empty);
-                let soltado = r.header_response.dnd_release_payload::<Arrastre>().or_else(|| {
-                    r.body_response
+                let soltado = cab.dnd_release_payload::<Arrastre>().or_else(|| {
+                    cuerpo
                         .as_ref()
                         .filter(|_| vacio)
-                        .and_then(|b| b.dnd_release_payload::<Arrastre>())
+                        .and_then(|b| b.response.dnd_release_payload::<Arrastre>())
                 });
                 if let Some(a) = soltado.filter(|a| a.hijo != l.hijo) {
                     acciones.push(Accion::Trasladar(
@@ -1427,19 +1437,15 @@ impl Aplicacion {
                         l.hijo.clone(),
                         None,
                     ));
-                } else if r
-                    .header_response
-                    .dnd_hover_payload::<Arrastre>()
-                    .is_some_and(|a| a.hijo != l.hijo)
-                {
+                } else if cab.dnd_hover_payload::<Arrastre>().is_some_and(|a| a.hijo != l.hijo) {
                     ui.painter().rect_stroke(
-                        r.header_response.rect,
+                        cab.rect,
                         2.0,
                         egui::Stroke::new(2.0, Color32::from_rgb(90, 150, 230)),
                         egui::StrokeKind::Outside,
                     );
                 }
-                r.header_response.context_menu(|ui| {
+                cab.context_menu(|ui| {
                     if ui.button("Nueva partida aquí").clicked() {
                         acciones.push(Accion::Alta(TipoAlta::Partida {
                             capitulo: l.hijo.clone(),
@@ -3313,6 +3319,67 @@ mod pruebas {
                 .any(|a| matches!(a, Accion::Trasladar(o, x, d, _) if o == "C01" && x == "SR.COL8" && d == "C01.01"))
         });
         assert!(llega, "no se puede soltar una partida en un subcapítulo vacío");
+    }
+
+    /// Clics sucesivos en el árbol (x = 90) con la misma aplicación.
+    fn clics(ys: &[f32]) -> Vec<Accion> {
+        use eframe::egui::{Event, PointerButton, Pos2};
+        let mut app = Aplicacion::sin_ventana();
+        let ctx = Context::default();
+        let mut acc = Vec::new();
+        let mut eventos = vec![vec![]];
+        for &y in ys {
+            let p = Pos2::new(90.0, y);
+            let b = |pressed| Event::PointerButton {
+                pos: p,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            };
+            eventos.extend([
+                vec![Event::PointerMoved(p)],
+                vec![b(true)],
+                vec![b(false)],
+                vec![],
+                vec![],
+            ]);
+        }
+        for e in eventos {
+            let entrada = RawInput {
+                events: e,
+                screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 800.0))),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(entrada, |ui| {
+                egui::Panel::left("a")
+                    .default_size(330.0)
+                    .show(ui, |ui| app.arbol(ui, &mut acc));
+            });
+            out.textures_delta.clear();
+        }
+        acc
+    }
+
+    #[test]
+    fn clic_en_el_titulo_contrae_el_capitulo() {
+        let elige = |acc: &[Accion]| {
+            acc.iter()
+                .any(|a| matches!(a, Accion::Seleccionar(_, h) if h == "SR.COL8"))
+        };
+        let ys: Vec<f32> = (40..500).step_by(4).map(|y| y as f32).collect();
+        let y_col8 = ys.iter().copied().find(|&y| elige(&clics(&[y]))).unwrap();
+        // Algún clic por encima (el título de C01) oculta SR.COL8, y un segundo
+        // clic en el mismo sitio la vuelve a mostrar.
+        let titulo = ys
+            .iter()
+            .copied()
+            .filter(|&y| y < y_col8 - 20.0)
+            .find(|&y| !elige(&clics(&[y, y_col8])));
+        let titulo = titulo.expect("el clic en el título no contrae el capítulo");
+        assert!(
+            elige(&clics(&[titulo, titulo, y_col8])),
+            "un segundo clic debe volver a abrirlo"
+        );
     }
 
     #[test]

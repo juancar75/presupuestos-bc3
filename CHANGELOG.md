@@ -5,6 +5,13 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.18] - 2026-10-25
+
+### Corregido
+- Árbol: en la alpha.17 el clic en el título de un capítulo ya no lo abría ni
+  lo cerraba (la zona para arrastrarlo se quedaba el clic). Ahora el título
+  abre y cierra con un clic y se arrastra manteniendo pulsado.
+
 ## [0.1.0-alpha.17] - 2026-10-25
 
 ### Añadido
