@@ -5,6 +5,15 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.21] - 2026-10-25
+
+### Añadido
+- Botón **Info** en la barra de herramientas (junto a Deshacer/Rehacer): versión
+  instalada, carpeta del programa y de los datos, y enlace a las novedades.
+  La versión también aparece en el título de la ventana.
+- Prueba del campo «Título» del menú del capítulo pinchando en él como lo
+  haría el ratón (pulsar y soltar en fotogramas distintos).
+
 ## [0.1.0-alpha.20] - 2026-10-25
 
 ### Corregido
