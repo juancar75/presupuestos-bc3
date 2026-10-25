@@ -5,6 +5,16 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.17] - 2026-10-25
+
+### Añadido
+- Árbol: **Cortar**, **Copiar** y **Pegar aquí** en el menú del clic derecho
+  para mover o copiar partidas a otro capítulo o subcapítulo. Copiar pone la
+  misma partida (mismo código y precio, como Presto) con su cantidad y su
+  medición; la cantidad de cada capítulo es independiente.
+- Se puede soltar una partida arrastrada dentro de un subcapítulo vacío, no
+  solo sobre su título.
+
 ### Corregido
 - Instalador: corregido un error de sintaxis de la alpha.16 que impedía
   ejecutar `instalar.ps1` («La referencia de variable no es válida»).

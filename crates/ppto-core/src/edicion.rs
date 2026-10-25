@@ -209,6 +209,32 @@ impl Presupuesto {
         Ok(())
     }
 
+    /// Copia la línea `hijo` de `origen` al final de `destino` (copiar y
+    /// pegar), con su cantidad y su hoja de medición. Como en Presto, es la
+    /// misma partida (mismo código y mismo precio) colgada en dos sitios; la
+    /// cantidad de cada sitio es independiente. Mismas reglas que
+    /// [`Self::anadir_linea`]; si algo falla, el presupuesto queda como estaba.
+    pub fn copiar_linea(&mut self, origen: &str, hijo: &str, destino: &str) -> Result<(), ErrorMotor> {
+        let linea = self
+            .concepto(origen)?
+            .descomposicion
+            .iter()
+            .find(|l| l.hijo == hijo)
+            .cloned()
+            .ok_or_else(|| ErrorMotor::RecursoNoEnPartida {
+                partida: origen.to_owned(),
+                recurso: hijo.to_owned(),
+            })?;
+        self.anadir_linea(destino, hijo, linea.rendimiento)?;
+        if let Some(l) = self.concepto_mut(destino)?.descomposicion.last_mut() {
+            l.factor = linea.factor;
+        }
+        if let Some(m) = self.mediciones.get(&(origen.to_owned(), hijo.to_owned())).cloned() {
+            self.mediciones.insert((destino.to_owned(), hijo.to_owned()), m);
+        }
+        Ok(())
+    }
+
     /// Quita la línea `hijo` de `padre` (y su hoja de medición, si la tiene).
     /// El concepto hijo no se borra: puede seguir usándose en otros sitios.
     pub fn quitar_linea(&mut self, padre: &str, hijo: &str) -> Result<(), ErrorMotor> {
