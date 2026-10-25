@@ -166,6 +166,25 @@ fn trasladar_partidas_entre_capitulos_como_arrastrar() {
 }
 
 #[test]
+fn copiar_partida_a_un_subcapitulo() {
+    // Suelo radiante (PEM 7.005,15): SR.M2 = 210 m² × 29,89 = 6.276,90 con medición.
+    let mut p = suelo_radiante();
+    p.nuevo_capitulo("C01", "C01.01", "Planta baja").unwrap();
+    p.copiar_linea("C01", "SR.M2", "C01.01").unwrap();
+    // Misma partida en dos sitios: el PEM suma las dos líneas (7.005,15 + 6.276,90)
+    assert_eq!(p.pem().unwrap(), dec!(13282.05));
+    assert!(p.mediciones.contains_key(&("C01.01".into(), "SR.M2".into())));
+    // Cantidad independiente en cada sitio: 100 m² × 29,89 = 2.989,00
+    p.fijar_rendimiento("C01.01", "SR.M2", dec!(100)).unwrap();
+    assert_eq!(p.lineas_valoradas("C01.01").unwrap()[0].importe, dec!(2989.00));
+    assert_eq!(p.pem().unwrap(), dec!(9994.15));
+    // No se puede pegar dos veces en el mismo capítulo; no toca nada
+    let antes = p.clone();
+    assert!(p.copiar_linea("C01", "SR.M2", "C01.01").is_err());
+    assert_eq!(p, antes);
+}
+
+#[test]
 fn partida_sin_descomponer_con_precio_directo() {
     // Presupuesto ciego: P1 (12 m) a 15,50 €/m directo = 186,00; al descomponerla manda el descompuesto
     let mut p = Presupuesto::new("t", "OBRA", "Obra");

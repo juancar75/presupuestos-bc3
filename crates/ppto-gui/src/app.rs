@@ -79,6 +79,10 @@ enum Accion {
     Mover(String, String, bool),
     /// Arrastrar y soltar: (origen, hijo, destino, delante de).
     Trasladar(String, String, String, Option<String>),
+    /// Copiar y pegar: (origen, hijo, destino). La misma partida en otro sitio.
+    Copiar(String, String, String),
+    /// Cortar o copiar (origen, hijo, `true` = cortar); `None` = vaciar.
+    Portapapeles(Option<(String, String, bool)>),
     Alta(TipoAlta),
     AplicarRatio(ppto_core::ratio::PaqueteRatio),
     AceptarPropuesta(u64),
@@ -200,6 +204,8 @@ pub struct Aplicacion {
     buscar: String,
     /// Llevar el árbol hasta la partida elegida en el próximo fotograma.
     desplazar_arbol: bool,
+    /// Partida cortada o copiada: (capítulo, partida, `true` = cortar).
+    portapapeles: Option<(String, String, bool)>,
     historial: Historial,
     ratio: ratio::FormRatio,
     /// Tarifas de subcontratas del usuario (fuera del repositorio).
@@ -266,6 +272,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::QuitarLinea(p, h, _) => (format!("quitar {h} de {p}"), None),
         Accion::Mover(p, h, _) => (format!("mover {h} en {p}"), None),
         Accion::Trasladar(o, h, d, _) => (format!("mover {h} de {o} a {d}"), None),
+        Accion::Copiar(_, h, d) => (format!("copiar {h} a {d}"), None),
         Accion::AplicarRatio(p) => (format!("subcontrata {}", p.codigo), None),
         Accion::AceptarPropuesta(id) => (format!("propuesta IA #{id}"), None),
         Accion::ReaplicarAceptadas => ("reaplicar propuestas aceptadas".into(), None),
@@ -342,6 +349,7 @@ impl Aplicacion {
             ciego: None,
             buscar: String::new(),
             desplazar_arbol: false,
+            portapapeles: None,
             historial: Historial::default(),
             ratio: ratio::FormRatio::default(),
             tarifas: ppto_tarifas::Biblioteca::default(),
@@ -943,6 +951,16 @@ impl Aplicacion {
                     self.navegar(d, false);
                     continue;
                 }
+                Accion::Portapapeles(x) => {
+                    if let Some((_, h, cortar)) = &x {
+                        self.info(format!(
+                            "{h} {}. Clic derecho sobre el capítulo de destino → «Pegar aquí».",
+                            if *cortar { "cortada" } else { "copiada" }
+                        ));
+                    }
+                    self.portapapeles = x;
+                    continue;
+                }
                 Accion::SiguienteSinPrecio => {
                     self.navegar(1, true);
                     continue;
@@ -1022,7 +1040,15 @@ impl Aplicacion {
                         if origen != destino {
                             self.info(format!("{hijo} movida de {origen} a {destino}."));
                         }
+                        if self.portapapeles.as_ref().is_some_and(|(o, h, c)| *c && o == &origen && h == &hijo) {
+                            self.portapapeles = None;
+                        }
                     }),
+                Accion::Copiar(origen, hijo, destino) => self.p.copiar_linea(&origen, &hijo, &destino).map(|()| {
+                    self.info(format!(
+                        "{hijo} copiada en {destino}. Es la misma partida: un cambio de precio afecta a las dos; la cantidad es de cada capítulo."
+                    ));
+                }),
                 Accion::Precio(c, v) => self.p.fijar_precio(&c, v),
                 Accion::Rendimiento(padre, hijo, v) => self.p.fijar_rendimiento(&padre, &hijo, v),
                 Accion::Medicion(padre, hijo, m) => self.p.actualizar_medicion(&padre, &hijo, m).map(|av| {
@@ -1289,7 +1315,7 @@ impl Aplicacion {
                 }));
             }
             ui.label(
-                RichText::new("Arrastre partidas para moverlas · clic derecho: más opciones")
+                RichText::new("Arrastre partidas para moverlas · clic derecho: cortar, copiar, pegar…")
                     .weak()
                     .small(),
             );
@@ -1363,11 +1389,23 @@ impl Aplicacion {
                         ui.label(RichText::new(format!("{} €", eur(l.importe))).weak());
                         self.rama(ui, &l.hijo, acciones);
                         if self.calc.lineas.get(&l.hijo).is_none_or(Vec::is_empty) {
-                            ui.label(RichText::new("(vacío: clic derecho encima para añadir)").weak().small());
+                            ui.label(
+                                RichText::new("(vacío: arrastre aquí una partida o clic derecho encima para añadir)")
+                                    .weak()
+                                    .small(),
+                            );
                         }
                     });
-                // Soltar una partida sobre el capítulo: al final de él
-                if let Some(a) = r.header_response.dnd_release_payload::<Arrastre>() {
+                // Soltar una partida sobre el capítulo (o dentro de él, si está
+                // vacío): al final de él
+                let vacio = self.calc.lineas.get(&l.hijo).is_none_or(Vec::is_empty);
+                let soltado = r.header_response.dnd_release_payload::<Arrastre>().or_else(|| {
+                    r.body_response
+                        .as_ref()
+                        .filter(|_| vacio)
+                        .and_then(|b| b.dnd_release_payload::<Arrastre>())
+                });
+                if let Some(a) = soltado {
                     acciones.push(Accion::Trasladar(
                         a.origen.clone(),
                         a.hijo.clone(),
@@ -1394,8 +1432,17 @@ impl Aplicacion {
                     if ui.button("Añadir partida existente…").clicked() {
                         acciones.push(Accion::Alta(TipoAlta::Linea { padre: l.hijo.clone() }));
                     }
+                    if let Some((o, h, cortar)) = &self.portapapeles
+                        && ui.button(format!("Pegar aquí {h}")).clicked()
+                    {
+                        acciones.push(if *cortar {
+                            Accion::Trasladar(o.clone(), h.clone(), l.hijo.clone(), None)
+                        } else {
+                            Accion::Copiar(o.clone(), h.clone(), l.hijo.clone())
+                        });
+                    }
                     ui.separator();
-                    menu_linea(ui, capitulo, &l.hijo, acciones);
+                    menu_linea(ui, capitulo, &l.hijo, true, acciones);
                 });
             } else {
                 let elegido = self.sel.as_ref() == Some(&(capitulo.to_owned(), l.hijo.clone()));
@@ -1449,7 +1496,7 @@ impl Aplicacion {
                 if r.clicked() {
                     acciones.push(Accion::Seleccionar(capitulo.to_owned(), l.hijo.clone()));
                 }
-                r.context_menu(|ui| menu_linea(ui, capitulo, &l.hijo, acciones));
+                r.context_menu(|ui| menu_linea(ui, capitulo, &l.hijo, false, acciones));
             }
         }
     }
@@ -2789,7 +2836,23 @@ struct Arrastre {
 }
 
 /// Opciones comunes a cualquier línea del árbol.
-fn menu_linea(ui: &mut Ui, padre: &str, hijo: &str, acciones: &mut Vec<Accion>) {
+fn menu_linea(ui: &mut Ui, padre: &str, hijo: &str, es_capitulo: bool, acciones: &mut Vec<Accion>) {
+    if ui
+        .button("Cortar")
+        .on_hover_text("Para moverla: luego clic derecho en el capítulo de destino → «Pegar aquí»")
+        .clicked()
+    {
+        acciones.push(Accion::Portapapeles(Some((padre.to_owned(), hijo.to_owned(), true))));
+    }
+    if !es_capitulo
+        && ui
+            .button("Copiar")
+            .on_hover_text("Para ponerla también en otro capítulo, con su cantidad")
+            .clicked()
+    {
+        acciones.push(Accion::Portapapeles(Some((padre.to_owned(), hijo.to_owned(), false))));
+    }
+    ui.separator();
     if ui.button("Subir").clicked() {
         acciones.push(Accion::Mover(padre.to_owned(), hijo.to_owned(), true));
     }
@@ -3146,6 +3209,91 @@ mod pruebas {
     }
 
     /// Arrastrar con el ratón SR.COL8 encima de SR.M2 la coloca delante.
+    /// Arrastrar SR.COL8 desde `desde` hasta `hasta` en un árbol con un
+    /// subcapítulo vacío C01.01; devuelve las acciones.
+    fn arrastrar_a_subcapitulo(desde: f32, hasta: f32) -> Vec<Accion> {
+        use eframe::egui::{Event, PointerButton, Pos2};
+        let mut app = Aplicacion::sin_ventana();
+        app.p.nuevo_capitulo("C01", "C01.01", "Planta baja").unwrap();
+        app.recalcular();
+        let ctx = Context::default();
+        let mut acc = Vec::new();
+        let boton = |y, pressed| Event::PointerButton {
+            pos: Pos2::new(90.0, y),
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        let mut eventos = vec![
+            vec![],
+            vec![Event::PointerMoved(Pos2::new(90.0, desde))],
+            vec![boton(desde, true)],
+        ];
+        for k in 1..=10 {
+            eventos.push(vec![Event::PointerMoved(Pos2::new(
+                90.0,
+                desde + (hasta - desde) * k as f32 / 10.0,
+            ))]);
+        }
+        eventos.push(vec![boton(hasta, false)]);
+        eventos.push(vec![]);
+        for e in eventos {
+            let entrada = RawInput {
+                events: e,
+                screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 800.0))),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(entrada, |ui| {
+                egui::Panel::left("a")
+                    .default_size(330.0)
+                    .show(ui, |ui| app.arbol(ui, &mut acc));
+            });
+            out.textures_delta.clear();
+        }
+        acc
+    }
+
+    #[test]
+    fn cortar_y_copiar_a_un_subcapitulo() {
+        let mut app = Aplicacion::sin_ventana();
+        app.p.nuevo_capitulo("C01", "C01.01", "Planta baja").unwrap();
+        app.recalcular();
+        // Copiar SR.COL8 (3 ud × 242,75 = 728,25) a C01.01: el PEM pasa de 7.005,15 a 7.733,40
+        app.aplicar(vec![
+            Accion::Portapapeles(Some(("C01".into(), "SR.COL8".into(), false))),
+            Accion::Copiar("C01".into(), "SR.COL8".into(), "C01.01".into()),
+        ]);
+        assert_eq!(app.p.pem().unwrap(), dec!(7733.40));
+        assert!(app.portapapeles.is_some(), "copiar deja la partida para pegar otra vez");
+        // Cortar SR.M2 y pegar en C01.01: el PEM no cambia y se vacía el portapapeles
+        app.aplicar(vec![
+            Accion::Portapapeles(Some(("C01".into(), "SR.M2".into(), true))),
+            Accion::Trasladar("C01".into(), "SR.M2".into(), "C01.01".into(), None),
+        ]);
+        assert_eq!(app.p.pem().unwrap(), dec!(7733.40));
+        assert!(app.p.mediciones.contains_key(&("C01.01".into(), "SR.M2".into())));
+        assert!(app.portapapeles.is_none());
+    }
+
+    #[test]
+    fn arrastrar_partida_a_un_subcapitulo() {
+        // Buscar la y de SR.COL8 (la que, al soltar sin moverse, no traslada nada)
+        // y comprobar que alguna posición de soltar la lleva a C01.01.
+        let ys: Vec<f32> = (40..500).step_by(4).map(|y| y as f32).collect();
+        let desde = ys.iter().copied().find(|&y| {
+            arrastrar_a_subcapitulo(y, y + 1.0)
+                .iter()
+                .any(|a| matches!(a, Accion::Seleccionar(_, h) if h == "SR.COL8"))
+        });
+        let desde = desde.expect("no se encontró SR.COL8 en el árbol");
+        let llega = ys.iter().any(|&h| {
+            arrastrar_a_subcapitulo(desde, h)
+                .iter()
+                .any(|a| matches!(a, Accion::Trasladar(o, x, d, _) if o == "C01" && x == "SR.COL8" && d == "C01.01"))
+        });
+        assert!(llega, "no se puede soltar una partida en un subcapítulo vacío");
+    }
+
     #[test]
     fn arrastre_con_raton() {
         use eframe::egui::{Event, PointerButton, Pos2};
