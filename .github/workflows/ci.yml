@@ -25,6 +25,17 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Sintaxis de los scripts de PowerShell
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $mal = 0
+          Get-ChildItem -Recurse -Filter *.ps1 scripts | ForEach-Object {
+            $err = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$err) | Out-Null
+            if ($err) { $err | ForEach-Object { Write-Host "::error file=$($_.Extent.File),line=$($_.Extent.StartLineNumber)::$($_.Message)" }; $mal++ }
+          }
+          if ($mal) { exit 1 }
       - name: Formato
         run: cargo fmt --all -- --check
       - name: Clippy

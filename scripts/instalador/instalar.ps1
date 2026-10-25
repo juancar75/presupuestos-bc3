@@ -24,7 +24,7 @@ foreach ($f in 'ppto-gui.exe', 'ppto-mcp.exe', 'ppto.exe', 'LEEME.txt') {
             $copiado = $true
         } catch {
             if ($i -eq 10) {
-                throw "No se puede sustituir $f: sigue abierto. Cierre Presupuestos BC3 y la app de Claude (icono junto al reloj > Salir) y vuelva a ejecutar instalar.bat."
+                throw "No se puede sustituir ${f}: sigue abierto. Cierre Presupuestos BC3 y la app de Claude (icono junto al reloj > Salir) y vuelva a ejecutar instalar.bat."
             }
             Get-Process ppto-gui, ppto-mcp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2

@@ -5,6 +5,10 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Corregido
+- Instalador: corregido un error de sintaxis de la alpha.16 que impedía
+  ejecutar `instalar.ps1` («La referencia de variable no es válida»).
+
 ## [0.1.0-alpha.16] - 2026-10-21
 
 ### Corregido
