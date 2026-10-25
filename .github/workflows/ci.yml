@@ -25,6 +25,17 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Sintaxis de los scripts de PowerShell
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $mal = 0
+          Get-ChildItem -Recurse -Filter *.ps1 scripts | ForEach-Object {
+            $err = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$err) | Out-Null
+            if ($err) { $err | ForEach-Object { Write-Host "::error file=$($_.Extent.File),line=$($_.Extent.StartLineNumber)::$($_.Message)" }; $mal++ }
+          }
+          if ($mal) { exit 1 }
       - name: Formato
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -39,7 +50,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: cargo deny
+        run: |
+          set +e
+          cargo deny --color never --all-features check > deny.log 2>&1
+          r=$?
+          cat deny.log
+          if [ $r -ne 0 ]; then
+            grep -E -A6 '^(error|failed)' deny.log | grep -v '^--$' | head -60 | while IFS= read -r l; do echo "::error::$l"; done
+            [ -s deny.log ] && tail -5 deny.log | while IFS= read -r l; do echo "::error::$l"; done
+          fi
+          exit $r
 
   dco:
     name: Firma DCO
