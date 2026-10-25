@@ -1446,6 +1446,33 @@ impl Aplicacion {
                     );
                 }
                 cab.context_menu(|ui| {
+                    // Título (resumen) del capítulo, editable aquí mismo
+                    let id_t = ui.id().with(("titulo_cap", &l.hijo));
+                    let borrador = ui.data_mut(|d| d.get_temp::<String>(id_t));
+                    let recien_abierto = borrador.is_none();
+                    let mut titulo = borrador.unwrap_or_else(|| c.resumen.clone());
+                    ui.horizontal(|ui| {
+                        ui.label("Título:");
+                        let t = ui.add(
+                            egui::TextEdit::singleline(&mut titulo)
+                                .desired_width(220.0)
+                                .hint_text("p. ej. Planta baja"),
+                        );
+                        if recien_abierto && c.resumen.is_empty() {
+                            t.request_focus();
+                        }
+                        let enter = t.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        if (ui.button("Guardar").clicked() || enter) && titulo.trim() != c.resumen {
+                            acciones.push(Accion::Resumen(l.hijo.clone(), titulo.trim().to_owned()));
+                            ui.close();
+                        }
+                    });
+                    if ui.should_close() {
+                        ui.data_mut(|d| d.remove::<String>(id_t));
+                    } else {
+                        ui.data_mut(|d| d.insert_temp(id_t, titulo));
+                    }
+                    ui.separator();
                     if ui.button("Nueva partida aquí").clicked() {
                         acciones.push(Accion::Alta(TipoAlta::Partida {
                             capitulo: l.hijo.clone(),
@@ -3380,6 +3407,58 @@ mod pruebas {
             elige(&clics(&[titulo, titulo, y_col8])),
             "un segundo clic debe volver a abrirlo"
         );
+    }
+
+    #[test]
+    fn poner_titulo_a_un_subcapitulo_sin_resumen() {
+        use eframe::egui::{Event, Key, PointerButton, Pos2};
+        // Subcapítulo creado sin título: clic derecho, escribir y Enter
+        let llega = (40..200).step_by(4).any(|y| {
+            let mut app = Aplicacion::sin_ventana();
+            app.p.nuevo_capitulo("C01", "C01.01", "").unwrap();
+            app.recalcular();
+            let ctx = Context::default();
+            let mut acc = Vec::new();
+            let p = Pos2::new(60.0, y as f32);
+            let b = |pressed| Event::PointerButton {
+                pos: p,
+                button: PointerButton::Secondary,
+                pressed,
+                modifiers: Default::default(),
+            };
+            let tecla = |pressed| Event::Key {
+                key: Key::Enter,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: Default::default(),
+            };
+            for e in [
+                vec![],
+                vec![Event::PointerMoved(p)],
+                vec![b(true)],
+                vec![b(false)],
+                vec![],
+                vec![Event::Text("Planta baja".into())],
+                vec![tecla(true), tecla(false)],
+                vec![],
+            ] {
+                let entrada = RawInput {
+                    events: e,
+                    screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 800.0))),
+                    ..Default::default()
+                };
+                let mut out = ctx.run_ui(entrada, |ui| {
+                    egui::Panel::left("a")
+                        .default_size(330.0)
+                        .show(ui, |ui| app.arbol(ui, &mut acc));
+                });
+                out.textures_delta.clear();
+            }
+            acc.iter()
+                .any(|a| matches!(a, Accion::Resumen(c, t) if c == "C01.01" && t == "Planta baja"))
+        });
+        assert!(llega, "no se puede poner título a un subcapítulo desde el clic derecho");
     }
 
     #[test]
