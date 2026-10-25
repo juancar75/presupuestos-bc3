@@ -5,6 +5,13 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.20] - 2026-10-25
+
+### Corregido
+- Árbol: al pinchar en el campo «Título» del clic derecho de un capítulo, el
+  menú se cerraba. Ahora se queda abierto para escribir; se cierra al pulsar
+  una opción, Enter, «Guardar» o fuera del menú.
+
 ## [0.1.0-alpha.19] - 2026-10-25
 
 ### Añadido

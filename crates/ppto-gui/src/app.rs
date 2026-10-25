@@ -1445,57 +1445,78 @@ impl Aplicacion {
                         egui::StrokeKind::Outside,
                     );
                 }
-                cab.context_menu(|ui| {
-                    // Título (resumen) del capítulo, editable aquí mismo
-                    let id_t = ui.id().with(("titulo_cap", &l.hijo));
-                    let borrador = ui.data_mut(|d| d.get_temp::<String>(id_t));
-                    let recien_abierto = borrador.is_none();
-                    let mut titulo = borrador.unwrap_or_else(|| c.resumen.clone());
-                    ui.horizontal(|ui| {
-                        ui.label("Título:");
-                        let t = ui.add(
-                            egui::TextEdit::singleline(&mut titulo)
-                                .desired_width(220.0)
-                                .hint_text("p. ej. Planta baja"),
-                        );
-                        if recien_abierto && c.resumen.is_empty() {
-                            t.request_focus();
+                // El menú no se cierra al pinchar en el campo del título (sí al
+                // pulsar cualquier opción o fuera de él).
+                if cab.secondary_clicked() {
+                    // Al abrir el menú, el título parte del actual
+                    ui.data_mut(|d| d.remove::<String>(cab.id.with("titulo")));
+                }
+                egui::Popup::context_menu(&cab)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| {
+                        // Título (resumen) del capítulo, editable aquí mismo
+                        let id_t = cab.id.with("titulo");
+                        let borrador = ui.data_mut(|d| d.get_temp::<String>(id_t));
+                        let recien_abierto = borrador.is_none();
+                        let mut titulo = borrador.unwrap_or_else(|| c.resumen.clone());
+                        ui.horizontal(|ui| {
+                            ui.label("Título:");
+                            let t = ui.add(
+                                egui::TextEdit::singleline(&mut titulo)
+                                    .desired_width(220.0)
+                                    .hint_text("p. ej. Planta baja"),
+                            );
+                            ui.data_mut(|d| d.insert_temp(id_t.with("rect"), t.rect));
+                            if recien_abierto && c.resumen.is_empty() {
+                                t.request_focus();
+                            }
+                            let enter = t.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            if (ui.button("Guardar").clicked() || enter) && titulo.trim() != c.resumen {
+                                acciones.push(Accion::Resumen(l.hijo.clone(), titulo.trim().to_owned()));
+                                ui.close();
+                            }
+                        });
+                        if ui.should_close() {
+                            ui.data_mut(|d| d.remove::<String>(id_t));
+                        } else {
+                            ui.data_mut(|d| d.insert_temp(id_t, titulo));
                         }
-                        let enter = t.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        if (ui.button("Guardar").clicked() || enter) && titulo.trim() != c.resumen {
-                            acciones.push(Accion::Resumen(l.hijo.clone(), titulo.trim().to_owned()));
+                        ui.separator();
+                        if ui.button("Nueva partida aquí").clicked() {
+                            acciones.push(Accion::Alta(TipoAlta::Partida {
+                                capitulo: l.hijo.clone(),
+                            }));
+                        }
+                        if ui.button("Nuevo subcapítulo").clicked() {
+                            acciones.push(Accion::Alta(TipoAlta::Capitulo { padre: l.hijo.clone() }));
+                        }
+                        if ui.button("Añadir partida existente…").clicked() {
+                            acciones.push(Accion::Alta(TipoAlta::Linea { padre: l.hijo.clone() }));
+                        }
+                        if let Some((o, h, cortar)) = &self.portapapeles
+                            && ui.button(format!("Pegar aquí {h}")).clicked()
+                        {
+                            acciones.push(if *cortar {
+                                Accion::Trasladar(o.clone(), h.clone(), l.hijo.clone(), None)
+                            } else {
+                                Accion::Copiar(o.clone(), h.clone(), l.hijo.clone())
+                            });
+                        }
+                        ui.separator();
+                        menu_linea(ui, capitulo, &l.hijo, true, acciones);
+                        // Cualquier clic dentro del menú que no sea en el título lo cierra
+                        let campo = ui.data(|d| d.get_temp::<egui::Rect>(id_t.with("rect")));
+                        let clic = ui.input(|i| {
+                            i.pointer.any_click()
+                                && i.pointer
+                                    .interact_pos()
+                                    .is_some_and(|p| campo.is_none_or(|r| !r.contains(p)))
+                        });
+                        if clic && !recien_abierto {
+                            ui.data_mut(|d| d.remove::<String>(id_t));
                             ui.close();
                         }
                     });
-                    if ui.should_close() {
-                        ui.data_mut(|d| d.remove::<String>(id_t));
-                    } else {
-                        ui.data_mut(|d| d.insert_temp(id_t, titulo));
-                    }
-                    ui.separator();
-                    if ui.button("Nueva partida aquí").clicked() {
-                        acciones.push(Accion::Alta(TipoAlta::Partida {
-                            capitulo: l.hijo.clone(),
-                        }));
-                    }
-                    if ui.button("Nuevo subcapítulo").clicked() {
-                        acciones.push(Accion::Alta(TipoAlta::Capitulo { padre: l.hijo.clone() }));
-                    }
-                    if ui.button("Añadir partida existente…").clicked() {
-                        acciones.push(Accion::Alta(TipoAlta::Linea { padre: l.hijo.clone() }));
-                    }
-                    if let Some((o, h, cortar)) = &self.portapapeles
-                        && ui.button(format!("Pegar aquí {h}")).clicked()
-                    {
-                        acciones.push(if *cortar {
-                            Accion::Trasladar(o.clone(), h.clone(), l.hijo.clone(), None)
-                        } else {
-                            Accion::Copiar(o.clone(), h.clone(), l.hijo.clone())
-                        });
-                    }
-                    ui.separator();
-                    menu_linea(ui, capitulo, &l.hijo, true, acciones);
-                });
             } else {
                 let elegido = self.sel.as_ref() == Some(&(capitulo.to_owned(), l.hijo.clone()));
                 let carga = Arrastre {
@@ -3433,11 +3454,23 @@ mod pruebas {
                 repeat: false,
                 modifiers: Default::default(),
             };
+            // Clic (principal) en el campo del título: no debe cerrar el menú
+            let q = Pos2::new(p.x + 150.0, p.y + 18.0);
+            let c = |pressed| Event::PointerButton {
+                pos: q,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            };
             for e in [
                 vec![],
                 vec![Event::PointerMoved(p)],
                 vec![b(true)],
                 vec![b(false)],
+                vec![],
+                vec![Event::PointerMoved(q)],
+                vec![c(true)],
+                vec![c(false)],
                 vec![],
                 vec![Event::Text("Planta baja".into())],
                 vec![tecla(true), tecla(false)],
