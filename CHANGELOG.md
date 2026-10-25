@@ -5,6 +5,13 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.19] - 2026-10-25
+
+### Añadido
+- Árbol: el clic derecho en un capítulo o subcapítulo permite cambiar su
+  título (escribir y Enter o «Guardar»). Antes, un subcapítulo creado sin
+  título no se podía titular después.
+
 ## [0.1.0-alpha.18] - 2026-10-25
 
 ### Corregido
