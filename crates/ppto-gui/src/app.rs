@@ -198,6 +198,7 @@ pub struct Aplicacion {
     form: FormOferta,
     informe: Option<ppto_bc3::Importacion>,
     ver_informe: bool,
+    ver_acerca: bool,
     alta: Option<Alta>,
     ventana_pdf: Option<pdf::VentanaPdf>,
     ciego: Option<ciego::CiegoAbierto>,
@@ -344,6 +345,7 @@ impl Aplicacion {
             form: FormOferta::default(),
             informe: None,
             ver_informe: false,
+            ver_acerca: false,
             alta: None,
             ventana_pdf: None,
             ciego: None,
@@ -630,6 +632,45 @@ impl Aplicacion {
             }
             Err(e) => self.error(format!("No se pudo importar: {e}")),
         }
+    }
+
+    /// Ventana «Acerca de»: versión instalada y dónde está cada cosa.
+    fn ventana_acerca(&mut self, ctx: &egui::Context) {
+        let mut abierta = self.ver_acerca;
+        egui::Window::new("Acerca de presupuestos-bc3")
+            .open(&mut abierta)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.heading(format!("Versión {VERSION}"));
+                ui.label("Gestor de presupuestos BC3 (FIEBDC-3) · licencia GPL-3.0-or-later");
+                ui.add_space(6.0);
+                egui::Grid::new("acerca").num_columns(2).show(ui, |ui| {
+                    ui.label("Programa:");
+                    ui.label(
+                        std::env::current_exe()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|_| "—".into()),
+                    );
+                    ui.end_row();
+                    ui.label("Datos y ajustes:");
+                    ui.label(
+                        pdf::carpeta_config()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|| "—".into()),
+                    );
+                    ui.end_row();
+                });
+                ui.add_space(6.0);
+                ui.hyperlink_to(
+                    "Versiones publicadas y novedades",
+                    "https://github.com/juancar75/presupuestos-bc3/releases",
+                );
+                if ui.button("Copiar versión").clicked() {
+                    ui.ctx().copy_text(format!("presupuestos-bc3 {VERSION}"));
+                }
+            });
+        self.ver_acerca = abierta;
     }
 
     fn ventana_informe(&mut self, ctx: &egui::Context, acciones: &mut Vec<Accion>) {
@@ -1133,6 +1174,13 @@ impl Aplicacion {
             {
                 self.rehacer();
             }
+            if ui
+                .button("Info")
+                .on_hover_text(format!("Versión {VERSION} · información del programa"))
+                .clicked()
+            {
+                self.ver_acerca = true;
+            }
             ui.separator();
             let oscuro = ui.visuals().dark_mode;
             if ui
@@ -1466,7 +1514,8 @@ impl Aplicacion {
                                     .desired_width(220.0)
                                     .hint_text("p. ej. Planta baja"),
                             );
-                            ui.data_mut(|d| d.insert_temp(id_t.with("rect"), t.rect));
+                            ui.data_mut(|d| d.insert_temp(egui::Id::new(CAMPO_TITULO), t.rect));
+                            ui.data_mut(|d| d.insert_temp(egui::Id::new(CAMPO_TITULO).with("abierto"), l.hijo.clone()));
                             if recien_abierto && c.resumen.is_empty() {
                                 t.request_focus();
                             }
@@ -1505,7 +1554,7 @@ impl Aplicacion {
                         ui.separator();
                         menu_linea(ui, capitulo, &l.hijo, true, acciones);
                         // Cualquier clic dentro del menú que no sea en el título lo cierra
-                        let campo = ui.data(|d| d.get_temp::<egui::Rect>(id_t.with("rect")));
+                        let campo = ui.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(CAMPO_TITULO)));
                         let clic = ui.input(|i| {
                             i.pointer.any_click()
                                 && i.pointer
@@ -2790,7 +2839,7 @@ fn sobrecoste_y_margen(coste: Decimal, venta: Decimal) -> (Option<Decimal>, Opti
 impl eframe::App for Aplicacion {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let titulo = format!(
-            "{}{} — {} — presupuestos-bc3",
+            "{}{} — {} — presupuestos-bc3 {VERSION}",
             if self.cambios { "● " } else { "" },
             self.p.nombre,
             self.fichero
@@ -2890,6 +2939,7 @@ impl eframe::App for Aplicacion {
         });
         let ctx = ui.ctx().clone();
         self.ventana_informe(&ctx, &mut acciones);
+        self.ventana_acerca(&ctx);
         self.ventana_alta(&ctx, &mut acciones);
         self.ventana_pdf(&ctx);
         self.ventana_tarifas(&ctx);
@@ -2903,6 +2953,13 @@ impl eframe::App for Aplicacion {
 }
 
 /// Lo que se arrastra en el árbol: una línea (`hijo`) de un capítulo (`origen`).
+/// Versión del programa (la de Cargo.toml).
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Memoria temporal: rectángulo del campo «Título» del menú del capítulo.
+const CAMPO_TITULO: &str = "campo_titulo_capitulo";
+
+#[derive(Clone)]
 struct Arrastre {
     origen: String,
     hijo: String,
@@ -3431,51 +3488,18 @@ mod pruebas {
     }
 
     #[test]
-    fn poner_titulo_a_un_subcapitulo_sin_resumen() {
+    fn poner_titulo_a_un_subcapitulo_pinchando_en_el_campo() {
         use eframe::egui::{Event, Key, PointerButton, Pos2};
-        // Subcapítulo creado sin título: clic derecho, escribir y Enter
-        let llega = (40..200).step_by(4).any(|y| {
+        // Capítulo con título (el campo no recibe el foco solo): clic derecho,
+        // clic en el campo, borrar, escribir y Enter.
+        let mut hecho = false;
+        for y in (40..200).step_by(4) {
             let mut app = Aplicacion::sin_ventana();
-            app.p.nuevo_capitulo("C01", "C01.01", "").unwrap();
+            app.p.nuevo_capitulo("C01", "C01.01", "Viejo").unwrap();
             app.recalcular();
             let ctx = Context::default();
             let mut acc = Vec::new();
-            let p = Pos2::new(60.0, y as f32);
-            let b = |pressed| Event::PointerButton {
-                pos: p,
-                button: PointerButton::Secondary,
-                pressed,
-                modifiers: Default::default(),
-            };
-            let tecla = |pressed| Event::Key {
-                key: Key::Enter,
-                physical_key: None,
-                pressed,
-                repeat: false,
-                modifiers: Default::default(),
-            };
-            // Clic (principal) en el campo del título: no debe cerrar el menú
-            let q = Pos2::new(p.x + 150.0, p.y + 18.0);
-            let c = |pressed| Event::PointerButton {
-                pos: q,
-                button: PointerButton::Primary,
-                pressed,
-                modifiers: Default::default(),
-            };
-            for e in [
-                vec![],
-                vec![Event::PointerMoved(p)],
-                vec![b(true)],
-                vec![b(false)],
-                vec![],
-                vec![Event::PointerMoved(q)],
-                vec![c(true)],
-                vec![c(false)],
-                vec![],
-                vec![Event::Text("Planta baja".into())],
-                vec![tecla(true), tecla(false)],
-                vec![],
-            ] {
+            let frame = |e: Vec<Event>, app: &mut Aplicacion, acc: &mut Vec<Accion>| {
                 let entrada = RawInput {
                     events: e,
                     screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 800.0))),
@@ -3484,14 +3508,74 @@ mod pruebas {
                 let mut out = ctx.run_ui(entrada, |ui| {
                     egui::Panel::left("a")
                         .default_size(330.0)
-                        .show(ui, |ui| app.arbol(ui, &mut acc));
+                        .show(ui, |ui| app.arbol(ui, acc));
                 });
                 out.textures_delta.clear();
+            };
+            let boton = |pos, button, pressed| Event::PointerButton {
+                pos,
+                button,
+                pressed,
+                modifiers: Default::default(),
+            };
+            let p = Pos2::new(60.0, y as f32);
+            frame(vec![], &mut app, &mut acc);
+            frame(vec![Event::PointerMoved(p)], &mut app, &mut acc);
+            frame(vec![boton(p, PointerButton::Secondary, true)], &mut app, &mut acc);
+            frame(vec![boton(p, PointerButton::Secondary, false)], &mut app, &mut acc);
+            frame(vec![], &mut app, &mut acc);
+            let Some(r) = ctx.data(|d| d.get_temp::<egui::Rect>(egui::Id::new(CAMPO_TITULO))) else {
+                continue;
+            };
+            // Mover hasta el campo y pinchar (pulsar y soltar en fotogramas distintos)
+            let q = r.center();
+            for k in 1..=5 {
+                frame(
+                    vec![Event::PointerMoved(p + (q - p) * k as f32 / 5.0)],
+                    &mut app,
+                    &mut acc,
+                );
             }
-            acc.iter()
-                .any(|a| matches!(a, Accion::Resumen(c, t) if c == "C01.01" && t == "Planta baja"))
-        });
-        assert!(llega, "no se puede poner título a un subcapítulo desde el clic derecho");
+            frame(vec![boton(q, PointerButton::Primary, true)], &mut app, &mut acc);
+            frame(vec![], &mut app, &mut acc);
+            frame(vec![boton(q, PointerButton::Primary, false)], &mut app, &mut acc);
+            frame(vec![], &mut app, &mut acc);
+            // ¿Sigue dibujándose el menú? (la marca se pone en cada fotograma)
+            ctx.data_mut(|d| d.remove::<String>(egui::Id::new(CAMPO_TITULO).with("abierto")));
+            frame(vec![], &mut app, &mut acc);
+            let cap = ctx.data(|d| d.get_temp::<String>(egui::Id::new(CAMPO_TITULO).with("abierto")));
+            let cap = cap.expect("el menú se cerró al pinchar en el título");
+            let tecla = |key, pressed| Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: Default::default(),
+            };
+            let mut borrar = Vec::new();
+            for _ in 0..6 {
+                borrar.extend([tecla(Key::Backspace, true), tecla(Key::Backspace, false)]);
+            }
+            eprintln!("foco={:?}", ctx.memory(|m| m.focused()));
+            frame(borrar, &mut app, &mut acc);
+            eprintln!(
+                "abierto tras borrar={:?}",
+                ctx.data(|d| d.get_temp::<String>(egui::Id::new(CAMPO_TITULO).with("abierto")))
+            );
+            frame(vec![Event::Text("Planta baja".into())], &mut app, &mut acc);
+            frame(
+                vec![tecla(Key::Enter, true), tecla(Key::Enter, false)],
+                &mut app,
+                &mut acc,
+            );
+            frame(vec![], &mut app, &mut acc);
+            hecho = acc
+                .iter()
+                .any(|a| matches!(a, Accion::Resumen(c, t) if *c == cap && t.contains("Planta baja")));
+            assert!(hecho, "no se guardó el título de {cap}");
+            break;
+        }
+        assert!(hecho, "no se encontró ningún capítulo");
     }
 
     #[test]
