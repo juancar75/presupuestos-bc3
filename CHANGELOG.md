@@ -14,6 +14,8 @@ versionado [semántico](https://semver.org/lang/es/).
   medición; la cantidad de cada capítulo es independiente.
 - Se puede soltar una partida arrastrada dentro de un subcapítulo vacío, no
   solo sobre su título.
+- Los capítulos y subcapítulos también se arrastran: se coge el título y se
+  suelta sobre el título de otro capítulo para meterlo dentro.
 
 ### Corregido
 - Instalador: corregido un error de sintaxis de la alpha.16 que impedía

@@ -1396,8 +1396,23 @@ impl Aplicacion {
                             );
                         }
                     });
-                // Soltar una partida sobre el capítulo (o dentro de él, si está
-                // vacío): al final de él
+                // El título del capítulo también se arrastra (para moverlo a otro
+                // capítulo): una zona de arrastre encima, sin quitarle el clic de
+                // abrir y cerrar.
+                let asa = ui.interact(
+                    r.header_response.rect,
+                    ui.id().with(("arrastrar_cap", capitulo, &l.hijo)),
+                    egui::Sense::drag(),
+                );
+                asa.dnd_set_drag_payload(Arrastre {
+                    origen: capitulo.to_owned(),
+                    hijo: l.hijo.clone(),
+                });
+                if asa.dragged() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                }
+                // Soltar una partida o un capítulo sobre el capítulo (o dentro de
+                // él, si está vacío): al final de él
                 let vacio = self.calc.lineas.get(&l.hijo).is_none_or(Vec::is_empty);
                 let soltado = r.header_response.dnd_release_payload::<Arrastre>().or_else(|| {
                     r.body_response
@@ -1405,14 +1420,18 @@ impl Aplicacion {
                         .filter(|_| vacio)
                         .and_then(|b| b.dnd_release_payload::<Arrastre>())
                 });
-                if let Some(a) = soltado {
+                if let Some(a) = soltado.filter(|a| a.hijo != l.hijo) {
                     acciones.push(Accion::Trasladar(
                         a.origen.clone(),
                         a.hijo.clone(),
                         l.hijo.clone(),
                         None,
                     ));
-                } else if r.header_response.dnd_hover_payload::<Arrastre>().is_some() {
+                } else if r
+                    .header_response
+                    .dnd_hover_payload::<Arrastre>()
+                    .is_some_and(|a| a.hijo != l.hijo)
+                {
                     ui.painter().rect_stroke(
                         r.header_response.rect,
                         2.0,
@@ -3215,6 +3234,8 @@ mod pruebas {
         use eframe::egui::{Event, PointerButton, Pos2};
         let mut app = Aplicacion::sin_ventana();
         app.p.nuevo_capitulo("C01", "C01.01", "Planta baja").unwrap();
+        let raiz = app.p.raiz.clone();
+        app.p.nuevo_capitulo(&raiz, "C02", "Colectores").unwrap();
         app.recalcular();
         let ctx = Context::default();
         let mut acc = Vec::new();
@@ -3292,6 +3313,36 @@ mod pruebas {
                 .any(|a| matches!(a, Accion::Trasladar(o, x, d, _) if o == "C01" && x == "SR.COL8" && d == "C01.01"))
         });
         assert!(llega, "no se puede soltar una partida en un subcapítulo vacío");
+    }
+
+    #[test]
+    fn arrastrar_un_capitulo_dentro_de_otro() {
+        let ys: Vec<f32> = (40..500).step_by(4).map(|y| y as f32).collect();
+        let a_sub = |acc: &[Accion], h: &str| {
+            acc.iter()
+                .any(|a| matches!(a, Accion::Trasladar(_, x, d, _) if x == h && d == "C01.01"))
+        };
+        let desde = ys
+            .iter()
+            .copied()
+            .find(|&y| {
+                arrastrar_a_subcapitulo(y, y + 1.0)
+                    .iter()
+                    .any(|a| matches!(a, Accion::Seleccionar(_, h) if h == "SR.COL8"))
+            })
+            .unwrap();
+        let destino = ys
+            .iter()
+            .copied()
+            .find(|&h| a_sub(&arrastrar_a_subcapitulo(desde, h), "SR.COL8"))
+            .unwrap();
+        // El título de C02 (capítulo de la raíz) arrastrado al de C01.01
+        let llega = ys.iter().any(|&y| {
+            let acc = arrastrar_a_subcapitulo(y, destino);
+            acc.iter()
+                .any(|a| matches!(a, Accion::Trasladar(o, x, d, _) if *o == Aplicacion::sin_ventana().p.raiz && x == "C02" && d == "C01.01"))
+        });
+        assert!(llega, "no se puede arrastrar un capítulo a otro");
     }
 
     #[test]
