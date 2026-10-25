@@ -185,6 +185,45 @@ fn copiar_partida_a_un_subcapitulo() {
 }
 
 #[test]
+fn copiar_conceptos_de_una_base() {
+    // Base sintética: partida PB1 = 2 h × 20,00 (MO.B) + 1 ud × 5,00 (MT.B) = 45,00
+    let mut base = Presupuesto::new("Base", "BASE", "Base");
+    base.nuevo_capitulo("BASE", "CB", "Cap").unwrap();
+    base.nueva_partida("CB", "PB1", "ud", "Partida de base").unwrap();
+    base.nuevo_recurso("MO.B", "h", "Oficial", Naturaleza::ManoObra, dec!(20))
+        .unwrap();
+    base.nuevo_recurso("MT.B", "ud", "Pieza", Naturaleza::Material, dec!(5))
+        .unwrap();
+    base.nuevo_recurso("MO.C", "ud", "Colocación rejilla", Naturaleza::ManoObra, dec!(32.50))
+        .unwrap();
+    base.anadir_linea("PB1", "MO.B", dec!(2)).unwrap();
+    base.anadir_linea("PB1", "MT.B", dec!(1)).unwrap();
+
+    let mut p = suelo_radiante();
+    let pem = p.pem().unwrap();
+    // La partida trae su descompuesto; el capítulo de la base no se copia
+    let (nuevos, ya) = p
+        .copiar_conceptos(&base, &["PB1".into(), "MO.C".into(), "CB".into()])
+        .unwrap();
+    assert_eq!(nuevos, ["MO.B", "MO.C", "MT.B", "PB1"]);
+    assert!(ya.is_empty());
+    assert_eq!(p.precio("PB1").unwrap(), dec!(45.00));
+    assert!(!p.conceptos.contains_key("CB"));
+    // Sin colocar en el árbol: el PEM no cambia
+    assert_eq!(p.pem().unwrap(), pem);
+    // Lo que ya existe en la obra no se toca
+    p.fijar_precio("MO.C", dec!(30)).unwrap();
+    let (nuevos, ya) = p.copiar_conceptos(&base, &["MO.C".into()]).unwrap();
+    assert!(nuevos.is_empty());
+    assert_eq!(ya, ["MO.C"]);
+    assert_eq!(p.precio("MO.C").unwrap(), dec!(30));
+    // Un código que no está en la base: error y nada cambia
+    let antes = p.clone();
+    assert!(p.copiar_conceptos(&base, &["NO.EXISTE".into(), "PB1".into()]).is_err());
+    assert_eq!(p, antes);
+}
+
+#[test]
 fn partida_sin_descomponer_con_precio_directo() {
     // Presupuesto ciego: P1 (12 m) a 15,50 €/m directo = 186,00; al descomponerla manda el descompuesto
     let mut p = Presupuesto::new("t", "OBRA", "Obra");

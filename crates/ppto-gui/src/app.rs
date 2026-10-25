@@ -4,6 +4,7 @@
 
 mod alta;
 mod asistente;
+mod bases;
 mod biblioteca;
 mod ciego;
 mod dificultad;
@@ -81,6 +82,14 @@ enum Accion {
     Trasladar(String, String, String, Option<String>),
     /// Copiar y pegar: (origen, hijo, destino). La misma partida en otro sitio.
     Copiar(String, String, String),
+    /// Copiar conceptos de una base de precios a la obra (y, si se indica,
+    /// añadir los recursos como líneas de esa partida con cantidad 1).
+    CopiarDeBase {
+        origen: std::sync::Arc<Presupuesto>,
+        nombre: String,
+        codigos: Vec<String>,
+        partida: Option<String>,
+    },
     /// Cortar o copiar (origen, hijo, `true` = cortar); `None` = vaciar.
     Portapapeles(Option<(String, String, bool)>),
     Alta(TipoAlta),
@@ -213,6 +222,7 @@ pub struct Aplicacion {
     tarifas: ppto_tarifas::Biblioteca,
     ventana_tarifas: Option<tarifas::VentanaTarifas>,
     ventana_biblioteca: Option<biblioteca::VentanaBiblioteca>,
+    ventana_bases: Option<bases::VentanaBases>,
     ventana_legalizacion: Option<legalizacion::VentanaLegalizacion>,
     dificultad: dificultad::FormDificultad,
     /// Cambios que se anotan en la auditoría al guardar la revisión.
@@ -274,6 +284,9 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::Mover(p, h, _) => (format!("mover {h} en {p}"), None),
         Accion::Trasladar(o, h, d, _) => (format!("mover {h} de {o} a {d}"), None),
         Accion::Copiar(_, h, d) => (format!("copiar {h} a {d}"), None),
+        Accion::CopiarDeBase { nombre, codigos, .. } => {
+            (format!("copiar {} conceptos de {nombre}", codigos.len()), None)
+        }
         Accion::AplicarRatio(p) => (format!("subcontrata {}", p.codigo), None),
         Accion::AceptarPropuesta(id) => (format!("propuesta IA #{id}"), None),
         Accion::ReaplicarAceptadas => ("reaplicar propuestas aceptadas".into(), None),
@@ -357,6 +370,7 @@ impl Aplicacion {
             tarifas: ppto_tarifas::Biblioteca::default(),
             ventana_tarifas: None,
             ventana_biblioteca: None,
+            ventana_bases: None,
             ventana_legalizacion: None,
             dificultad: dificultad::FormDificultad::default(),
             notas_revision: Vec::new(),
@@ -1090,6 +1104,12 @@ impl Aplicacion {
                         "{hijo} copiada en {destino}. Es la misma partida: un cambio de precio afecta a las dos; la cantidad es de cada capítulo."
                     ));
                 }),
+                Accion::CopiarDeBase {
+                    origen,
+                    nombre,
+                    codigos,
+                    partida,
+                } => self.copiar_de_base(&origen, &nombre, &codigos, partida.as_deref()),
                 Accion::Precio(c, v) => self.p.fijar_precio(&c, v),
                 Accion::Rendimiento(padre, hijo, v) => self.p.fijar_rendimiento(&padre, &hijo, v),
                 Accion::Medicion(padre, hijo, m) => self.p.actualizar_medicion(&padre, &hijo, m).map(|av| {
@@ -1106,6 +1126,56 @@ impl Aplicacion {
                     }
                     self.error(e.to_string());
                 }
+            }
+        }
+    }
+
+    /// Copia conceptos de una base a la obra y, con `partida`, añade los
+    /// recursos como líneas suyas (cantidad 1). Todo o nada.
+    fn copiar_de_base(
+        &mut self,
+        origen: &Presupuesto,
+        nombre: &str,
+        codigos: &[String],
+        partida: Option<&str>,
+    ) -> Result<(), ppto_core::ErrorMotor> {
+        let copia = self.p.clone();
+        let r = (|| {
+            let (nuevos, existentes) = self.p.copiar_conceptos(origen, codigos)?;
+            let mut lineas = 0;
+            if let Some(pt) = partida {
+                for c in codigos {
+                    let es_recurso = self
+                        .p
+                        .conceptos
+                        .get(c)
+                        .is_some_and(|x| x.naturaleza != Naturaleza::Partida);
+                    let ya = self.p.concepto(pt)?.descomposicion.iter().any(|l| &l.hijo == c);
+                    if es_recurso && !ya {
+                        self.p.anadir_linea(pt, c, Decimal::ONE)?;
+                        lineas += 1;
+                    }
+                }
+            }
+            Ok::<_, ppto_core::ErrorMotor>((nuevos, existentes, lineas))
+        })();
+        match r {
+            Ok((nuevos, existentes, lineas)) => {
+                let mut m = format!("{} conceptos copiados de {nombre}", nuevos.len());
+                if !existentes.is_empty() {
+                    m += &format!("; {} ya estaban en la obra y no se han tocado", existentes.len());
+                }
+                if let Some(pt) = partida {
+                    m += &format!("; {lineas} líneas añadidas a {pt}");
+                } else {
+                    m += ". Están disponibles en «+ Añadir línea…» de cualquier partida";
+                }
+                self.info(format!("{m}."));
+                Ok(())
+            }
+            Err(e) => {
+                self.p = copia;
+                Err(e)
             }
         }
     }
@@ -1281,6 +1351,13 @@ impl Aplicacion {
                 .clicked()
             {
                 self.ventana_biblioteca = Some(biblioteca::VentanaBiblioteca::abrir());
+            }
+            if ui
+                .button("Bases de precios…")
+                .on_hover_text("Tus BC3 de bases de precios: buscar y copiar mano de obra, materiales o partidas a la obra")
+                .clicked()
+            {
+                self.ventana_bases = Some(bases::VentanaBases::abrir());
             }
             if ui
                 .button("Legalización…")
@@ -2944,6 +3021,7 @@ impl eframe::App for Aplicacion {
         self.ventana_pdf(&ctx);
         self.ventana_tarifas(&ctx);
         self.ventana_biblioteca(&ctx);
+        self.ventana_bases(&ctx, &mut acciones);
         self.ventana_legalizacion(&ctx);
         self.ventana_propuestas(&ctx, &mut acciones);
         if !acciones.is_empty() {
@@ -4107,6 +4185,83 @@ mod pruebas {
         })
         .unwrap();
         assert_eq!(ppto_biblioteca::Biblioteca::cargar(&ruta).partidas.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bases_de_precios_copiar_mano_de_obra() {
+        // Base sintética (no es una base real): 2 manos de obra, 1 material y una partida
+        let dir = std::env::temp_dir().join(format!("gui-bases-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let origen = dir.join("base_sintetica.bc3");
+        std::fs::write(
+            &origen,
+            "~V|PRUEBA|FIEBDC-3/2002|prueba||ANSI|\r\n\
+             ~K|\\2\\2\\3\\2\\2\\2\\2\\EUR\\|0|\r\n\
+             ~C|BASE##||Base sintetica|0||0|\r\n\
+             ~C|CAP#||Capitulo|0||0|\r\n\
+             ~C|CRP|UD|COLOCACION REJILLA INTERIOR HASTA 0,5 M2|32.5|010126|1|\r\n\
+             ~C|CDC|UD|COLOCACION DIFUSOR CIRCULAR|22.1|010126|1|\r\n\
+             ~C|REJ|UD|REJILLA DE PRUEBA|40|010126|3|\r\n\
+             ~C|P.REJ|UD|REJILLA COLOCADA|72.5|010126|0|\r\n\
+             ~D|BASE##|CAP#\\1\\1\\|\r\n\
+             ~D|CAP#|P.REJ\\1\\1\\|\r\n\
+             ~D|P.REJ|REJ\\1\\1\\CRP\\1\\1\\|\r\n",
+        )
+        .unwrap();
+        let mut v = bases::VentanaBases::en(Some(dir.join("bases")));
+        assert!(v.base.is_none());
+        v.anadir(&origen);
+        assert!(
+            dir.join("bases").join("base_sintetica.bc3").exists(),
+            "se guarda una copia"
+        );
+        assert_eq!(v.base.as_ref().unwrap().filas.len(), 4);
+        // Solo mano de obra, buscando «rejilla»
+        v.filtro = Some(Naturaleza::ManoObra);
+        assert_eq!(v.visibles().len(), 2);
+        v.buscar = "rejilla".into();
+        let vis: Vec<String> = v.visibles().iter().map(|f| f.codigo.clone()).collect();
+        assert_eq!(vis, ["CRP"]);
+        // La ventana se dibuja
+        let mut app = Aplicacion::sin_ventana();
+        let origen_p = std::sync::Arc::clone(&v.base.as_ref().unwrap().p);
+        app.ventana_bases = Some(v);
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut acc = Vec::new();
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let c = ui.ctx().clone();
+                app.ventana_bases(&c, &mut acc);
+            });
+            out.textures_delta.clear();
+        }
+        assert!(app.ventana_bases.is_some());
+        // Copiar y añadir CRP a SR.M2: entra al final, detrás del 2 % de medios
+        // auxiliares (que solo afecta a lo anterior), 29,89 + 32,50 = 62,39 €/m2
+        app.aplicar(vec![Accion::CopiarDeBase {
+            origen: std::sync::Arc::clone(&origen_p),
+            nombre: "base_sintetica.bc3".into(),
+            codigos: vec!["CRP".into()],
+            partida: Some("SR.M2".into()),
+        }]);
+        assert_eq!(app.p.precio("CRP").unwrap(), dec!(32.50));
+        assert!(app.p.conceptos["SR.M2"].descomposicion.iter().any(|l| l.hijo == "CRP"));
+        assert_eq!(app.p.precio("SR.M2").unwrap(), dec!(62.39));
+        // Deshacer lo quita todo
+        app.deshacer();
+        assert!(!app.p.conceptos.contains_key("CRP"));
+        // Copiar una partida sin colocarla: trae su descompuesto y el PEM no cambia
+        let pem = app.p.pem().unwrap();
+        app.aplicar(vec![Accion::CopiarDeBase {
+            origen: origen_p,
+            nombre: "base_sintetica.bc3".into(),
+            codigos: vec!["P.REJ".into()],
+            partida: None,
+        }]);
+        assert_eq!(app.p.precio("P.REJ").unwrap(), dec!(72.50));
+        assert_eq!(app.p.pem().unwrap(), pem);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

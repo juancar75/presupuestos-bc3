@@ -5,6 +5,20 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.22] - 2026-10-25
+
+### Añadido
+- **Bases de precios** (botón «Bases de precios…»): se añaden BC3 de bases de
+  precios (propias, de fabricante o distribuidor; se guarda una copia en la
+  carpeta de datos del usuario), se busca por código o texto y se filtra por
+  tipo (mano de obra, material, maquinaria, subcontrata, partidas).
+  - **Copiar a la obra**: los conceptos marcados (las partidas con su
+    descompuesto) quedan en la obra sin colocar en el árbol, disponibles en
+    «+ Añadir línea…». Lo que ya existe en la obra no se toca.
+  - **Copiar y añadir a la partida**: con una partida elegida en el árbol,
+    los recursos marcados entran como líneas suyas con cantidad 1.
+  - Se puede deshacer.
+
 ## [0.1.0-alpha.21] - 2026-10-25
 
 ### Añadido

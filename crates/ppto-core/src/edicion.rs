@@ -422,6 +422,59 @@ impl Presupuesto {
         Ok(nuevos)
     }
 
+    /// Copia de `origen` (una base de precios) los conceptos `codigos` con todo
+    /// lo que cuelga de ellos, sin colocarlos en el árbol: quedan disponibles en
+    /// la obra para «Añadir línea…», como los conceptos de Presto.
+    ///
+    /// - No se copian capítulos ni la raíz.
+    /// - Lo que ya existe aquí con el mismo código no se toca (se respetan los
+    ///   precios propios de la obra).
+    ///
+    /// Devuelve (añadidos, ya existentes), ordenados. Si algo falla, el
+    /// presupuesto queda como estaba.
+    pub fn copiar_conceptos(
+        &mut self,
+        origen: &Presupuesto,
+        codigos: &[String],
+    ) -> Result<(Vec<String>, Vec<String>), ErrorMotor> {
+        let copia = self.clone();
+        let mut nuevos = Vec::new();
+        let mut existentes = Vec::new();
+        let mut pendientes: Vec<String> = codigos.to_vec();
+        let mut vistos = std::collections::BTreeSet::new();
+        while let Some(c) = pendientes.pop() {
+            if !vistos.insert(c.clone()) {
+                continue;
+            }
+            let concepto = match origen.concepto(&c) {
+                Ok(x) => x,
+                Err(e) => {
+                    *self = copia;
+                    return Err(e);
+                }
+            };
+            if concepto.naturaleza == Naturaleza::Capitulo || c == origen.raiz {
+                continue;
+            }
+            if self.conceptos.contains_key(&c) {
+                if codigos.contains(&c) {
+                    existentes.push(c);
+                }
+                continue;
+            }
+            pendientes.extend(concepto.descomposicion.iter().map(|l| l.hijo.clone()));
+            self.conceptos.insert(c.clone(), concepto.clone());
+            nuevos.push(c);
+        }
+        if let Err(e) = self.validar() {
+            *self = copia;
+            return Err(e);
+        }
+        nuevos.sort();
+        existentes.sort();
+        Ok((nuevos, existentes))
+    }
+
     fn exigir_capitulo(&self, codigo: &str) -> Result<(), ErrorMotor> {
         if self.concepto(codigo)?.naturaleza != Naturaleza::Capitulo {
             return Err(ErrorMotor::ValorInvalido(format!("«{codigo}» no es un capítulo")));
