@@ -48,6 +48,8 @@ pub(super) struct PanelAsistente {
     ver_ajustes: bool,
     trabajo: Option<Trabajo>,
     error: Option<String>,
+    /// Nombre para guardar la configuración como conexión nueva.
+    nombre_conexion: String,
 }
 
 impl PanelAsistente {
@@ -65,6 +67,7 @@ impl PanelAsistente {
             ver_ajustes: false,
             trabajo: None,
             error: None,
+            nombre_conexion: String::new(),
         }
     }
 
@@ -188,6 +191,19 @@ impl PanelAsistente {
         Ok(())
     }
 
+    /// Pruebas: modo directo con dos conexiones guardadas y ajustes a la vista.
+    #[cfg(test)]
+    pub fn con_dos_conexiones(&mut self) -> &mut Ajustes {
+        self.ajustes.modo = Modo::Directo;
+        self.ajustes.clave_api = "sk-ant-prueba".into();
+        self.ajustes.guardar_conexion("Claude");
+        self.ajustes.cambiar_proveedor(Proveedor::OpenAi);
+        self.ajustes.clave_api = "sk-proj-prueba".into();
+        self.ajustes.guardar_conexion("ChatGPT");
+        self.ver_ajustes = true;
+        &mut self.ajustes
+    }
+
     #[cfg(test)]
     pub fn mensajes(&self, obra: &str) -> Vec<ppto_propuestas::conversacion::Mensaje> {
         self.conv.de_obra(obra).into_iter().cloned().collect()
@@ -267,6 +283,29 @@ impl Aplicacion {
         });
         if a.ajustes.modo != antes {
             a.guardar_ajustes();
+        }
+        // Elegir entre las conexiones guardadas (Claude, ChatGPT, Ollama…)
+        if a.ajustes.modo == Modo::Directo && !a.ajustes.conexiones.is_empty() {
+            let mut elegida = a.ajustes.conexion.clone();
+            ui.horizontal(|ui| {
+                ui.label("IA:");
+                let texto = if elegida.is_empty() {
+                    "(sin guardar)".to_owned()
+                } else {
+                    elegida.clone()
+                };
+                egui::ComboBox::from_id_salt("conexion_asistente")
+                    .selected_text(texto)
+                    .show_ui(ui, |ui| {
+                        for c in &a.ajustes.conexiones {
+                            ui.selectable_value(&mut elegida, c.nombre.clone(), format!("{} · {}", c.nombre, c.modelo));
+                        }
+                    });
+                ui.label(RichText::new(&a.ajustes.modelo).small().weak());
+            });
+            if elegida != a.ajustes.conexion && a.ajustes.usar_conexion(&elegida) {
+                a.guardar_ajustes();
+            }
         }
         if a.ver_ajustes {
             ajustes(ui, a);
@@ -454,6 +493,44 @@ fn ajustes(ui: &mut Ui, a: &mut PanelAsistente) {
     let gasto = a.gasto_mes();
     let mut cambio = false;
     egui::Frame::group(ui.style()).show(ui, |ui| {
+        // Conexiones guardadas
+        ui.horizontal(|ui| {
+            ui.label("Conexión:");
+            if a.ajustes.conexion.is_empty() {
+                ui.label(RichText::new("(sin guardar)").weak());
+            } else {
+                ui.strong(&a.ajustes.conexion);
+                if ui
+                    .small_button("Borrar")
+                    .on_hover_text("Quita esta conexión de la lista (la configuración de abajo se queda)")
+                    .clicked()
+                {
+                    let n = a.ajustes.conexion.clone();
+                    a.ajustes.borrar_conexion(&n);
+                    cambio = true;
+                }
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut a.nombre_conexion)
+                    .desired_width(160.0)
+                    .hint_text("nombre, p. ej. ChatGPT trabajo"),
+            );
+            if ui
+                .add_enabled(
+                    !a.nombre_conexion.trim().is_empty(),
+                    egui::Button::new("Guardar como conexión"),
+                )
+                .on_hover_text("Guarda servicio, clave, modelo y precios con este nombre para elegirla luego en «IA:»")
+                .clicked()
+            {
+                let n = std::mem::take(&mut a.nombre_conexion);
+                a.ajustes.guardar_conexion(&n);
+                cambio = true;
+            }
+        });
+        ui.separator();
         egui::Grid::new("ajustes_asistente").num_columns(2).show(ui, |ui| {
             ui.label("Servicio de IA");
             let mut prov = a.ajustes.proveedor;
@@ -560,6 +637,7 @@ fn ajustes(ui: &mut Ui, a: &mut PanelAsistente) {
         ui.label(RichText::new(precios).small().weak());
     });
     if cambio {
+        a.ajustes.sincronizar();
         a.guardar_ajustes();
     }
 }

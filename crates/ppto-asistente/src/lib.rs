@@ -97,9 +97,33 @@ impl Proveedor {
     }
 }
 
+/// Conexión guardada con un servicio de IA (para cambiar de una a otra).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Conexion {
+    pub nombre: String,
+    pub proveedor: Proveedor,
+    pub url_base: String,
+    pub clave_api: String,
+    pub modelo: String,
+    pub precio_entrada: Decimal,
+    pub precio_salida: Decimal,
+}
+
+impl Default for Conexion {
+    fn default() -> Self {
+        let a = Ajustes::default();
+        a.conexion_actual(String::new())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Ajustes {
+    /// Nombre de la conexión en uso (vacío: sin guardar).
+    pub conexion: String,
+    /// Conexiones guardadas (Claude, ChatGPT, Ollama…).
+    pub conexiones: Vec<Conexion>,
     pub modo: Modo,
     pub proveedor: Proveedor,
     /// Dirección de la API para `Compatible` (p. ej.
@@ -120,6 +144,8 @@ pub struct Ajustes {
 impl Default for Ajustes {
     fn default() -> Self {
         Self {
+            conexion: String::new(),
+            conexiones: Vec::new(),
             modo: Modo::Encargo,
             proveedor: Proveedor::Anthropic,
             url_base: String::new(),
@@ -139,10 +165,76 @@ impl Ajustes {
     }
 
     pub fn cargar(ruta: &Path) -> Self {
-        std::fs::read_to_string(ruta)
+        let mut a: Self = std::fs::read_to_string(ruta)
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Ajustes de versiones anteriores (una sola clave): pasan a ser la
+        // primera conexión guardada.
+        if a.conexiones.is_empty() && !a.clave_api.trim().is_empty() {
+            let nombre = a.proveedor.nombre().to_owned();
+            a.guardar_conexion(&nombre);
+        }
+        a
+    }
+
+    /// Datos de conexión actuales con un nombre.
+    pub fn conexion_actual(&self, nombre: String) -> Conexion {
+        Conexion {
+            nombre,
+            proveedor: self.proveedor,
+            url_base: self.url_base.clone(),
+            clave_api: self.clave_api.clone(),
+            modelo: self.modelo.clone(),
+            precio_entrada: self.precio_entrada,
+            precio_salida: self.precio_salida,
+        }
+    }
+
+    /// Guarda (o actualiza) la conexión actual con ese nombre y la deja en uso.
+    pub fn guardar_conexion(&mut self, nombre: &str) {
+        let nombre = nombre.trim();
+        if nombre.is_empty() {
+            return;
+        }
+        let c = self.conexion_actual(nombre.to_owned());
+        match self.conexiones.iter_mut().find(|x| x.nombre == nombre) {
+            Some(x) => *x = c,
+            None => self.conexiones.push(c),
+        }
+        self.conexion = nombre.to_owned();
+    }
+
+    /// Pasa a usar una conexión guardada. Devuelve `false` si no existe.
+    pub fn usar_conexion(&mut self, nombre: &str) -> bool {
+        let Some(c) = self.conexiones.iter().find(|x| x.nombre == nombre).cloned() else {
+            return false;
+        };
+        self.proveedor = c.proveedor;
+        self.url_base = c.url_base;
+        self.clave_api = c.clave_api;
+        self.modelo = c.modelo;
+        self.precio_entrada = c.precio_entrada;
+        self.precio_salida = c.precio_salida;
+        self.conexion = c.nombre;
+        true
+    }
+
+    /// Borra una conexión guardada (la configuración actual no cambia).
+    pub fn borrar_conexion(&mut self, nombre: &str) {
+        self.conexiones.retain(|x| x.nombre != nombre);
+        if self.conexion == nombre {
+            self.conexion.clear();
+        }
+    }
+
+    /// Al cambiar algo de la configuración: si hay una conexión en uso, se
+    /// actualiza con lo nuevo.
+    pub fn sincronizar(&mut self) {
+        if !self.conexion.is_empty() && self.conexiones.iter().any(|x| x.nombre == self.conexion) {
+            let n = self.conexion.clone();
+            self.guardar_conexion(&n);
+        }
     }
 
     pub fn guardar(&self, ruta: &Path) -> std::io::Result<()> {
@@ -1062,5 +1154,48 @@ mod tests {
             assert_eq!(c.clave(), Some(String::new()));
         }
         assert_eq!(c.precio_entrada, Decimal::ZERO);
+    }
+
+    #[test]
+    fn varias_conexiones() {
+        let mut a = Ajustes {
+            clave_api: "sk-ant-uno".into(),
+            ..Ajustes::default()
+        };
+        a.guardar_conexion("Claude");
+        a.cambiar_proveedor(Proveedor::OpenAi);
+        a.clave_api = "sk-proj-dos".into();
+        a.guardar_conexion("ChatGPT");
+        a.cambiar_proveedor(Proveedor::Compatible);
+        a.url_base = "http://localhost:11434/v1".into();
+        a.clave_api.clear();
+        a.modelo = "qwen3".into();
+        a.guardar_conexion("Ollama local");
+        assert_eq!(a.conexiones.len(), 3);
+        // Cambiar de una a otra
+        assert!(a.usar_conexion("Claude"));
+        assert_eq!(a.proveedor, Proveedor::Anthropic);
+        assert_eq!(a.clave_api, "sk-ant-uno");
+        assert_eq!(a.modelo, "claude-sonnet-5-5");
+        assert!(a.usar_conexion("Ollama local"));
+        assert_eq!(a.url_base, "http://localhost:11434/v1");
+        assert!(!a.usar_conexion("No existe"));
+        // Editar la conexión en uso la actualiza
+        a.modelo = "llama4".into();
+        a.sincronizar();
+        assert_eq!(a.conexiones[2].modelo, "llama4");
+        a.borrar_conexion("ChatGPT");
+        assert_eq!(a.conexiones.len(), 2);
+        // Se guarda y se lee igual
+        let dir = std::env::temp_dir().join(format!("asis-conex-{}", std::process::id()));
+        let ruta = dir.join("ajustes.json");
+        a.guardar(&ruta).unwrap();
+        assert_eq!(Ajustes::cargar(&ruta), a);
+        // Ajustes antiguos con una sola clave → primera conexión
+        std::fs::write(&ruta, r#"{"clave_api":"sk-ant-x","modelo":"claude-opus-5-5"}"#).unwrap();
+        let v = Ajustes::cargar(&ruta);
+        assert_eq!(v.conexiones.len(), 1);
+        assert_eq!(v.conexion, "Claude (Anthropic)");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
