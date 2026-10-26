@@ -78,6 +78,10 @@ struct Lector {
     desc: BTreeMap<String, Vec<LineaD>>,
     textos: HashMap<String, String>,
     mediciones: Vec<MedicionBc3>,
+    /// Códigos con espacios delante que, sin ellos, coincidirían con otro
+    /// código distinto (Presto los distingue): clave sin espacios finales ni
+    /// «#» → código nuevo.
+    renombres: HashMap<String, String>,
 }
 
 impl Lector {
@@ -173,6 +177,7 @@ impl Lector {
         if inicios.first().is_some_and(|&i| !texto[..i].trim().is_empty()) {
             self.anotar(Gravedad::Aviso, 1, "", "hay texto antes del primer registro: se ignora");
         }
+        self.preparar_renombres(texto, &inicios);
         for (k, &ini) in inicios.iter().enumerate() {
             linea += texto[ultimo..ini].matches('\n').count();
             ultimo = ini;
@@ -180,6 +185,56 @@ impl Lector {
             let reg = texto[ini + 1..fin].trim_end_matches(['\r', '\n', ' ', '\t']);
             self.registro(reg, linea);
         }
+    }
+
+    /// Busca códigos de ~C que solo se diferencian por espacios al principio
+    /// (« TLIT15.20» y «TLIT15.20» son conceptos distintos en Presto) y da un
+    /// código nuevo a los que llevan espacios, para no mezclarlos.
+    fn preparar_renombres(&mut self, texto: &str, inicios: &[usize]) {
+        let mut por_codigo: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (k, &ini) in inicios.iter().enumerate() {
+            let fin = inicios.get(k + 1).copied().unwrap_or(texto.len());
+            let reg = &texto[ini + 1..fin];
+            let mut campos = reg.split('|');
+            if campos.next().is_some_and(|t| t.trim().eq_ignore_ascii_case("C")) {
+                let bruto = campos.next().unwrap_or("").split('\\').next().unwrap_or("");
+                let clave = clave_cruda(bruto);
+                let v = por_codigo.entry(normalizar(bruto)).or_default();
+                if !clave.is_empty() && !v.contains(&clave) {
+                    v.push(clave);
+                }
+            }
+        }
+        let mut usados: std::collections::BTreeSet<String> = por_codigo.keys().cloned().collect();
+        for (codigo, claves) in &por_codigo {
+            if claves.len() < 2 {
+                continue;
+            }
+            for clave in claves.iter().filter(|c| c.starts_with(char::is_whitespace)) {
+                let nuevo = (1..)
+                    .map(|n| format!("{codigo}_{n}"))
+                    .find(|c| !usados.contains(c))
+                    .unwrap_or_default();
+                usados.insert(nuevo.clone());
+                self.renombres.insert(clave.clone(), nuevo.clone());
+                self.anotar(
+                    Gravedad::Aviso,
+                    0,
+                    "C",
+                    format!(
+                        "«{clave}» (con espacios delante) y «{codigo}» son conceptos distintos: el primero pasa a llamarse «{nuevo}»"
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Código normalizado, con los renombres de [`Self::preparar_renombres`].
+    fn codigo(&self, bruto: &str) -> String {
+        self.renombres
+            .get(&clave_cruda(bruto))
+            .cloned()
+            .unwrap_or_else(|| normalizar(bruto))
     }
 
     fn registro(&mut self, reg: &str, linea: usize) {
@@ -202,7 +257,7 @@ impl Lector {
             "C" => self.registro_c(&campos, linea),
             "D" | "Y" => self.registro_d(&campos, linea, tipo == "Y"),
             "T" => {
-                let codigo = normalizar(campo(1));
+                let codigo = self.codigo(campo(1));
                 let texto = campo(2).trim().to_owned();
                 if codigo.is_empty() {
                     self.anotar(Gravedad::Error, linea, "T", "texto sin código de concepto");
@@ -246,7 +301,7 @@ impl Lector {
     fn registro_c(&mut self, campos: &[&str], linea: usize) {
         let campo = |i: usize| campos.get(i).copied().unwrap_or("");
         let original = campo(1).split('\\').next().unwrap_or("").trim().to_owned();
-        let codigo = normalizar(&original);
+        let codigo = self.codigo(campo(1).split('\\').next().unwrap_or(""));
         if codigo.is_empty() {
             self.anotar(Gravedad::Error, linea, "C", "concepto sin código: se ignora");
             return;
@@ -288,7 +343,7 @@ impl Lector {
 
     fn registro_d(&mut self, campos: &[&str], linea: usize, anadir: bool) {
         let reg = if anadir { "Y" } else { "D" };
-        let padre = normalizar(campos.get(1).copied().unwrap_or(""));
+        let padre = self.codigo(campos.get(1).copied().unwrap_or(""));
         if padre.is_empty() {
             self.anotar(
                 Gravedad::Error,
@@ -301,7 +356,7 @@ impl Lector {
         let sub: Vec<&str> = campos.get(2).copied().unwrap_or("").split('\\').collect();
         let mut lineas = Vec::new();
         for trozo in sub.chunks(3) {
-            let hijo = normalizar(trozo[0]);
+            let hijo = self.codigo(trozo[0]);
             if hijo.is_empty() {
                 if trozo.iter().any(|s| !s.trim().is_empty()) {
                     self.anotar(
@@ -354,8 +409,8 @@ impl Lector {
         let campo = |i: usize| campos.get(i).copied().unwrap_or("");
         let codigos: Vec<&str> = campo(1).split('\\').collect();
         let (padre, hijo) = match codigos.as_slice() {
-            [p, h, ..] if !h.trim().is_empty() => (Some(normalizar(p)).filter(|p| !p.is_empty()), normalizar(h)),
-            [h, ..] => (None, normalizar(h)),
+            [p, h, ..] if !h.trim().is_empty() => (Some(self.codigo(p)).filter(|p| !p.is_empty()), self.codigo(h)),
+            [h, ..] => (None, self.codigo(h)),
             [] => (None, String::new()),
         };
         if hijo.is_empty() {
@@ -918,6 +973,12 @@ impl Lector {
 }
 
 // ---------------------------------------------------------------------------
+
+/// Código tal como viene, sin espacios finales ni «#» (conserva los
+/// espacios del principio, que Presto sí distingue).
+fn clave_cruda(codigo: &str) -> String {
+    codigo.trim_end().trim_end_matches('#').trim_end().to_owned()
+}
 
 /// Quita espacios y las almohadillas finales que marcan capítulos y raíz.
 fn normalizar(codigo: &str) -> String {

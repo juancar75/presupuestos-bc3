@@ -5,6 +5,15 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.23] - 2026-10-26
+
+### Corregido
+- Importar BC3: los códigos que solo se diferencian por espacios al principio
+  (« TLIT15.20» y «TLIT15.20», que Presto trata como conceptos distintos) ya no
+  se mezclan. El que lleva espacios pasa a llamarse «TLIT15.20_1» y se avisa en
+  el informe de importación. Antes aparecían referencias circulares falsas y
+  se perdía uno de los dos conceptos.
+
 ## [0.1.0-alpha.22] - 2026-10-25
 
 ### Añadido
