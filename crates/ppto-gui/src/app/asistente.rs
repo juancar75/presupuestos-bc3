@@ -14,16 +14,13 @@
 
 use super::Aplicacion;
 use eframe::egui::{self, Color32, RichText, Ui};
-use ppto_asistente::{Ajustes, Evento, Gasto, Modo, Respuesta, Rutas};
+use ppto_asistente::{Ajustes, Evento, Gasto, Modo, Proveedor, Respuesta, Rutas};
 use ppto_core::Decimal;
 use ppto_propuestas::conversacion::{Autor, Conversaciones, carpeta_informes};
 use ppto_propuestas::{ObraActiva, clave};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::{Duration, Instant, SystemTime};
-
-/// Modelos habituales (se puede escribir otro).
-const MODELOS: &[&str] = &["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"];
 
 enum Aviso {
     Evento(Evento),
@@ -175,7 +172,7 @@ impl PanelAsistente {
             let ajustes = self.ajustes.clone();
             let (tx, rx) = channel();
             std::thread::spawn(move || {
-                let http = ppto_asistente::Http::new(clave_api);
+                let http = ppto_asistente::Http::para(&ajustes, clave_api);
                 let tx2 = tx.clone();
                 let r = ppto_asistente::atender_pendiente(&http, &ajustes, &r, &obra, &mut |e| {
                     let _ = tx2.send(Aviso::Evento(e));
@@ -458,27 +455,73 @@ fn ajustes(ui: &mut Ui, a: &mut PanelAsistente) {
     let mut cambio = false;
     egui::Frame::group(ui.style()).show(ui, |ui| {
         egui::Grid::new("ajustes_asistente").num_columns(2).show(ui, |ui| {
+            ui.label("Servicio de IA");
+            let mut prov = a.ajustes.proveedor;
+            egui::ComboBox::from_id_salt("proveedor_asistente")
+                .selected_text(prov.nombre())
+                .show_ui(ui, |ui| {
+                    for p in [Proveedor::Anthropic, Proveedor::OpenAi, Proveedor::Compatible] {
+                        ui.selectable_value(&mut prov, p, p.nombre());
+                    }
+                });
+            if prov != a.ajustes.proveedor {
+                a.ajustes.cambiar_proveedor(prov);
+                cambio = true;
+            }
+            ui.end_row();
+            if a.ajustes.proveedor == Proveedor::Compatible {
+                ui.label("Dirección de la API");
+                cambio |= ui
+                    .add(
+                        egui::TextEdit::singleline(&mut a.ajustes.url_base)
+                            .desired_width(240.0)
+                            .hint_text("http://localhost:11434/v1"),
+                    )
+                    .on_hover_text(
+                        "Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1 · \
+                         Gemini: https://generativelanguage.googleapis.com/v1beta/openai",
+                    )
+                    .lost_focus();
+                ui.end_row();
+            }
             ui.label("Clave de la API");
-            cambio |= ui
+            let r = ui
                 .add(
                     egui::TextEdit::singleline(&mut a.ajustes.clave_api)
                         .password(true)
                         .desired_width(200.0),
                 )
-                .on_hover_text("Se guarda solo en este equipo. Vacía: se usa la variable ANTHROPIC_API_KEY")
-                .lost_focus();
+                .on_hover_text(
+                    "Se guarda solo en este equipo. Vacía: se usa la variable ANTHROPIC_API_KEY u OPENAI_API_KEY",
+                );
+            if r.changed() {
+                // Una clave sk-ant-… es de Claude y una sk-… de ChatGPT: se
+                // elige el servicio solo (salvo en «compatible»).
+                if a.ajustes.proveedor != Proveedor::Compatible
+                    && let Some(p) = Proveedor::de_clave(&a.ajustes.clave_api)
+                {
+                    a.ajustes.cambiar_proveedor(p);
+                }
+            }
+            cambio |= r.lost_focus();
             ui.end_row();
             ui.label("Modelo");
             ui.horizontal(|ui| {
-                egui::ComboBox::from_id_salt("modelo_asistente")
-                    .selected_text(a.ajustes.modelo.clone())
-                    .show_ui(ui, |ui| {
-                        for m in MODELOS {
-                            cambio |= ui
-                                .selectable_value(&mut a.ajustes.modelo, (*m).to_owned(), *m)
-                                .changed();
-                        }
-                    });
+                cambio |= ui
+                    .add(egui::TextEdit::singleline(&mut a.ajustes.modelo).desired_width(160.0))
+                    .lost_focus();
+                let modelos = a.ajustes.proveedor.modelos();
+                if !modelos.is_empty() {
+                    egui::ComboBox::from_id_salt("modelo_asistente")
+                        .selected_text("elegir")
+                        .show_ui(ui, |ui| {
+                            for m in modelos {
+                                cambio |= ui
+                                    .selectable_value(&mut a.ajustes.modelo, (*m).to_owned(), *m)
+                                    .changed();
+                            }
+                        });
+                }
             });
             ui.end_row();
             for (texto, valor) in [
@@ -506,11 +549,15 @@ fn ajustes(ui: &mut Ui, a: &mut PanelAsistente) {
             ));
             ui.end_row();
         });
-        ui.label(
-            RichText::new("Compruebe los precios del modelo en anthropic.com/pricing; cambian con el tiempo.")
-                .small()
-                .weak(),
-        );
+        if let Some(av) = a.ajustes.aviso_clave() {
+            ui.colored_label(Color32::from_rgb(230, 150, 60), av);
+        }
+        let precios = match a.ajustes.proveedor {
+            Proveedor::Anthropic => "Compruebe los precios del modelo en anthropic.com/pricing; cambian con el tiempo.",
+            Proveedor::OpenAi => "Compruebe los precios del modelo en openai.com/api/pricing; cambian con el tiempo.",
+            Proveedor::Compatible => "Ponga los precios de su servicio (0 si es un modelo local).",
+        };
+        ui.label(RichText::new(precios).small().weak());
     });
     if cambio {
         a.guardar_ajustes();

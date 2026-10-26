@@ -11,6 +11,8 @@
 //! lleva su coste, calculado con los precios por millón de tokens de los
 //! ajustes (editables, porque cambian).
 
+pub mod openai;
+
 use base64::Engine as _;
 use ppto_propuestas::conversacion::{Autor, Conversaciones, Mensaje};
 use rust_decimal::Decimal;
@@ -20,6 +22,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 pub const URL_API: &str = "https://api.anthropic.com/v1/messages";
+pub const URL_OPENAI: &str = "https://api.openai.com/v1";
 pub const VERSION_API: &str = "2023-06-01";
 /// Herramientas del MCP que no tienen sentido en el modo directo.
 pub const EXCLUIDAS: &[&str] = &["leer_mensajes", "responder", "abrir_presupuesto", "abrir_ejemplo"];
@@ -40,11 +43,70 @@ pub enum Modo {
     Directo,
 }
 
+/// Servicio de IA del modo directo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Proveedor {
+    /// Claude (api.anthropic.com).
+    #[default]
+    Anthropic,
+    /// ChatGPT (api.openai.com).
+    OpenAi,
+    /// Cualquier servicio con la API de chat de OpenAI (Gemini, Mistral,
+    /// Ollama, LM Studio…), en la dirección de `url_base`.
+    Compatible,
+}
+
+impl Proveedor {
+    pub fn nombre(self) -> &'static str {
+        match self {
+            Self::Anthropic => "Claude (Anthropic)",
+            Self::OpenAi => "ChatGPT (OpenAI)",
+            Self::Compatible => "Compatible con OpenAI",
+        }
+    }
+
+    /// Variable de entorno con la clave, si la clave de los ajustes está vacía.
+    fn variable(self) -> &'static str {
+        match self {
+            Self::Anthropic => "ANTHROPIC_API_KEY",
+            Self::OpenAi | Self::Compatible => "OPENAI_API_KEY",
+        }
+    }
+
+    /// Modelos habituales para elegir (se puede escribir otro).
+    pub fn modelos(self) -> &'static [&'static str] {
+        match self {
+            Self::Anthropic => &["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
+            Self::OpenAi => &["gpt-5", "gpt-5-mini", "gpt-4.1"],
+            Self::Compatible => &[],
+        }
+    }
+
+    /// Por la forma de la clave: las de Anthropic empiezan por `sk-ant-` y
+    /// las de OpenAI por `sk-` (sin `ant`).
+    pub fn de_clave(clave: &str) -> Option<Self> {
+        let k = clave.trim();
+        if k.starts_with("sk-ant-") {
+            Some(Self::Anthropic)
+        } else if k.starts_with("sk-") {
+            Some(Self::OpenAi)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Ajustes {
     pub modo: Modo,
-    /// Clave de la API. Si está vacía se usa la variable `ANTHROPIC_API_KEY`.
+    pub proveedor: Proveedor,
+    /// Dirección de la API para `Compatible` (p. ej.
+    /// `http://localhost:11434/v1` para Ollama).
+    pub url_base: String,
+    /// Clave de la API. Si está vacía se usa la variable de entorno del
+    /// proveedor (`ANTHROPIC_API_KEY` u `OPENAI_API_KEY`).
     pub clave_api: String,
     pub modelo: String,
     /// Límite de gasto mensual en dólares.
@@ -59,6 +121,8 @@ impl Default for Ajustes {
     fn default() -> Self {
         Self {
             modo: Modo::Encargo,
+            proveedor: Proveedor::Anthropic,
+            url_base: String::new(),
             clave_api: String::new(),
             modelo: "claude-sonnet-5-5".into(),
             limite_mensual: Decimal::from(20),
@@ -89,14 +153,51 @@ impl Ajustes {
         std::fs::write(ruta, t)
     }
 
-    /// Clave efectiva (ajustes o variable de entorno).
+    /// Clave efectiva (ajustes o variable de entorno). Un servicio
+    /// compatible local (Ollama…) puede no necesitarla.
     pub fn clave(&self) -> Option<String> {
         let k = self.clave_api.trim();
         if k.is_empty() {
-            std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.trim().is_empty())
+            std::env::var(self.proveedor.variable())
+                .ok()
+                .filter(|k| !k.trim().is_empty())
+                .or_else(|| (self.proveedor == Proveedor::Compatible).then(String::new))
         } else {
             Some(k.to_owned())
         }
+    }
+
+    /// Cambia de proveedor con modelo y precios por defecto de ese servicio
+    /// (los precios son orientativos y editables).
+    pub fn cambiar_proveedor(&mut self, p: Proveedor) {
+        if p == self.proveedor {
+            return;
+        }
+        self.proveedor = p;
+        if let Some(m) = p.modelos().first() {
+            self.modelo = (*m).to_owned();
+        } else {
+            self.modelo.clear();
+        }
+        let (e, s) = match p {
+            Proveedor::Anthropic => (Decimal::from(2), Decimal::from(10)),
+            Proveedor::OpenAi => (Decimal::new(125, 2), Decimal::from(10)),
+            Proveedor::Compatible => (Decimal::ZERO, Decimal::ZERO),
+        };
+        self.precio_entrada = e;
+        self.precio_salida = s;
+    }
+
+    /// Aviso si la clave no parece del proveedor elegido.
+    pub fn aviso_clave(&self) -> Option<String> {
+        let de = Proveedor::de_clave(&self.clave_api)?;
+        (self.proveedor != Proveedor::Compatible && de != self.proveedor).then(|| {
+            format!(
+                "La clave parece de {}, pero el proveedor elegido es {}.",
+                de.nombre(),
+                self.proveedor.nombre()
+            )
+        })
     }
 }
 
@@ -215,9 +316,28 @@ pub trait Transporte {
 pub struct Http {
     clave: String,
     agente: ureq::Agent,
+    proveedor: Proveedor,
+    /// Dirección completa de chat completions (OpenAI y compatibles).
+    url_chat: String,
 }
 
 impl Http {
+    /// Transporte para el proveedor de los ajustes.
+    pub fn para(ajustes: &Ajustes, clave: String) -> Self {
+        let mut h = Self::new(clave);
+        h.proveedor = ajustes.proveedor;
+        let base = match ajustes.proveedor {
+            Proveedor::Compatible => ajustes.url_base.trim().trim_end_matches('/').to_owned(),
+            _ => URL_OPENAI.to_owned(),
+        };
+        h.url_chat = if base.ends_with("/chat/completions") {
+            base
+        } else {
+            format!("{base}/chat/completions")
+        };
+        h
+    }
+
     pub fn new(clave: String) -> Self {
         use ureq::tls::{RootCerts, TlsConfig};
         let agente = ureq::Agent::config_builder()
@@ -226,12 +346,21 @@ impl Http {
             .tls_config(TlsConfig::builder().root_certs(RootCerts::PlatformVerifier).build())
             .build()
             .into();
-        Self { clave, agente }
+        Self {
+            clave,
+            agente,
+            proveedor: Proveedor::Anthropic,
+            url_chat: String::new(),
+        }
     }
 }
 
 impl Transporte for Http {
     fn enviar(&self, cuerpo: &Value) -> Result<Value, String> {
+        if self.proveedor != Proveedor::Anthropic {
+            let p = openai::peticion(cuerpo, self.proveedor == Proveedor::OpenAi);
+            return self.enviar_chat(&p).map(|r| openai::respuesta(&r));
+        }
         let texto = cuerpo.to_string();
         let mut espera = 5;
         for intento in 0..4 {
@@ -262,8 +391,67 @@ impl Transporte for Http {
             }
             let m = v["error"]["message"].as_str().unwrap_or(&cuerpo).to_owned();
             return Err(match estado {
-                401 => format!("clave de API no válida ({m})"),
+                401 if Proveedor::de_clave(&self.clave) == Some(Proveedor::OpenAi) => format!(
+                    "la clave es de OpenAI (ChatGPT) y el proveedor elegido es Claude: cámbielo en Ajustes del asistente ({m})"
+                ),
+                401 => format!(
+                    "clave de API no válida ({m}). Las claves de Anthropic empiezan por «sk-ant-»; compruebe que está completa y sin espacios"
+                ),
                 400 if m.contains("credit") => format!("sin saldo en la cuenta de la API ({m})"),
+                _ => format!("error {estado} de la API: {m}"),
+            });
+        }
+        Err("la API sigue saturada; vuelva a intentarlo en unos minutos".into())
+    }
+}
+
+impl Http {
+    /// Petición a chat completions (OpenAI y compatibles), con reintentos.
+    fn enviar_chat(&self, cuerpo: &Value) -> Result<Value, String> {
+        if self.url_chat.starts_with("/") || !self.url_chat.contains("://") {
+            return Err(
+                "falta la dirección de la API del servicio compatible: póngala en Ajustes del asistente".into(),
+            );
+        }
+        let texto = cuerpo.to_string();
+        let mut espera = 5;
+        for intento in 0..4 {
+            let mut pet = self
+                .agente
+                .post(&self.url_chat)
+                .header("content-type", "application/json");
+            if !self.clave.is_empty() {
+                pet = pet.header("authorization", &format!("Bearer {}", self.clave));
+            }
+            let mut r = pet
+                .send(texto.as_str())
+                .map_err(|e| format!("no se pudo conectar con {}: {e}", self.url_chat))?;
+            let estado = r.status().as_u16();
+            let cuerpo = r
+                .body_mut()
+                .with_config()
+                .limit(50 * 1024 * 1024)
+                .read_to_string()
+                .map_err(|e| format!("respuesta de la API ilegible: {e}"))?;
+            let v: Value = serde_json::from_str(&cuerpo).unwrap_or_else(|_| json!({ "texto": cuerpo }));
+            if estado == 200 {
+                return Ok(v);
+            }
+            if matches!(estado, 429 | 500 | 502 | 503) && intento < 3 && v["error"]["code"] != "insufficient_quota" {
+                std::thread::sleep(std::time::Duration::from_secs(espera));
+                espera *= 3;
+                continue;
+            }
+            let m = v["error"]["message"].as_str().unwrap_or(&cuerpo).to_owned();
+            return Err(match estado {
+                401 if Proveedor::de_clave(&self.clave) == Some(Proveedor::Anthropic) => format!(
+                    "la clave es de Anthropic (Claude) y el proveedor elegido es otro: cámbielo en Ajustes del asistente ({m})"
+                ),
+                401 => format!("clave de API no válida ({m})"),
+                429 if v["error"]["code"] == "insufficient_quota" => {
+                    format!("sin saldo en la cuenta de la API ({m})")
+                }
+                404 => format!("modelo o dirección no encontrados ({m})"),
                 _ => format!("error {estado} de la API: {m}"),
             });
         }
@@ -773,5 +961,106 @@ mod tests {
         assert_eq!(h.len(), 2);
         assert_eq!(h[0]["content"], "a\n\nb");
         assert_eq!(h[1]["role"], "assistant");
+    }
+
+    /// Servicio con la API de OpenAI simulado: recibe la petición ya
+    /// traducida y contesta en formato de chat completions.
+    struct ChatGuion {
+        respuestas: RefCell<Vec<Value>>,
+        peticiones: RefCell<Vec<Value>>,
+    }
+
+    impl Transporte for ChatGuion {
+        fn enviar(&self, cuerpo: &Value) -> Result<Value, String> {
+            let p = openai::peticion(cuerpo, true);
+            self.peticiones.borrow_mut().push(p);
+            let r = self.respuestas.borrow_mut().remove(0);
+            Ok(openai::respuesta(&r))
+        }
+    }
+
+    #[test]
+    fn chatgpt_usa_las_mismas_herramientas() {
+        let dir = std::env::temp_dir().join(format!("asis-openai-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rutas = Rutas::en(&dir);
+        let mut p = ppto_core::ejemplos::suelo_radiante();
+        p.nueva_partida("C01", "P.VAL", "ud", "Válvula de zona").unwrap();
+        let obra = ppto_propuestas::clave(&p);
+        ppto_propuestas::ObraActiva::guardar(&p, &rutas.obra_activa).unwrap();
+        Conversaciones::modificar(&rutas.conversaciones, |c| {
+            c.anadir(&obra, Autor::Usuario, "Valora la válvula", Vec::new())
+        })
+        .unwrap();
+        let llamada = |id: &str, nombre: &str, args: Value| json!({ "id": id, "type": "function", "function": { "name": nombre, "arguments": args.to_string() } });
+        let uso = json!({ "prompt_tokens": 1000, "completion_tokens": 100 });
+        let guion = ChatGuion {
+            respuestas: RefCell::new(vec![
+                json!({ "choices": [{ "finish_reason": "tool_calls", "message": { "content": null, "tool_calls": [
+                    llamada("c1", "abrir_obra_activa", json!({}))
+                ]}}], "usage": uso }),
+                json!({ "choices": [{ "finish_reason": "tool_calls", "message": { "content": null, "tool_calls": [
+                    llamada("c2", "proponer", json!({
+                        "partida": "P.VAL",
+                        "lineas": [{ "codigo": "VZ-1", "rendimiento": 1, "naturaleza": "material", "unidad": "ud", "resumen": "Válvula", "precio": 30 }],
+                        "confianza": "media",
+                        "justificacion": "precio de mercado"
+                    }))
+                ]}}], "usage": uso }),
+                json!({ "choices": [{ "finish_reason": "stop", "message": { "content": "Propuesta creada para P.VAL." } }], "usage": uso }),
+            ]),
+            peticiones: RefCell::new(Vec::new()),
+        };
+        let mut a = Ajustes {
+            modo: Modo::Directo,
+            ..Ajustes::default()
+        };
+        a.cambiar_proveedor(Proveedor::OpenAi);
+        let r = atender_pendiente(&guion, &a, &rutas, &obra, &mut |_| {}).unwrap();
+        assert_eq!(r.texto, "Propuesta creada para P.VAL.");
+        assert_eq!(r.herramientas, 2);
+        assert_eq!(
+            ppto_propuestas::Bandeja::cargar(&rutas.bandeja).pendientes(&obra).len(),
+            1
+        );
+        // 3 llamadas × (1.000 × 1,25 + 100 × 10) / 1e6 = 3 × 0,00225 = 0,00675 $
+        assert_eq!(r.coste, Decimal::new(675, 5));
+        let pet = guion.peticiones.borrow();
+        assert_eq!(pet[0]["messages"][0]["role"], "system");
+        assert!(
+            pet[0]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|h| h["function"]["name"] == "proponer")
+        );
+        // El resultado de la herramienta vuelve como mensaje «tool»
+        let ultimo = pet[2]["messages"].as_array().unwrap().last().unwrap().clone();
+        assert_eq!(ultimo["role"], "tool");
+        assert_eq!(ultimo["tool_call_id"], "c2");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clave_y_proveedor() {
+        assert_eq!(Proveedor::de_clave("sk-ant-api03-xyz"), Some(Proveedor::Anthropic));
+        assert_eq!(Proveedor::de_clave(" sk-proj-abc "), Some(Proveedor::OpenAi));
+        assert_eq!(Proveedor::de_clave("AIza..."), None);
+        let mut a = Ajustes {
+            clave_api: "sk-proj-abc".into(),
+            ..Ajustes::default()
+        };
+        assert!(a.aviso_clave().unwrap().contains("OpenAI"));
+        a.cambiar_proveedor(Proveedor::OpenAi);
+        assert!(a.aviso_clave().is_none());
+        assert_eq!(a.modelo, "gpt-5");
+        // Un servicio local compatible no necesita clave
+        let mut c = Ajustes::default();
+        c.cambiar_proveedor(Proveedor::Compatible);
+        if std::env::var("OPENAI_API_KEY").is_err() {
+            assert_eq!(c.clave(), Some(String::new()));
+        }
+        assert_eq!(c.precio_entrada, Decimal::ZERO);
     }
 }
