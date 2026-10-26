@@ -5,6 +5,21 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.26] - 2026-10-26
+
+### Cambiado
+- Barra superior agrupada en menús: **Archivo** (nuevo, abrir, guardar,
+  importar, exportar, ejemplo, salir), **Edición** (deshacer, rehacer,
+  cortar/copiar/pegar la partida elegida, buscar), **Precios** (tarifas,
+  biblioteca, bases de precios, legalización), **IA** (asistente, propuestas),
+  **Ver** (claro/oscuro, informe de importación) y **Ayuda** (versión,
+  novedades). A la vista quedan deshacer/rehacer, guardar, asistente,
+  propuestas, revisión y PEM.
+
+### Añadido
+- Atajos: Ctrl+N nuevo, Ctrl+O abrir, Ctrl+S guardar, Ctrl+Mayús+S guardar
+  como, Ctrl+F buscar partida (además de Ctrl+Z / Ctrl+Y).
+
 ## [0.1.0-alpha.25] - 2026-10-26
 
 ### Añadido
