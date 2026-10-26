@@ -328,3 +328,43 @@ fn unidades_de_obra_sin_tipo_de_un_ciego_son_partidas() {
     // Un material directamente en el capítulo sigue siendo material
     assert_eq!(p.conceptos["MT01"].naturaleza, Naturaleza::Material);
 }
+
+#[test]
+fn codigos_que_solo_se_diferencian_por_espacios_delante_no_se_mezclan() {
+    // Datos sintéticos. En Presto « TUB20» (material) y «TUB20» (partida que lo
+    // usa) son conceptos distintos; sin espacios parecería que TUB20 se
+    // contiene a sí mismo.
+    // TUB20 = 1,1 m × 2,00 (material) + 0,1 h × 30,00 = 2,20 + 3,00 = 5,20
+    let bc3 = "~V|PRUEBA|FIEBDC-3/2002|prueba||ANSI|\r\n\
+               ~K|\\2\\2\\3\\2\\2\\2\\2\\EUR\\|0|\r\n\
+               ~C|OBRA##||Obra|0||0|\r\n\
+               ~C|  CAP#||Capitulo con espacios|0||0|\r\n\
+               ~C|CAP|ud|Material llamado CAP|7||3|\r\n\
+               ~C| TUB20|m|Tubo 20 (material)|2||3|\r\n\
+               ~C|TUB20|m|Tubo 20 instalado|5.2||0|\r\n\
+               ~C|MO|h|Oficial|30||1|\r\n\
+               ~D|OBRA##|  CAP\\1\\1\\|\r\n\
+               ~D|  CAP#|TUB20\\1\\10\\|\r\n\
+               ~D|TUB20| TUB20\\1\\1.1\\MO\\1\\0.1\\|\r\n\
+               ~T| TUB20|Texto del material|\r\n";
+    let imp = importar(bc3.as_bytes()).unwrap();
+    let p = &imp.presupuesto;
+    assert_eq!(imp.errores(), 0, "{:?}", imp.incidencias);
+    // El material con espacio pasa a TUB20_1 y la partida lo usa
+    assert_eq!(p.concepto("TUB20_1").unwrap().naturaleza, Naturaleza::Material);
+    assert_eq!(
+        p.concepto("TUB20_1").unwrap().texto.as_deref(),
+        Some("Texto del material")
+    );
+    assert_eq!(p.precio("TUB20").unwrap(), dec!(5.20));
+    // El capítulo con espacios no se mezcla con el material CAP
+    assert_eq!(p.concepto("CAP_1").unwrap().naturaleza, Naturaleza::Capitulo);
+    assert_eq!(p.concepto("CAP").unwrap().naturaleza, Naturaleza::Material);
+    // 10 m × 5,20 = 52,00
+    assert_eq!(p.pem().unwrap(), dec!(52.00));
+    assert!(
+        imp.incidencias
+            .iter()
+            .any(|i| i.mensaje.contains("TUB20_1") && i.gravedad == Gravedad::Aviso)
+    );
+}
