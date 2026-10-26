@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/ppto-core", "crates/ppto-db", "crates/ppto-cli", "crates/ppto-gui", "crates/ppto-bc3", "crates/ppto-informes", "crates/ppto-mcp", "crates/ppto-pdf", "crates/ppto-ciego", "crates/ppto-tarifas", "crates/ppto-propuestas", "crates/ppto-asistente", "crates/ppto-biblioteca", "crates/ppto-legalizacion"]
 
 [workspace.package]
-version = "0.1.0-alpha.26"
+version = "0.1.0-alpha.27"
 edition = "2024"
 rust-version = "1.92"
 license = "GPL-3.0-or-later"

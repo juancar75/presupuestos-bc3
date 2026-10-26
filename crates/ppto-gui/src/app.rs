@@ -2030,14 +2030,46 @@ impl Aplicacion {
                             } else {
                                 ui.label(&h.codigo);
                             }
-                            ui.label(&h.unidad);
+                            // Unidad y resumen editables en los recursos (una subpartida
+                            // se edita entrando en ella).
+                            let editable = h.naturaleza != Naturaleza::Partida;
+                            let campo_resumen = |ui: &mut Ui, acciones: &mut Vec<Accion>| {
+                                if editable {
+                                    let mut r = h.resumen.clone();
+                                    if ui
+                                        .add(
+                                            egui::TextEdit::singleline(&mut r)
+                                                .desired_width(260.0)
+                                                .hint_text("escriba el resumen…"),
+                                        )
+                                        .on_hover_text(&h.resumen)
+                                        .changed()
+                                    {
+                                        acciones.push(Accion::Resumen(h.codigo.clone(), r));
+                                    }
+                                } else {
+                                    ui.label(corto(&h.resumen, 46)).on_hover_text(&h.resumen);
+                                }
+                            };
+                            if editable {
+                                let mut u = h.unidad.clone();
+                                if ui
+                                    .add(egui::TextEdit::singleline(&mut u).desired_width(34.0))
+                                    .on_hover_text("Unidad")
+                                    .changed()
+                                {
+                                    acciones.push(Accion::Unidad(h.codigo.clone(), u));
+                                }
+                            } else {
+                                ui.label(&h.unidad);
+                            }
                             match &h.tarifa {
                                 // Material de tarifa: PVP y descuento a la vista (en el BC3
                                 // sale a PVP con su línea «Descuento …»).
                                 Some(t) => {
                                     let d = self.p.descuento_tarifa(t).normalize();
                                     ui.vertical(|ui| {
-                                        ui.label(corto(&h.resumen, 46)).on_hover_text(&h.resumen);
+                                        campo_resumen(ui, acciones);
                                         ui.label(
                                             RichText::new(format!(
                                                 "PVP {} € − {} % {}",
@@ -2050,9 +2082,7 @@ impl Aplicacion {
                                         );
                                     });
                                 }
-                                None => {
-                                    ui.label(corto(&h.resumen, 46)).on_hover_text(&h.resumen);
-                                }
+                                None => campo_resumen(ui, acciones),
                             }
                             ui.label(
                                 RichText::new(nombre_naturaleza(h.naturaleza))
@@ -2360,8 +2390,26 @@ impl Aplicacion {
                         ui.end_row();
                         for r in &grupo {
                             ui.label(&r.codigo);
-                            ui.label(&r.unidad);
-                            ui.label(corto(&r.resumen, 50));
+                            let mut u = r.unidad.clone();
+                            if ui
+                                .add(egui::TextEdit::singleline(&mut u).desired_width(34.0))
+                                .on_hover_text("Unidad")
+                                .changed()
+                            {
+                                acciones.push(Accion::Unidad(r.codigo.clone(), u));
+                            }
+                            let mut t = r.resumen.clone();
+                            if ui
+                                .add(
+                                    egui::TextEdit::singleline(&mut t)
+                                        .desired_width(300.0)
+                                        .hint_text("escriba el resumen…"),
+                                )
+                                .on_hover_text(&r.resumen)
+                                .changed()
+                            {
+                                acciones.push(Accion::Resumen(r.codigo.clone(), t));
+                            }
                             if nat == Naturaleza::Porcentaje {
                                 ui.label("");
                                 ui.label("");
@@ -4519,6 +4567,45 @@ mod pruebas {
                 "falta el símbolo {c}"
             );
         }
+    }
+
+    #[test]
+    fn resumen_de_un_recurso_creado_sin_texto() {
+        // Recurso creado sin resumen ni precio (como R0001): se le pone texto
+        // y unidad después, con deshacer.
+        let mut app = Aplicacion::sin_ventana();
+        app.aplicar(vec![Accion::NuevoRecurso {
+            codigo: "R0001".into(),
+            unidad: String::new(),
+            resumen: String::new(),
+            naturaleza: Naturaleza::ManoObra,
+            precio: dec!(0),
+            en: "SR.M2".into(),
+            cantidad: dec!(1),
+        }]);
+        app.sel = Some(("C01".into(), "SR.M2".into()));
+        // La tabla del descompuesto y la de recursos se dibujan con campos editables
+        let ctx = Context::default();
+        for pestana in [Pestana::Partida, Pestana::Recursos] {
+            app.pestana = pestana;
+            let mut acc = Vec::new();
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    if app.pestana == Pestana::Partida {
+                        app.pestana_partida(ui, &mut acc);
+                    } else {
+                        app.pestana_recursos(ui, &mut acc);
+                    }
+                });
+            });
+            out.textures_delta.clear();
+        }
+        app.aplicar(vec![
+            Accion::Resumen("R0001".into(), "Oficial 1ª calefactor".into()),
+            Accion::Unidad("R0001".into(), "h".into()),
+        ]);
+        assert_eq!(app.p.conceptos["R0001"].resumen, "Oficial 1ª calefactor");
+        assert_eq!(app.p.conceptos["R0001"].unidad, "h");
     }
 
     #[test]

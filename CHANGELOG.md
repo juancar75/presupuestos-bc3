@@ -5,6 +5,13 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.27] - 2026-10-26
+
+### Corregido
+- El resumen y la unidad de un recurso (mano de obra, material…) se pueden
+  escribir y cambiar después de crearlo, en la tabla del descompuesto y en la
+  pestaña Recursos. Antes, un recurso creado sin texto se quedaba sin él.
+
 ## [0.1.0-alpha.26] - 2026-10-26
 
 ### Cambiado
