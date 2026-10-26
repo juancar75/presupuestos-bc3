@@ -212,6 +212,8 @@ pub struct Aplicacion {
     ventana_pdf: Option<pdf::VentanaPdf>,
     ciego: Option<ciego::CiegoAbierto>,
     buscar: String,
+    /// Poner el cursor en el buscador del árbol (Ctrl+F) en el próximo fotograma.
+    enfocar_buscar: bool,
     /// Llevar el árbol hasta la partida elegida en el próximo fotograma.
     desplazar_arbol: bool,
     /// Partida cortada o copiada: (capítulo, partida, `true` = cortar).
@@ -363,6 +365,7 @@ impl Aplicacion {
             ventana_pdf: None,
             ciego: None,
             buscar: String::new(),
+            enfocar_buscar: false,
             desplazar_arbol: false,
             portapapeles: None,
             historial: Historial::default(),
@@ -1226,173 +1229,66 @@ impl Aplicacion {
 
     // --------------------------------------------------------------------- UI
 
-    fn barra_superior(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
+    /// Barra superior: menús (Archivo, Edición, Precios, IA, Ver, Ayuda) y, a
+    /// la vista, lo de uso diario (deshacer, guardar, asistente, PEM).
+    fn barra_superior(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+        egui::MenuBar::new().ui(ui, |ui| {
+            ui.menu_button("Archivo", |ui| self.menu_archivo(ui));
+            ui.menu_button("Edición", |ui| self.menu_edicion(ui, acciones));
+            ui.menu_button("Precios", |ui| self.menu_precios(ui));
+            ui.menu_button("IA", |ui| self.menu_ia(ui));
+            ui.menu_button("Ver", |ui| {
+                let oscuro = ui.visuals().dark_mode;
+                if ui
+                    .button(if oscuro { "☀ Modo claro" } else { "🌙 Modo oscuro" })
+                    .clicked()
+                {
+                    ui.close();
+                    self.cambiar_tema(ui.ctx(), !oscuro);
+                }
+                if ui
+                    .add_enabled(self.informe.is_some(), egui::Button::new("Informe de importación"))
+                    .clicked()
+                {
+                    ui.close();
+                    self.ver_informe = true;
+                }
+            });
+            ui.menu_button("Ayuda", |ui| {
+                if ui.button(format!("Info (versión {VERSION})")).clicked() {
+                    ui.close();
+                    self.ver_acerca = true;
+                }
+                ui.hyperlink_to("Novedades", "https://github.com/juancar75/presupuestos-bc3/releases");
+            });
+            ui.separator();
+            // Uso diario
             let des = self.historial.deshacer.last().map(|(_, q)| q.clone());
             let reh = self.historial.rehacer.last().map(|(_, q)| q.clone());
             if ui
-                .add_enabled(des.is_some(), egui::Button::new("Deshacer"))
+                .add_enabled(des.is_some(), egui::Button::new("⟲"))
                 .on_hover_text(des.map_or("Nada que deshacer".into(), |q| format!("Deshacer {q} (Ctrl+Z)")))
                 .clicked()
             {
                 self.deshacer();
             }
             if ui
-                .add_enabled(reh.is_some(), egui::Button::new("Rehacer"))
+                .add_enabled(reh.is_some(), egui::Button::new("⟳"))
                 .on_hover_text(reh.map_or("Nada que rehacer".into(), |q| format!("Rehacer {q} (Ctrl+Y)")))
                 .clicked()
             {
                 self.rehacer();
             }
             if ui
-                .button("Info")
-                .on_hover_text(format!("Versión {VERSION} · información del programa"))
-                .clicked()
-            {
-                self.ver_acerca = true;
-            }
-            ui.separator();
-            let oscuro = ui.visuals().dark_mode;
-            if ui
-                .button(if oscuro { "☀ Claro" } else { "🌙 Oscuro" })
-                .on_hover_text("Cambiar entre modo diurno y nocturno")
-                .clicked()
-            {
-                self.cambiar_tema(ui.ctx(), !oscuro);
-            }
-            if ui
-                .button("📄 Ejemplo")
-                .on_hover_text("Cargar el ejemplo sintético de suelo radiante")
-                .clicked()
-            {
-                self.cargar_ejemplo();
-            }
-            if ui.button("Nuevo").on_hover_text("Presupuesto vacío").clicked() {
-                self.nuevo_presupuesto();
-            }
-            if ui.button("📂 Abrir…").clicked() {
-                self.dialogo_abrir();
-            }
-            if ui
-                .button("📥 Importar BC3…")
-                .on_hover_text("Leer un presupuesto FIEBDC-3 (p. ej. exportado de Presto)")
-                .clicked()
-            {
-                self.dialogo_importar();
-            }
-            ui.menu_button("📋 Ciego", |ui| {
-                if ui
-                    .button("Abrir Excel ciego…")
-                    .on_hover_text("Listado «Presupuesto y mediciones» de Presto en Excel, con precios a cero")
-                    .clicked()
-                {
-                    ui.close();
-                    self.dialogo_ciego();
-                }
-                if ui
-                    .button("Traer precios de un BC3…")
-                    .on_hover_text("Base de precios, obra anterior o el mismo ciego valorado en Presto")
-                    .clicked()
-                {
-                    ui.close();
-                    self.traer_precios();
-                }
-                if ui
-                    .button("Devolver Excel valorado…")
-                    .on_hover_text("El mismo Excel del cliente con los precios en la columna PrPres")
-                    .clicked()
-                {
-                    ui.close();
-                    self.devolver_valorado();
-                }
-            });
-            ui.menu_button("📤 Exportar BC3", |ui| {
-                if ui
-                    .button("Presto 8.8 o posterior…")
-                    .on_hover_text("FIEBDC-3/2002 en ANSI, como lo exporta Presto 8.8")
-                    .clicked()
-                {
-                    ui.close();
-                    self.exportar_bc3(None);
-                }
-                if ui
-                    .button("Presto antiguo (códigos de 12 caracteres)…")
-                    .on_hover_text(
-                        "Para versiones que cortan los códigos al importar: los códigos largos se renombran para que no se mezclen conceptos",
-                    )
-                    .clicked()
-                {
-                    ui.close();
-                    self.exportar_bc3(Some(12));
-                }
-            });
-            if ui
-                .button("📊 Excel…")
-                .on_hover_text("Resumen, presupuesto, descompuestos, mediciones, recursos y horas por oficio")
-                .clicked()
-            {
-                self.exportar_excel();
-            }
-            self.boton_propuestas(ui);
-            ui.toggle_value(&mut self.asistente.abierto, "✨ Asistente")
-                .on_hover_text("Conversación con la IA sobre esta obra: encargos, ofertas adjuntas e informes");
-            if ui
-                .button("Tarifas…")
-                .on_hover_text(
-                    "Tarifas de subcontratas: importar de Excel, revisar unidades y usarlas en los descompuestos",
-                )
-                .clicked()
-            {
-                self.abrir_tarifas();
-            }
-            if ui
-                .button("Biblioteca…")
-                .on_hover_text("Base de precios propia: partidas de obras anteriores, tarifas de fabricante por año, descuentos y ofertas")
-                .clicked()
-            {
-                self.ventana_biblioteca = Some(biblioteca::VentanaBiblioteca::abrir());
-            }
-            if ui
-                .button("Bases de precios…")
-                .on_hover_text("Tus BC3 de bases de precios: buscar y copiar mano de obra, materiales o partidas a la obra")
-                .clicked()
-            {
-                self.ventana_bases = Some(bases::VentanaBases::abrir());
-            }
-            if ui
-                .button("Legalización…")
-                .on_hover_text("Coste de tramitación, visitas de la OCA, justificación RITE/RSIF, desplazamientos y tasas, EICI y visado repercutidos")
-                .clicked()
-            {
-                self.ventana_legalizacion = Some(legalizacion::VentanaLegalizacion::abrir(&self.p));
-            }
-            if ui
-                .button("📄 PDF…")
-                .on_hover_text(
-                    "Presupuesto para el cliente: portada con logo, partidas, mediciones, resumen y observaciones",
-                )
-                .clicked()
-            {
-                self.abrir_pdf();
-            }
-            if self.informe.is_some() && ui.button("Informe de importación").clicked() {
-                self.ver_informe = true;
-            }
-            let txt_guardar = if self.fichero.is_some() {
-                "💾 Guardar revisión"
-            } else {
-                "💾 Guardar…"
-            };
-            if ui
-                .add_enabled(self.cambios || self.fichero.is_none(), egui::Button::new(txt_guardar))
-                .on_hover_text("Guarda una revisión nueva (R1, R2…); las anteriores no se modifican")
+                .add_enabled(self.cambios || self.fichero.is_none(), egui::Button::new("💾 Guardar"))
+                .on_hover_text("Guarda una revisión nueva (R1, R2…); las anteriores no se modifican (Ctrl+S)")
                 .clicked()
             {
                 self.guardar(false);
             }
-            if ui.button("Guardar como…").clicked() {
-                self.guardar(true);
-            }
+            ui.toggle_value(&mut self.asistente.abierto, "✨ Asistente")
+                .on_hover_text("Conversación con la IA sobre esta obra: encargos, ofertas adjuntas e informes");
+            self.boton_propuestas(ui);
             ui.separator();
             if !self.revisiones.is_empty() {
                 let mut elegida = self.revision_actual;
@@ -1430,6 +1326,260 @@ impl Aplicacion {
         });
     }
 
+    fn menu_archivo(&mut self, ui: &mut Ui) {
+        let boton = |ui: &mut Ui, texto: &str, atajo: &str| ui.add(egui::Button::new(texto).shortcut_text(atajo));
+        if boton(ui, "Nuevo", "Ctrl+N")
+            .on_hover_text("Presupuesto vacío")
+            .clicked()
+        {
+            ui.close();
+            self.nuevo_presupuesto();
+        }
+        if boton(ui, "📂 Abrir…", "Ctrl+O").clicked() {
+            ui.close();
+            self.dialogo_abrir();
+        }
+        let txt_guardar = if self.fichero.is_some() {
+            "💾 Guardar revisión"
+        } else {
+            "💾 Guardar…"
+        };
+        if ui
+            .add_enabled(
+                self.cambios || self.fichero.is_none(),
+                egui::Button::new(txt_guardar).shortcut_text("Ctrl+S"),
+            )
+            .clicked()
+        {
+            ui.close();
+            self.guardar(false);
+        }
+        if boton(ui, "Guardar como…", "Ctrl+Mayús+S").clicked() {
+            ui.close();
+            self.guardar(true);
+        }
+        ui.separator();
+        ui.menu_button("📥 Importar", |ui| {
+            if ui
+                .button("BC3…")
+                .on_hover_text("Leer un presupuesto FIEBDC-3 (p. ej. exportado de Presto)")
+                .clicked()
+            {
+                ui.close();
+                self.dialogo_importar();
+            }
+            ui.separator();
+            if ui
+                .button("Excel ciego…")
+                .on_hover_text("Listado «Presupuesto y mediciones» de Presto en Excel, con precios a cero")
+                .clicked()
+            {
+                ui.close();
+                self.dialogo_ciego();
+            }
+            if ui
+                .button("Traer precios de un BC3…")
+                .on_hover_text("Base de precios, obra anterior o el mismo ciego valorado en Presto")
+                .clicked()
+            {
+                ui.close();
+                self.traer_precios();
+            }
+        });
+        ui.menu_button("📤 Exportar", |ui| {
+            if ui
+                .button("BC3 · Presto 8.8 o posterior…")
+                .on_hover_text("FIEBDC-3/2002 en ANSI, como lo exporta Presto 8.8")
+                .clicked()
+            {
+                ui.close();
+                self.exportar_bc3(None);
+            }
+            if ui
+                .button("BC3 · Presto antiguo (códigos de 12 caracteres)…")
+                .on_hover_text(
+                    "Para versiones que cortan los códigos al importar: los códigos largos se renombran para que no se mezclen conceptos",
+                )
+                .clicked()
+            {
+                ui.close();
+                self.exportar_bc3(Some(12));
+            }
+            ui.separator();
+            if ui
+                .button("📊 Excel…")
+                .on_hover_text("Resumen, presupuesto, descompuestos, mediciones, recursos y horas por oficio")
+                .clicked()
+            {
+                ui.close();
+                self.exportar_excel();
+            }
+            if ui
+                .button("📄 PDF para el cliente…")
+                .on_hover_text("Portada con logo, partidas, mediciones, resumen y observaciones")
+                .clicked()
+            {
+                ui.close();
+                self.abrir_pdf();
+            }
+            if ui
+                .button("Excel ciego valorado…")
+                .on_hover_text("El mismo Excel del cliente con los precios en la columna PrPres")
+                .clicked()
+            {
+                ui.close();
+                self.devolver_valorado();
+            }
+        });
+        ui.separator();
+        if ui
+            .button("📄 Abrir ejemplo")
+            .on_hover_text("Ejemplo sintético de suelo radiante")
+            .clicked()
+        {
+            ui.close();
+            self.cargar_ejemplo();
+        }
+        ui.separator();
+        if ui.button("Salir").clicked() {
+            ui.close();
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    fn menu_edicion(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+        let des = self.historial.deshacer.last().map(|(_, q)| q.clone());
+        let reh = self.historial.rehacer.last().map(|(_, q)| q.clone());
+        if ui
+            .add_enabled(
+                des.is_some(),
+                egui::Button::new(des.map_or("Deshacer".into(), |q| format!("Deshacer {q}"))).shortcut_text("Ctrl+Z"),
+            )
+            .clicked()
+        {
+            ui.close();
+            self.deshacer();
+        }
+        if ui
+            .add_enabled(
+                reh.is_some(),
+                egui::Button::new(reh.map_or("Rehacer".into(), |q| format!("Rehacer {q}"))).shortcut_text("Ctrl+Y"),
+            )
+            .clicked()
+        {
+            ui.close();
+            self.rehacer();
+        }
+        ui.separator();
+        let sel = self.sel.clone();
+        let es_partida = sel.as_ref().is_some_and(|(_, h)| {
+            self.p
+                .conceptos
+                .get(h)
+                .is_some_and(|c| c.naturaleza == Naturaleza::Partida)
+        });
+        let pista = |ui: egui::Response| {
+            ui.on_disabled_hover_text("Elija antes una partida en el árbol (también con clic derecho en el árbol)")
+        };
+        if pista(ui.add_enabled(es_partida, egui::Button::new("Cortar partida"))).clicked()
+            && let Some((p, h)) = &sel
+        {
+            ui.close();
+            acciones.push(Accion::Portapapeles(Some((p.clone(), h.clone(), true))));
+        }
+        if pista(ui.add_enabled(es_partida, egui::Button::new("Copiar partida"))).clicked()
+            && let Some((p, h)) = &sel
+        {
+            ui.close();
+            acciones.push(Accion::Portapapeles(Some((p.clone(), h.clone(), false))));
+        }
+        let destino = sel.as_ref().map(|(p, _)| p.clone());
+        let texto_pegar = match (&self.portapapeles, &destino) {
+            (Some((_, h, _)), Some(d)) => format!("Pegar {h} en {d}"),
+            _ => "Pegar".into(),
+        };
+        if ui
+            .add_enabled(
+                self.portapapeles.is_some() && destino.is_some(),
+                egui::Button::new(texto_pegar),
+            )
+            .on_hover_text("En el capítulo de la partida elegida; para otro sitio, clic derecho en el capítulo")
+            .clicked()
+            && let (Some((o, h, cortar)), Some(d)) = (self.portapapeles.clone(), destino)
+        {
+            ui.close();
+            acciones.push(if cortar {
+                Accion::Trasladar(o, h, d, None)
+            } else {
+                Accion::Copiar(o, h, d)
+            });
+        }
+        ui.separator();
+        if ui
+            .add(egui::Button::new("🔍 Buscar partida").shortcut_text("Ctrl+F"))
+            .clicked()
+        {
+            ui.close();
+            self.enfocar_buscar = true;
+        }
+    }
+
+    fn menu_precios(&mut self, ui: &mut Ui) {
+        if ui
+            .button("Tarifas de subcontratas…")
+            .on_hover_text("Importar de Excel, revisar unidades y usarlas en los descompuestos")
+            .clicked()
+        {
+            ui.close();
+            self.abrir_tarifas();
+        }
+        if ui
+            .button("Biblioteca…")
+            .on_hover_text("Partidas de obras anteriores, tarifas de fabricante por año, descuentos y ofertas")
+            .clicked()
+        {
+            ui.close();
+            self.ventana_biblioteca = Some(biblioteca::VentanaBiblioteca::abrir());
+        }
+        if ui
+            .button("Bases de precios…")
+            .on_hover_text("Tus BC3 de bases de precios: buscar y copiar mano de obra, materiales o partidas")
+            .clicked()
+        {
+            ui.close();
+            self.ventana_bases = Some(bases::VentanaBases::abrir());
+        }
+        if ui
+            .button("Legalización…")
+            .on_hover_text(
+                "Tramitación, visitas de la OCA, justificación RITE/RSIF, desplazamientos, tasas, EICI y visado",
+            )
+            .clicked()
+        {
+            ui.close();
+            self.ventana_legalizacion = Some(legalizacion::VentanaLegalizacion::abrir(&self.p));
+        }
+    }
+
+    fn menu_ia(&mut self, ui: &mut Ui) {
+        if ui
+            .button(if self.asistente.abierto {
+                "Cerrar asistente"
+            } else {
+                "✨ Asistente"
+            })
+            .clicked()
+        {
+            ui.close();
+            self.asistente.abierto = !self.asistente.abierto;
+        }
+        let n = self.propuestas_pendientes().len();
+        if ui.button(format!("Propuestas IA ({n} pendientes)")).clicked() {
+            ui.close();
+            self.enlace.ventana = true;
+        }
+    }
+
     fn arbol(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
         let raiz = self.p.raiz.clone();
         // Clic derecho en el nombre de la obra o en el espacio libre del
@@ -1458,11 +1608,14 @@ impl Aplicacion {
                 .weak()
                 .small(),
         );
-        ui.add(
+        let campo = ui.add(
             egui::TextEdit::singleline(&mut self.buscar)
-                .hint_text("Buscar partida por código o texto…")
+                .hint_text("Buscar partida por código o texto… (Ctrl+F)")
                 .desired_width(f32::INFINITY),
         );
+        if std::mem::take(&mut self.enfocar_buscar) {
+            campo.request_focus();
+        }
         let buscar = self.buscar.trim().to_lowercase();
         egui::ScrollArea::vertical().show(ui, |ui| {
             if buscar.is_empty() {
@@ -2981,6 +3134,33 @@ impl eframe::App for Aplicacion {
                 self.rehacer();
             }
         }
+        // Atajos de Archivo y Ctrl+F (buscar)
+        let (nuevo, abrir, guardar_como, guardar, buscar) = ui.ctx().input_mut(|i| {
+            let c = egui::Modifiers::CTRL;
+            let cs = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+            let gc = i.consume_key(cs, egui::Key::S);
+            (
+                i.consume_key(c, egui::Key::N),
+                i.consume_key(c, egui::Key::O),
+                gc,
+                i.consume_key(c, egui::Key::S),
+                i.consume_key(c, egui::Key::F),
+            )
+        });
+        if nuevo {
+            self.nuevo_presupuesto();
+        }
+        if abrir {
+            self.dialogo_abrir();
+        }
+        if guardar_como {
+            self.guardar(true);
+        } else if guardar && (self.cambios || self.fichero.is_none()) {
+            self.guardar(false);
+        }
+        if buscar {
+            self.enfocar_buscar = true;
+        }
         // Ctrl+↓ / Ctrl+↑: partida siguiente / anterior; Ctrl+Mayús+↓: siguiente sin precio
         let (sin_precio, bajar, subir) = ui.ctx().input_mut(|i| {
             let sin_precio = i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::ArrowDown);
@@ -3000,7 +3180,7 @@ impl eframe::App for Aplicacion {
         }
         egui::Panel::top("barra").show(ui, |ui| {
             ui.add_space(4.0);
-            self.barra_superior(ui);
+            self.barra_superior(ui, &mut acciones);
             ui.add_space(2.0);
             if std::mem::take(&mut self.enlace.reaplicar) {
                 acciones.push(Accion::ReaplicarAceptadas);
@@ -4324,5 +4504,33 @@ mod pruebas {
         assert_eq!(app.p.precio("P.REJ").unwrap(), dec!(72.50));
         assert_eq!(app.p.pem().unwrap(), pem);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn la_barra_de_menus_usa_simbolos_que_existen_en_la_fuente() {
+        // Las flechas de deshacer/rehacer deben estar en la fuente de egui
+        // (↩ y ↪ no están y saldrían como un cuadro).
+        let ctx = Context::default();
+        let mut out = ctx.run_ui(RawInput::default(), |_| {});
+        out.textures_delta.clear();
+        for c in ['⟲', '⟳'] {
+            assert!(
+                ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::default(), c)),
+                "falta el símbolo {c}"
+            );
+        }
+    }
+
+    #[test]
+    fn la_barra_de_menus_se_dibuja() {
+        let mut app = Aplicacion::sin_ventana();
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut acc = Vec::new();
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                egui::Panel::top("barra").show(ui, |ui| app.barra_superior(ui, &mut acc));
+            });
+            out.textures_delta.clear();
+        }
     }
 }
