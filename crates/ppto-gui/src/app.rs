@@ -4201,6 +4201,22 @@ mod pruebas {
     }
 
     #[test]
+    fn panel_del_asistente_con_varias_ias() {
+        let mut app = Aplicacion::sin_ventana();
+        app.asistente.abierto = true;
+        let a = app.asistente.con_dos_conexiones();
+        assert_eq!(a.conexion, "ChatGPT");
+        assert!(a.usar_conexion("Claude"));
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| app.panel_asistente(ui));
+            out.textures_delta.clear();
+        }
+        let a = app.asistente.con_dos_conexiones();
+        assert_eq!(a.conexiones.len(), 2);
+    }
+
+    #[test]
     fn ventana_de_biblioteca_guarda_la_obra() {
         let dir = std::env::temp_dir().join(format!("gui-bib-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

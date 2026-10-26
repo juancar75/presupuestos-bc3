@@ -5,6 +5,15 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.25] - 2026-10-26
+
+### Añadido
+- Asistente: **varias conexiones de IA guardadas** (p. ej. «Claude», «ChatGPT
+  trabajo», «Ollama local»), cada una con su servicio, clave, modelo y precios.
+  Se elige con el desplegable **IA:** del panel en modo directo; en Ajustes se
+  guardan con «Guardar como conexión» y se borran con «Borrar». Los ajustes de
+  versiones anteriores pasan a ser la primera conexión.
+
 ## [0.1.0-alpha.24] - 2026-10-26
 
 ### Añadido
