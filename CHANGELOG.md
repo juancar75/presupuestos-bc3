@@ -7,6 +7,9 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [0.1.0-alpha.27] - 2026-10-26
 
+### Añadido
+- **Archivo → 📄 PDF / Imprimir…** a primer nivel, con el atajo **Ctrl+P**.
+
 ### Corregido
 - El resumen y la unidad de un recurso (mano de obra, material…) se pueden
   escribir y cambiar después de crearlo, en la tabla del descompuesto y en la
