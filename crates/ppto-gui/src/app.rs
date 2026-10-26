@@ -1359,6 +1359,15 @@ impl Aplicacion {
             self.guardar(true);
         }
         ui.separator();
+        if boton(ui, "📄 PDF / Imprimir…", "Ctrl+P")
+            .on_hover_text(
+                "Presupuesto para el cliente: portada con logo, partidas, mediciones, resumen y observaciones",
+            )
+            .clicked()
+        {
+            ui.close();
+            self.abrir_pdf();
+        }
         ui.menu_button("📥 Importar", |ui| {
             if ui
                 .button("BC3…")
@@ -3183,7 +3192,7 @@ impl eframe::App for Aplicacion {
             }
         }
         // Atajos de Archivo y Ctrl+F (buscar)
-        let (nuevo, abrir, guardar_como, guardar, buscar) = ui.ctx().input_mut(|i| {
+        let (nuevo, abrir, guardar_como, guardar, buscar, pdf) = ui.ctx().input_mut(|i| {
             let c = egui::Modifiers::CTRL;
             let cs = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
             let gc = i.consume_key(cs, egui::Key::S);
@@ -3193,8 +3202,12 @@ impl eframe::App for Aplicacion {
                 gc,
                 i.consume_key(c, egui::Key::S),
                 i.consume_key(c, egui::Key::F),
+                i.consume_key(c, egui::Key::P),
             )
         });
+        if pdf {
+            self.abrir_pdf();
+        }
         if nuevo {
             self.nuevo_presupuesto();
         }
