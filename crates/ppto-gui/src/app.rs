@@ -1431,20 +1431,33 @@ impl Aplicacion {
     }
 
     fn arbol(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
-        ui.heading(&self.p.conceptos[&self.p.raiz].resumen);
-        ui.separator();
-        ui.horizontal(|ui| {
-            if ui.button("+ Capítulo").clicked() {
-                acciones.push(Accion::Alta(TipoAlta::Capitulo {
-                    padre: self.p.raiz.clone(),
-                }));
+        let raiz = self.p.raiz.clone();
+        // Clic derecho en el nombre de la obra o en el espacio libre del
+        // árbol: nuevo capítulo (y pegar en el nivel principal).
+        let menu_raiz = |ui: &mut Ui, acciones: &mut Vec<Accion>| {
+            if ui.button("Nuevo capítulo").clicked() {
+                acciones.push(Accion::Alta(TipoAlta::Capitulo { padre: raiz.clone() }));
             }
-            ui.label(
-                RichText::new("Arrastre partidas para moverlas · clic derecho: cortar, copiar, pegar…")
-                    .weak()
-                    .small(),
-            );
-        });
+            if let Some((o, h, cortar)) = &self.portapapeles
+                && ui.button(format!("Pegar aquí {h}")).clicked()
+            {
+                acciones.push(if *cortar {
+                    Accion::Trasladar(o.clone(), h.clone(), raiz.clone(), None)
+                } else {
+                    Accion::Copiar(o.clone(), h.clone(), raiz.clone())
+                });
+            }
+        };
+        let titulo = ui.add(
+            egui::Label::new(RichText::new(&self.p.conceptos[&raiz].resumen).heading()).sense(egui::Sense::click()),
+        );
+        titulo.context_menu(|ui| menu_raiz(ui, acciones));
+        ui.separator();
+        ui.label(
+            RichText::new("Clic derecho: nuevo capítulo, partida, cortar, copiar, pegar… · arrastre para mover")
+                .weak()
+                .small(),
+        );
         ui.add(
             egui::TextEdit::singleline(&mut self.buscar)
                 .hint_text("Buscar partida por código o texto…")
@@ -1453,7 +1466,27 @@ impl Aplicacion {
         let buscar = self.buscar.trim().to_lowercase();
         egui::ScrollArea::vertical().show(ui, |ui| {
             if buscar.is_empty() {
-                self.rama(ui, &self.p.raiz, acciones);
+                self.rama(ui, &raiz, acciones);
+                if self.calc.lineas.get(&raiz).is_none_or(Vec::is_empty) {
+                    ui.label(
+                        RichText::new("(presupuesto vacío: clic derecho aquí → Nuevo capítulo)")
+                            .weak()
+                            .small(),
+                    );
+                }
+                // Espacio libre debajo del árbol: menú y soltar en el nivel principal
+                let alto = ui.available_height().max(60.0);
+                let libre = ui.allocate_response(egui::vec2(ui.available_width(), alto), egui::Sense::click());
+                libre.context_menu(|ui| menu_raiz(ui, acciones));
+                if let Some(a) = libre.dnd_release_payload::<Arrastre>() {
+                    acciones.push(Accion::Trasladar(a.origen.clone(), a.hijo.clone(), raiz.clone(), None));
+                } else if libre.dnd_hover_payload::<Arrastre>().is_some() {
+                    ui.painter().hline(
+                        libre.rect.x_range(),
+                        libre.rect.top() + 2.0,
+                        egui::Stroke::new(2.0, Color32::from_rgb(90, 150, 230)),
+                    );
+                }
             } else {
                 self.resultados(ui, &buscar, acciones);
             }
@@ -3654,6 +3687,18 @@ mod pruebas {
             break;
         }
         assert!(hecho, "no se encontró ningún capítulo");
+    }
+
+    #[test]
+    fn soltar_en_el_espacio_libre_lleva_al_nivel_principal() {
+        // El subcapítulo C01.01 arrastrado al hueco de debajo del árbol pasa a la raíz
+        let raiz = Aplicacion::sin_ventana().p.raiz;
+        let llega = (40..400).step_by(4).any(|y| {
+            arrastrar_a_subcapitulo(y as f32, 760.0)
+                .iter()
+                .any(|a| matches!(a, Accion::Trasladar(o, h, d, None) if o == "C01" && h == "C01.01" && *d == raiz))
+        });
+        assert!(llega, "no se puede llevar un subcapítulo al nivel principal");
     }
 
     #[test]

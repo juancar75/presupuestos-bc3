@@ -5,6 +5,23 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.24] - 2026-10-26
+
+### Añadido
+- Asistente en modo directo: además de Claude (Anthropic), **ChatGPT (OpenAI)**
+  y cualquier servicio **compatible con OpenAI** (Gemini, Mistral, Ollama o
+  LM Studio en el propio equipo). Mismas herramientas y mismas reglas: la IA
+  solo hace propuestas. Al pegar la clave se elige el servicio solo
+  (`sk-ant-…` Claude, `sk-…` ChatGPT) y avisa si no cuadra.
+- Árbol: clic derecho en el nombre de la obra o en el espacio libre →
+  «Nuevo capítulo» (y «Pegar aquí» en el nivel principal). Soltar un
+  subcapítulo en el espacio libre lo lleva al nivel principal.
+
+### Cambiado
+- Se quita el botón «+ Capítulo»: todo se hace con el clic derecho.
+- Mensaje claro cuando la clave de la API es de otro servicio (antes solo
+  «invalid x-api-key»).
+
 ## [0.1.0-alpha.23] - 2026-10-26
 
 ### Corregido
