@@ -5,6 +5,20 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.28] - 2026-10-27
+
+### Añadido
+- **Vistas de la obra** (pestañas, menú **Ver** y atajos **Ctrl+1 … Ctrl+6**):
+  - **Presupuesto**: todo el presupuesto en una tabla con capítulos plegables
+    (Código · Ud · Resumen · Cantidad · Precio · Importe) y el PEM al pie. La
+    cantidad y el precio directo se editan en la celda; los precios a 0 en
+    rojo; clic en el código abre la ficha de la partida.
+  - **Precios y márgenes**: todas las partidas con coste, sobrecoste, venta,
+    margen sobre venta e importe; ordenable por columnas, búsqueda y filtros
+    «solo sin precio» y «margen por debajo de x %». El sobrecoste de cada
+    partida se cambia en la propia tabla, con los totales y el margen global
+    arriba.
+
 ## [0.1.0-alpha.27] - 2026-10-26
 
 ### Añadido
