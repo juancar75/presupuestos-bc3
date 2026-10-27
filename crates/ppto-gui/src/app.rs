@@ -14,6 +14,7 @@ mod propuestas;
 mod ratio;
 mod tarifas;
 mod tema;
+mod vistas;
 
 use crate::celdas::Edicion;
 use alta::{Alta, TipoAlta};
@@ -35,6 +36,8 @@ const ANCHO_NUM: f32 = 78.0;
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum Pestana {
     Partida,
+    Presupuesto,
+    Precios,
     Recursos,
     Subcontratar,
     Resumen,
@@ -197,6 +200,9 @@ pub struct Aplicacion {
     titulo: String,
     sel: Option<(String, String)>,
     pestana: Pestana,
+    /// Capítulos plegados en la vista «Presupuesto».
+    plegados: std::collections::HashSet<String>,
+    filtro_precios: vistas::FiltroPrecios,
     edicion: Edicion,
     avisos: Vec<String>,
     mensaje: Option<(String, bool)>,
@@ -324,6 +330,8 @@ impl Aplicacion {
             Ok("recursos") => Pestana::Recursos,
             Ok("subcontratar") => Pestana::Subcontratar,
             Ok("resumen") => Pestana::Resumen,
+            Ok("presupuesto") => Pestana::Presupuesto,
+            Ok("precios") => Pestana::Precios,
             _ => Pestana::Partida,
         };
         if let Some(ruta) = inicial {
@@ -342,6 +350,8 @@ impl Aplicacion {
         let mut app = Self {
             p: suelo_radiante(),
             calc: Calculo::default(),
+            plegados: Default::default(),
+            filtro_precios: Default::default(),
             fichero: None,
             presupuesto_id: None,
             revisiones: Vec::new(),
@@ -1238,6 +1248,16 @@ impl Aplicacion {
             ui.menu_button("Precios", |ui| self.menu_precios(ui));
             ui.menu_button("IA", |ui| self.menu_ia(ui));
             ui.menu_button("Ver", |ui| {
+                for (n, (p, t, _)) in vistas::VISTAS.iter().enumerate() {
+                    if ui
+                        .add(egui::Button::selectable(self.pestana == *p, *t).shortcut_text(format!("Ctrl+{}", n + 1)))
+                        .clicked()
+                    {
+                        ui.close();
+                        self.pestana = *p;
+                    }
+                }
+                ui.separator();
                 let oscuro = ui.visuals().dark_mode;
                 if ui
                     .button(if oscuro { "☀ Modo claro" } else { "🌙 Modo oscuro" })
@@ -3208,6 +3228,15 @@ impl eframe::App for Aplicacion {
         if pdf {
             self.abrir_pdf();
         }
+        // Ctrl+1…Ctrl+6: vistas
+        if let Some(p) = ui.ctx().input_mut(|i| {
+            vistas::VISTAS
+                .iter()
+                .find(|(_, _, k)| i.consume_key(egui::Modifiers::CTRL, *k))
+                .map(|(p, _, _)| *p)
+        }) {
+            self.pestana = p;
+        }
         if nuevo {
             self.nuevo_presupuesto();
         }
@@ -3271,18 +3300,17 @@ impl eframe::App for Aplicacion {
             });
         egui::CentralPanel::default_margins().show(ui, |ui| {
             ui.horizontal(|ui| {
-                for (p, t) in [
-                    (Pestana::Partida, "Partida"),
-                    (Pestana::Recursos, "Recursos"),
-                    (Pestana::Subcontratar, "Subcontratar"),
-                    (Pestana::Resumen, "Resumen y venta"),
-                ] {
-                    ui.selectable_value(&mut self.pestana, p, RichText::new(t).size(15.0));
+                for (n, (p, t, _)) in vistas::VISTAS.iter().enumerate() {
+                    let t = if *p == Pestana::Partida { "Partida" } else { t };
+                    ui.selectable_value(&mut self.pestana, *p, RichText::new(t).size(15.0))
+                        .on_hover_text(format!("Ctrl+{}", n + 1));
                 }
             });
             ui.separator();
             match self.pestana {
                 Pestana::Partida => self.pestana_partida(ui, &mut acciones),
+                Pestana::Presupuesto => self.pestana_presupuesto(ui, &mut acciones),
+                Pestana::Precios => self.pestana_precios(ui, &mut acciones),
                 Pestana::Recursos => self.pestana_recursos(ui, &mut acciones),
                 Pestana::Subcontratar => self.pestana_subcontratar(ui, &mut acciones),
                 Pestana::Resumen => self.pestana_resumen(ui, &mut acciones),
@@ -4574,7 +4602,7 @@ mod pruebas {
         let ctx = Context::default();
         let mut out = ctx.run_ui(RawInput::default(), |_| {});
         out.textures_delta.clear();
-        for c in ['⟲', '⟳'] {
+        for c in ['⟲', '⟳', '⏵', '⏷', '⏶'] {
             assert!(
                 ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::default(), c)),
                 "falta el símbolo {c}"
@@ -4619,6 +4647,56 @@ mod pruebas {
         ]);
         assert_eq!(app.p.conceptos["R0001"].resumen, "Oficial 1ª calefactor");
         assert_eq!(app.p.conceptos["R0001"].unidad, "h");
+    }
+
+    #[test]
+    fn vistas_presupuesto_y_precios() {
+        let mut app = Aplicacion::sin_ventana();
+        // Precios y márgenes: SR.M2 cuesta 29,89 y se vende a 35,57 (GG 13 % + BI 6 %);
+        // margen sobre venta (35,57 − 29,89) / 35,57 = 15,97 %
+        let f = app.filas_precios();
+        assert_eq!(f.len(), 2);
+        let m2 = f.iter().find(|x| x.codigo == "SR.M2").unwrap();
+        assert_eq!(
+            (m2.coste, m2.venta, m2.margen),
+            (dec!(29.89), dec!(35.57), Some(dec!(15.97)))
+        );
+        // 210 m² × 35,57 = 7.469,70
+        assert_eq!(m2.importe_venta, dec!(7469.70));
+        // Ordenar por importe (de mayor a menor) y filtrar por texto
+        app.filtro_precios.orden = vistas::Orden::Importe;
+        app.filtro_precios.descendente = true;
+        assert_eq!(app.filas_precios_filtradas()[0].codigo, "SR.M2");
+        app.filtro_precios.texto = "colector".into();
+        let v = app.filas_precios_filtradas();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].codigo, "SR.COL8");
+        app.filtro_precios.texto.clear();
+        // Margen por debajo del 10 %: ninguna (las dos rondan el 16 %)
+        app.filtro_precios.margen_bajo = Some(dec!(10));
+        assert!(app.filas_precios_filtradas().is_empty());
+        app.filtro_precios.margen_bajo = None;
+        // Sobrecoste propio del 30 % en SR.COL8 desde la vista: 242,75 × 1,30 = 315,58
+        app.aplicar(vec![Accion::Margen("SR.COL8".into(), Some(dec!(30)))]);
+        let c = app.filas_precios().into_iter().find(|x| x.codigo == "SR.COL8").unwrap();
+        assert_eq!(c.venta, dec!(315.58));
+        // Las dos vistas se dibujan; plegar un capítulo en «Presupuesto»
+        app.plegados.insert("C01".into());
+        let ctx = Context::default();
+        for p in [Pestana::Presupuesto, Pestana::Precios] {
+            app.pestana = p;
+            let mut acc = Vec::new();
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    if p == Pestana::Presupuesto {
+                        app.pestana_presupuesto(ui, &mut acc);
+                    } else {
+                        app.pestana_precios(ui, &mut acc);
+                    }
+                });
+            });
+            out.textures_delta.clear();
+        }
     }
 
     #[test]
