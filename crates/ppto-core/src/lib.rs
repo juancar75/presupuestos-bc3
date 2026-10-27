@@ -17,6 +17,7 @@
 //!   nunca modifica el presupuesto de origen.
 
 pub mod codigos;
+pub mod comparar;
 pub mod concepto;
 pub mod decimales;
 pub mod descuentos;
@@ -27,6 +28,7 @@ pub mod error;
 pub mod explosion;
 pub mod formato;
 pub mod medicion;
+pub mod plantillas;
 pub mod presupuesto;
 pub mod propuesta;
 pub mod ratio;

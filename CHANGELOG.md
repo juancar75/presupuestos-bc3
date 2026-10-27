@@ -5,6 +5,18 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.30] - 2026-10-27
+
+### Añadido
+- **Archivo → Comparar con…** otra revisión (R1, R2…) o un fichero BC3 (p. ej.
+  la versión del cliente): partidas nuevas, quitadas y cambiadas, cantidades y
+  precios antes y ahora, diferencia de cada partida y del PEM (en € y %).
+- **Archivo → Nuevo desde plantilla**: Climatización (RITE), Ventilación de
+  garaje (CTE, UNE 100166) y Protección contra incendios (RIPCI). Cada una con
+  capítulo 00 de observaciones (criterio de valoración, exclusiones,
+  condiciones), capítulos y partidas habituales con texto descriptivo (sin
+  precio), legalización y capítulo 99 de contradictorios.
+
 ## [0.1.0-alpha.29] - 2026-10-27
 
 ### Añadido

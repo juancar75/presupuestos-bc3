@@ -7,6 +7,7 @@ mod asistente;
 mod bases;
 mod biblioteca;
 mod ciego;
+mod comparar;
 mod dificultad;
 mod legalizacion;
 mod pdf;
@@ -233,6 +234,7 @@ pub struct Aplicacion {
     ventana_tarifas: Option<tarifas::VentanaTarifas>,
     ventana_biblioteca: Option<biblioteca::VentanaBiblioteca>,
     ventana_bases: Option<bases::VentanaBases>,
+    ventana_comparar: Option<comparar::VentanaComparar>,
     ventana_legalizacion: Option<legalizacion::VentanaLegalizacion>,
     dificultad: dificultad::FormDificultad,
     /// Cambios que se anotan en la auditoría al guardar la revisión.
@@ -388,6 +390,7 @@ impl Aplicacion {
             ventana_tarifas: None,
             ventana_biblioteca: None,
             ventana_bases: None,
+            ventana_comparar: None,
             ventana_legalizacion: None,
             dificultad: dificultad::FormDificultad::default(),
             notas_revision: Vec::new(),
@@ -424,6 +427,22 @@ impl Aplicacion {
         self.info("Ejemplo sintético cargado.");
     }
 
+    /// Presupuesto nuevo con la estructura de una plantilla (sin precios).
+    fn nuevo_desde_plantilla(&mut self, t: ppto_core::plantillas::Plantilla) {
+        match ppto_core::plantillas::crear(t, &format!("Nueva obra — {}", t.nombre())) {
+            Ok(p) => {
+                self.nuevo_presupuesto();
+                self.p = p;
+                self.recalcular();
+                self.info(format!(
+                    "Plantilla «{}» cargada: capítulos, observaciones, exclusiones y legalización. Las partidas están sin precio.",
+                    t.nombre()
+                ));
+            }
+            Err(e) => self.error(format!("No se pudo crear la plantilla: {e}")),
+        }
+    }
+
     fn nuevo_presupuesto(&mut self) {
         self.ciego = None;
         self.historial.limpiar();
@@ -438,7 +457,7 @@ impl Aplicacion {
         self.avisos.clear();
         self.informe = None;
         self.recalcular();
-        self.info("Presupuesto vacío: cree un capítulo con «+ Capítulo» en el árbol.");
+        self.info("Presupuesto vacío: clic derecho en el árbol → Nuevo capítulo (o Archivo → Nuevo desde plantilla).");
     }
 
     /// Partidas en el orden del presupuesto (capítulo, partida), recorriendo
@@ -1359,6 +1378,14 @@ impl Aplicacion {
             ui.close();
             self.nuevo_presupuesto();
         }
+        ui.menu_button("Nuevo desde plantilla", |ui| {
+            for t in ppto_core::plantillas::Plantilla::TODAS {
+                if ui.button(t.nombre()).clicked() {
+                    ui.close();
+                    self.nuevo_desde_plantilla(t);
+                }
+            }
+        });
         if boton(ui, "📂 Abrir…", "Ctrl+O").clicked() {
             ui.close();
             self.dialogo_abrir();
@@ -1392,6 +1419,32 @@ impl Aplicacion {
             ui.close();
             self.abrir_pdf();
         }
+        ui.menu_button("Comparar con…", |ui| {
+            let otras: Vec<(i64, String)> = self
+                .revisiones
+                .iter()
+                .filter(|r| Some(r.id) != self.revision_actual)
+                .map(|r| (r.id, r.etiqueta.clone()))
+                .collect();
+            if otras.is_empty() {
+                ui.label(RichText::new("(no hay otras revisiones guardadas)").weak());
+            }
+            for (id, et) in otras {
+                if ui.button(format!("Revisión {et}")).clicked() {
+                    ui.close();
+                    self.comparar_con_revision(id);
+                }
+            }
+            ui.separator();
+            if ui
+                .button("Un fichero BC3…")
+                .on_hover_text("Por ejemplo, la versión que te devuelve el cliente o la de Presto")
+                .clicked()
+            {
+                ui.close();
+                self.comparar_con_bc3();
+            }
+        });
         ui.menu_button("📥 Importar", |ui| {
             if ui
                 .button("BC3…")
@@ -3330,6 +3383,7 @@ impl eframe::App for Aplicacion {
         self.ventana_tarifas(&ctx);
         self.ventana_biblioteca(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
+        self.ventana_comparar(&ctx, &mut acciones);
         self.ventana_legalizacion(&ctx);
         self.ventana_propuestas(&ctx, &mut acciones);
         if !acciones.is_empty() {
@@ -4753,6 +4807,34 @@ mod pruebas {
             egui::CentralPanel::default().show(ui, |ui| app.pestana_recursos(ui, &mut acc));
         });
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn comparar_y_plantillas_en_la_interfaz() {
+        // Comparar la obra (con 4 colectores) con la versión original: +242,75 €
+        let mut app = Aplicacion::sin_ventana();
+        let original = app.p.clone();
+        app.aplicar(vec![Accion::Rendimiento("C01".into(), "SR.COL8".into(), dec!(4))]);
+        app.abrir_comparacion(&original, "revisión R1".into());
+        let v = app.ventana_comparar.as_ref().unwrap();
+        assert_eq!(v.resultado.diferencia(), dec!(242.75));
+        assert_eq!(v.resultado.cambios.len(), 1);
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut acc = Vec::new();
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let c = ui.ctx().clone();
+                app.ventana_comparar(&c, &mut acc);
+            });
+            out.textures_delta.clear();
+        }
+        assert!(app.ventana_comparar.is_some());
+        // Nuevo desde plantilla: PCI con observaciones, legalización y contradictorios, sin precios
+        app.nuevo_desde_plantilla(ppto_core::plantillas::Plantilla::Pci);
+        assert!(app.p.conceptos.contains_key("C00") && app.p.conceptos.contains_key("C99"));
+        assert!(app.p.conceptos.contains_key("P01.02"), "detector óptico");
+        assert_eq!(app.calc.pem, dec!(0));
+        assert!(!app.cambios || app.fichero.is_none());
     }
 
     #[test]
