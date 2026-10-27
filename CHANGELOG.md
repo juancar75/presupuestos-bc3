@@ -5,6 +5,20 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.29] - 2026-10-27
+
+### Añadido
+- Vista **Mediciones** (Ctrl+4): todas las hojas de medición seguidas, con el
+  total de cada partida y búsqueda. Comentario, Uds, Largo, Ancho y Alto se
+  editan en la tabla; las fórmulas y subtotales, en la ficha.
+- Vista **Recursos**: **horas por oficio** (horas, jornadas de 8 h e importe)
+  y **compras por fabricante** (referencias, importe a PVP, neto y descuento
+  medio).
+
+### Cambiado
+- Atajos de vistas: Ctrl+1 ficha, Ctrl+2 presupuesto, Ctrl+3 precios,
+  Ctrl+4 mediciones, Ctrl+5 recursos, Ctrl+6 subcontratar, Ctrl+7 resumen.
+
 ## [0.1.0-alpha.28] - 2026-10-27
 
 ### Añadido

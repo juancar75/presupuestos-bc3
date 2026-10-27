@@ -38,6 +38,7 @@ enum Pestana {
     Partida,
     Presupuesto,
     Precios,
+    Mediciones,
     Recursos,
     Subcontratar,
     Resumen,
@@ -203,6 +204,7 @@ pub struct Aplicacion {
     /// Capítulos plegados en la vista «Presupuesto».
     plegados: std::collections::HashSet<String>,
     filtro_precios: vistas::FiltroPrecios,
+    filtro_mediciones: String,
     edicion: Edicion,
     avisos: Vec<String>,
     mensaje: Option<(String, bool)>,
@@ -332,6 +334,7 @@ impl Aplicacion {
             Ok("resumen") => Pestana::Resumen,
             Ok("presupuesto") => Pestana::Presupuesto,
             Ok("precios") => Pestana::Precios,
+            Ok("mediciones") => Pestana::Mediciones,
             _ => Pestana::Partida,
         };
         if let Some(ruta) = inicial {
@@ -352,6 +355,7 @@ impl Aplicacion {
             calc: Calculo::default(),
             plegados: Default::default(),
             filtro_precios: Default::default(),
+            filtro_mediciones: String::new(),
             fichero: None,
             presupuesto_id: None,
             revisiones: Vec::new(),
@@ -2373,6 +2377,7 @@ impl Aplicacion {
         let e = e.clone();
         let dec = self.p.decimales;
         ui.label("Cantidades totales necesarias para ejecutar el presupuesto. Los precios se pueden editar aquí.");
+        self.resumen_recursos(ui);
         egui::CollapsingHeader::new(RichText::new("Descuentos por fabricante").strong())
             .id_salt("descuentos")
             .default_open(!self.p.fabricantes().is_empty())
@@ -3311,6 +3316,7 @@ impl eframe::App for Aplicacion {
                 Pestana::Partida => self.pestana_partida(ui, &mut acciones),
                 Pestana::Presupuesto => self.pestana_presupuesto(ui, &mut acciones),
                 Pestana::Precios => self.pestana_precios(ui, &mut acciones),
+                Pestana::Mediciones => self.pestana_mediciones(ui, &mut acciones),
                 Pestana::Recursos => self.pestana_recursos(ui, &mut acciones),
                 Pestana::Subcontratar => self.pestana_subcontratar(ui, &mut acciones),
                 Pestana::Resumen => self.pestana_resumen(ui, &mut acciones),
@@ -4697,6 +4703,56 @@ mod pruebas {
             });
             out.textures_delta.clear();
         }
+    }
+
+    #[test]
+    fn vista_de_mediciones() {
+        let mut app = Aplicacion::sin_ventana();
+        let ctx = Context::default();
+        app.pestana = Pestana::Mediciones;
+        for filtro in ["", "planta primera"] {
+            app.filtro_mediciones = filtro.into();
+            let mut acc = Vec::new();
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| app.pestana_mediciones(ui, &mut acc));
+            });
+            out.textures_delta.clear();
+            assert!(acc.is_empty(), "dibujar no cambia nada");
+        }
+        // Lo que hace la celda «Uds» al cambiar Planta baja de 2 a 4 colectores:
+        // 5 ud × 242,75 = 1.213,75 (antes 728,25) → PEM 7.005,15 + 485,50 = 7.490,65
+        let mut m = app.p.mediciones[&("C01".to_owned(), "SR.COL8".to_owned())].clone();
+        m.lineas[0].unidades = Some(dec!(4));
+        app.aplicar(vec![Accion::Medicion("C01".into(), "SR.COL8".into(), m)]);
+        assert_eq!(app.p.pem().unwrap(), dec!(7490.65));
+    }
+
+    #[test]
+    fn recursos_horas_por_oficio_y_por_fabricante() {
+        let mut app = Aplicacion::sin_ventana();
+        // Oficial: 210 m² × 0,25 h + 3 ud × 1,5 h = 57 h; ayudante: 52,5 + 3 = 55,5 h
+        let h = app.horas_por_oficio();
+        let of = h.iter().find(|x| x.0 == "MO.OF1F").unwrap();
+        let ay = h.iter().find(|x| x.0 == "MO.AYUF").unwrap();
+        assert_eq!((of.2, ay.2), (dec!(57.00), dec!(55.50)));
+        // Colector de tarifa: PVP 300 con 40 % → neto 180; 3 ud → 900 a PVP, 540 neto
+        app.p.conceptos.get_mut("MT.COL8").unwrap().tarifa = Some(ppto_core::PrecioTarifa {
+            fabricante: "COLEC".into(),
+            grupo: None,
+            pvp: dec!(300),
+        });
+        app.p.fijar_descuento("COLEC", dec!(40)).unwrap();
+        app.recalcular();
+        let f = app.por_fabricante();
+        assert_eq!(f.len(), 1);
+        assert_eq!((f[0].referencias, f[0].pvp, f[0].neto), (1, dec!(900.00), dec!(540.00)));
+        // La vista se dibuja con los dos resúmenes
+        let ctx = Context::default();
+        let mut acc = Vec::new();
+        let mut out = ctx.run_ui(RawInput::default(), |ui| {
+            egui::CentralPanel::default().show(ui, |ui| app.pestana_recursos(ui, &mut acc));
+        });
+        out.textures_delta.clear();
     }
 
     #[test]
