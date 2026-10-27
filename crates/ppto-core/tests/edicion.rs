@@ -281,3 +281,34 @@ fn traer_precios_de_otra_obra() {
     p.traer_precio(&b2, "OTRA").unwrap();
     assert_eq!(p.precio("OTRA").unwrap(), dec!(55.50));
 }
+
+#[test]
+fn comparar_dos_revisiones() {
+    use ppto_core::comparar::{Estado, comparar};
+    // R1: el ejemplo (PEM 7.005,15). R2: 4 colectores (+242,75), sin SR.M2
+    // (−6.276,90) y una partida nueva P1 de 2 ud × 100,00 = 200,00.
+    let r1 = suelo_radiante();
+    let mut r2 = r1.clone();
+    r2.fijar_rendimiento("C01", "SR.COL8", dec!(4)).unwrap();
+    r2.quitar_linea("C01", "SR.M2").unwrap();
+    r2.nueva_partida("C01", "P1", "ud", "Partida nueva").unwrap();
+    r2.fijar_rendimiento("C01", "P1", dec!(2)).unwrap();
+    r2.fijar_precio("P1", dec!(100)).unwrap();
+    let c = comparar(&r1, &r2).unwrap();
+    assert_eq!(c.pem_antes, dec!(7005.15));
+    // 7.005,15 + 242,75 − 6.276,90 + 200,00 = 1.171,00
+    assert_eq!(c.pem_despues, dec!(1171.00));
+    assert_eq!(c.diferencia(), dec!(-5834.15));
+    assert_eq!(c.variacion_pct(), Some(dec!(-83.28)));
+    let por = |cod: &str| c.cambios.iter().find(|x| x.codigo == cod).unwrap();
+    assert_eq!(por("SR.COL8").estado, Estado::Cambiada);
+    assert_eq!(por("SR.COL8").diferencia(), dec!(242.75));
+    assert_eq!(por("SR.M2").estado, Estado::Quitada);
+    assert_eq!(por("P1").estado, Estado::Nueva);
+    assert_eq!(c.iguales, 0);
+    // La suma de las diferencias de partidas es la diferencia del PEM
+    let suma: rust_decimal::Decimal = c.cambios.iter().map(|x| x.diferencia()).sum();
+    assert_eq!(suma, c.diferencia());
+    // Sin cambios: nada que listar
+    assert!(comparar(&r1, &r1).unwrap().cambios.is_empty());
+}
