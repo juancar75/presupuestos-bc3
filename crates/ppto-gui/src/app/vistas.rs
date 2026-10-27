@@ -409,12 +409,250 @@ impl Aplicacion {
     }
 }
 
-/// Atajos Ctrl+1…Ctrl+6 → vista.
-pub(super) const VISTAS: [(Pestana, &str, egui::Key); 6] = [
+impl Aplicacion {
+    // -------------------------------------------------------------- mediciones
+
+    /// Todas las mediciones seguidas, editables, con el total de cada partida.
+    pub(super) fn pestana_mediciones(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+        let d = self.p.decimales;
+        ui.horizontal(|ui| {
+            ui.label("Buscar:");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.filtro_mediciones)
+                    .desired_width(220.0)
+                    .hint_text("código, capítulo, texto o comentario"),
+            );
+            ui.label(
+                RichText::new("Uds · Largo · Ancho · Alto se editan aquí; las fórmulas y subtotales, en la ficha")
+                    .weak()
+                    .small(),
+            );
+        });
+        ui.separator();
+        let texto = ppto_biblioteca::plano(&self.filtro_mediciones);
+        let palabras: Vec<String> = texto.split_whitespace().map(str::to_owned).collect();
+        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+            egui::Grid::new("vista_mediciones")
+                .striped(true)
+                .num_columns(7)
+                .show(ui, |ui| {
+                    for t in ["Comentario", "Uds", "Largo", "Ancho", "Alto", "Parcial", ""] {
+                        ui.label(RichText::new(t).weak());
+                    }
+                    ui.end_row();
+                    for (cap, hijo) in self.orden_partidas() {
+                        let Some(c) = self.p.conceptos.get(&hijo).cloned() else {
+                            continue;
+                        };
+                        let med = self.p.mediciones.get(&(cap.clone(), hijo.clone())).cloned();
+                        if !palabras.is_empty() {
+                            let mut t = format!("{cap} {hijo} {}", c.resumen);
+                            for l in med.iter().flat_map(|m| &m.lineas) {
+                                t.push(' ');
+                                t.push_str(&l.comentario);
+                            }
+                            let t = ppto_biblioteca::plano(&t);
+                            if !palabras.iter().all(|p| t.contains(p.as_str())) {
+                                continue;
+                            }
+                        }
+                        let cantidad = self
+                            .calc
+                            .lineas
+                            .get(&cap)
+                            .and_then(|v| v.iter().find(|l| l.hijo == hijo))
+                            .map(|l| l.cantidad)
+                            .unwrap_or_default();
+                        // Cabecera de la partida
+                        if ui
+                            .link(RichText::new(format!("{cap} · {hijo}")).strong())
+                            .on_hover_text("Abrir la ficha de la partida")
+                            .clicked()
+                        {
+                            acciones.push(Accion::Seleccionar(cap.clone(), hijo.clone()));
+                        }
+                        ui.label(corto(&c.resumen, 60)).on_hover_text(&c.resumen);
+                        for _ in 0..3 {
+                            ui.label("");
+                        }
+                        ui.label(RichText::new(format!("{} {}", cant(cantidad, d.medicion), c.unidad)).strong());
+                        ui.label("");
+                        ui.end_row();
+                        let Some(m) = med else {
+                            ui.label(
+                                RichText::new("    (sin hoja de medición: cantidad directa)")
+                                    .weak()
+                                    .small(),
+                            );
+                            ui.end_row();
+                            continue;
+                        };
+                        let parciales = m.calcular(&d, &c.unidad).map(|r| r.parciales).unwrap_or_default();
+                        for (k, l) in m.lineas.iter().enumerate() {
+                            let clave = format!("vm|{cap}|{hijo}|{k}");
+                            let mut nueva = None;
+                            if let Some(t) = self.edicion.texto(ui, &format!("{clave}|c"), &l.comentario, 260.0) {
+                                let mut x = m.clone();
+                                x.lineas[k].comentario = t;
+                                nueva = Some(x);
+                            }
+                            let normal = l.tipo == ppto_core::TipoLinea::Normal;
+                            for (n, v) in [l.unidades, l.longitud, l.anchura, l.altura].into_iter().enumerate() {
+                                if !normal {
+                                    ui.label(v.map(|v| cant(v, d.dimensiones)).unwrap_or_default());
+                                    continue;
+                                }
+                                if let Some(nv) =
+                                    self.edicion
+                                        .opcional(ui, &format!("{clave}|{n}"), v, d.dimensiones, 64.0)
+                                {
+                                    let mut x = nueva.clone().unwrap_or_else(|| m.clone());
+                                    let campo = match n {
+                                        0 => &mut x.lineas[k].unidades,
+                                        1 => &mut x.lineas[k].longitud,
+                                        2 => &mut x.lineas[k].anchura,
+                                        _ => &mut x.lineas[k].altura,
+                                    };
+                                    *campo = nv;
+                                    nueva = Some(x);
+                                }
+                            }
+                            let p = parciales.get(k).copied().unwrap_or_default();
+                            ui.label(cant(p, d.medicion));
+                            ui.label(match l.tipo {
+                                ppto_core::TipoLinea::Normal => RichText::new(""),
+                                ppto_core::TipoLinea::Formula => RichText::new("fórmula").weak().small(),
+                                _ => RichText::new("subtotal").weak().small(),
+                            });
+                            ui.end_row();
+                            if let Some(x) = nueva {
+                                acciones.push(Accion::Medicion(cap.clone(), hijo.clone(), x));
+                            }
+                        }
+                    }
+                });
+        });
+    }
+}
+
+/// Total por fabricante (materiales ligados a tarifa).
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct PorFabricante {
+    pub fabricante: String,
+    pub referencias: usize,
+    pub pvp: Decimal,
+    pub neto: Decimal,
+}
+
+impl Aplicacion {
+    /// Horas de mano de obra por recurso (solo los que se miden en horas).
+    pub(super) fn horas_por_oficio(&self) -> Vec<(String, String, Decimal, Decimal)> {
+        let Some(e) = &self.calc.explosion else {
+            return Vec::new();
+        };
+        e.por_naturaleza(Naturaleza::ManoObra)
+            .filter(|r| matches!(r.unidad.trim().to_lowercase().as_str(), "h" | "hr" | "hora" | "horas"))
+            .map(|r| (r.codigo.clone(), r.resumen.clone(), r.cantidad, r.importe))
+            .collect()
+    }
+
+    /// Importes de material por fabricante, a PVP y neto (con su descuento).
+    pub(super) fn por_fabricante(&self) -> Vec<PorFabricante> {
+        let Some(e) = &self.calc.explosion else {
+            return Vec::new();
+        };
+        let d = self.p.decimales.importe;
+        let mut m: std::collections::BTreeMap<String, PorFabricante> = Default::default();
+        for r in &e.recursos {
+            let Some(t) = self.p.conceptos.get(&r.codigo).and_then(|c| c.tarifa.as_ref()) else {
+                continue;
+            };
+            let x = m.entry(t.fabricante.clone()).or_insert_with(|| PorFabricante {
+                fabricante: t.fabricante.clone(),
+                referencias: 0,
+                pvp: Decimal::ZERO,
+                neto: Decimal::ZERO,
+            });
+            x.referencias += 1;
+            x.pvp += ppto_core::redondear(t.pvp * r.cantidad, d);
+            x.neto += r.importe;
+        }
+        let mut v: Vec<_> = m.into_values().collect();
+        v.sort_by_key(|b| std::cmp::Reverse(b.neto));
+        v
+    }
+
+    /// Cabecera de la vista Recursos: horas por oficio y compras por fabricante.
+    pub(super) fn resumen_recursos(&self, ui: &mut Ui) {
+        let horas = self.horas_por_oficio();
+        if !horas.is_empty() {
+            let total: Decimal = horas.iter().map(|h| h.2).sum();
+            egui::CollapsingHeader::new(RichText::new(format!("Horas por oficio — {} h", cant(total, 2))).strong())
+                .id_salt("horas_oficio")
+                .default_open(true)
+                .show(ui, |ui| {
+                    egui::Grid::new("horas_oficio_grid").striped(true).show(ui, |ui| {
+                        for t in ["Código", "Oficio", "Horas", "Jornadas (8 h)", "Importe"] {
+                            ui.label(RichText::new(t).weak());
+                        }
+                        ui.end_row();
+                        for (c, r, h, i) in &horas {
+                            ui.label(c);
+                            ui.label(corto(r, 50));
+                            ui.label(cant(*h, 2));
+                            ui.label(cant((*h / Decimal::from(8)).round_dp(1), 1));
+                            ui.label(format!("{} €", eur(*i)));
+                            ui.end_row();
+                        }
+                    });
+                });
+        }
+        let fab = self.por_fabricante();
+        if !fab.is_empty() {
+            egui::CollapsingHeader::new(RichText::new("Compras por fabricante").strong())
+                .id_salt("por_fabricante")
+                .default_open(true)
+                .show(ui, |ui| {
+                    egui::Grid::new("por_fabricante_grid").striped(true).show(ui, |ui| {
+                        for t in [
+                            "Fabricante",
+                            "Referencias",
+                            "Importe a PVP",
+                            "Importe neto",
+                            "Descuento medio",
+                        ] {
+                            ui.label(RichText::new(t).weak());
+                        }
+                        ui.end_row();
+                        for f in &fab {
+                            ui.label(&f.fabricante);
+                            ui.label(f.referencias.to_string());
+                            ui.label(format!("{} €", eur(f.pvp)));
+                            ui.label(format!("{} €", eur(f.neto)));
+                            let dto = if f.pvp.is_zero() {
+                                "—".to_owned()
+                            } else {
+                                format!(
+                                    "{} %",
+                                    num(((Decimal::ONE - f.neto / f.pvp) * Decimal::ONE_HUNDRED).round_dp(1), 1)
+                                )
+                            };
+                            ui.label(dto);
+                            ui.end_row();
+                        }
+                    });
+                });
+        }
+    }
+}
+
+/// Atajos Ctrl+1…Ctrl+7 → vista.
+pub(super) const VISTAS: [(Pestana, &str, egui::Key); 7] = [
     (Pestana::Partida, "Ficha de partida", egui::Key::Num1),
     (Pestana::Presupuesto, "Presupuesto", egui::Key::Num2),
     (Pestana::Precios, "Precios y márgenes", egui::Key::Num3),
-    (Pestana::Recursos, "Recursos", egui::Key::Num4),
-    (Pestana::Subcontratar, "Subcontratar", egui::Key::Num5),
-    (Pestana::Resumen, "Resumen y venta", egui::Key::Num6),
+    (Pestana::Mediciones, "Mediciones", egui::Key::Num4),
+    (Pestana::Recursos, "Recursos", egui::Key::Num5),
+    (Pestana::Subcontratar, "Subcontratar", egui::Key::Num6),
+    (Pestana::Resumen, "Resumen y venta", egui::Key::Num7),
 ];
