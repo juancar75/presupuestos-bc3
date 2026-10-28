@@ -5,13 +5,17 @@
 //!   descuentos por fabricante).
 //! - Fabricantes: tarifa vigente por año (en naranja si es de un año
 //!   anterior), descuentos y subida estimada; cargar la tarifa de un año.
+//! - Ofertas de fabricantes y proveedores con su documento (🖹, en la ruta
+//!   que se elija en cada caso) y datos del fabricante (CIF, contacto…).
 //! - Buscar partidas guardadas.
 //!
 //! La IA consulta la misma biblioteca (`buscar_biblioteca`) antes de estimar.
 
 use super::Aplicacion;
+use super::asistente::abrir_en_sistema;
+use super::ofertas::{NARANJA, OpDoc, boton_documento, elegir_documento};
 use eframe::egui::{self, Color32, RichText};
-use ppto_biblioteca::{Biblioteca, LineaPvp, Origen, anio, hoy};
+use ppto_biblioteca::{Biblioteca, DatosFabricante, LineaPvp, Oferta, Origen, anio, hoy};
 use ppto_core::Decimal;
 use ppto_core::formato::{eur, leer, num};
 use std::collections::BTreeMap;
@@ -29,6 +33,15 @@ pub(super) struct VentanaBiblioteca {
     dto_fab: String,
     dto_pct: String,
     subida: String,
+    // Nueva oferta
+    of_fab: String,
+    of_num: String,
+    of_fecha: String,
+    of_validez: String,
+    of_doc: String,
+    // Datos del fabricante que se editan
+    datos_de: String,
+    datos: DatosFabricante,
     mensaje: Option<(String, bool)>,
 }
 
@@ -51,6 +64,13 @@ impl VentanaBiblioteca {
             dto_fab: String::new(),
             dto_pct: String::new(),
             subida: String::new(),
+            of_fab: String::new(),
+            of_num: String::new(),
+            of_fecha: hoy(),
+            of_validez: String::new(),
+            of_doc: String::new(),
+            datos_de: String::new(),
+            datos: DatosFabricante::default(),
             mensaje: None,
         }
     }
@@ -255,6 +275,8 @@ impl Aplicacion {
                     }
                 });
                 ui.separator();
+                v.seccion_ofertas(ui);
+                ui.separator();
 
                 // Buscar partidas
                 ui.horizontal(|ui| {
@@ -290,5 +312,176 @@ impl Aplicacion {
         if abierta {
             self.ventana_biblioteca = Some(v);
         }
+    }
+}
+
+impl VentanaBiblioteca {
+    /// Ofertas con su documento y datos de cada fabricante o proveedor.
+    fn seccion_ofertas(&mut self, ui: &mut egui::Ui) {
+        let n: usize = self.b.fabricantes.values().map(|f| f.ofertas.len()).sum();
+        egui::CollapsingHeader::new(RichText::new(format!("Ofertas ({n}) y datos de fabricantes")).strong())
+            .id_salt("ofertas_bib")
+            .show(ui, |ui| {
+                let hoy = hoy();
+                let mut op: Option<(String, String, OpDoc, Option<String>)> = None;
+                egui::ScrollArea::vertical()
+                    .id_salt("ofertas_scroll")
+                    .max_height(220.0)
+                    .show(ui, |ui| {
+                        egui::Grid::new("ofertas_bib_grid")
+                            .striped(true)
+                            .num_columns(7)
+                            .show(ui, |ui| {
+                                for t in ["", "Fabricante", "Nº", "Fecha", "Válida hasta", "Líneas", "Obra"] {
+                                    ui.label(RichText::new(t).strong());
+                                }
+                                ui.end_row();
+                                for (k, f) in &self.b.fabricantes {
+                                    for o in &f.ofertas {
+                                        let existe = o
+                                            .documento
+                                            .as_deref()
+                                            .is_some_and(|d| std::path::Path::new(d).is_file());
+                                        if let Some(x) = boton_documento(ui, o.documento.as_deref(), existe) {
+                                            op = Some((k.clone(), o.numero.clone(), x, o.documento.clone()));
+                                        }
+                                        ui.label(&f.nombre);
+                                        ui.label(&o.numero);
+                                        ui.label(&o.fecha);
+                                        let val = o.validez.clone().unwrap_or_default();
+                                        if o.vencida(&hoy) {
+                                            ui.label(RichText::new(format!("{val} (vencida)")).color(NARANJA));
+                                        } else {
+                                            ui.label(val);
+                                        }
+                                        ui.label(o.lineas.len().to_string());
+                                        ui.label(&o.obra);
+                                        ui.end_row();
+                                    }
+                                }
+                            });
+                    });
+                if let Some((k, num, x, doc)) = op {
+                    match x {
+                        OpDoc::Abrir => {
+                            if let Some(d) = doc {
+                                abrir_en_sistema(std::path::Path::new(&d));
+                            }
+                        }
+                        OpDoc::Vincular => {
+                            if let Some(d) = elegir_documento(doc.as_deref()) {
+                                self.modificar(|b| b.fijar_documento_oferta(&k, &num, Some(d)));
+                            }
+                        }
+                        OpDoc::Quitar => {
+                            self.modificar(|b| b.fijar_documento_oferta(&k, &num, None));
+                        }
+                    }
+                }
+                ui.add_space(4.0);
+                ui.label(RichText::new("Nueva oferta (las líneas las puede leer la IA del PDF)").weak());
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Fabricante");
+                    ui.add(egui::TextEdit::singleline(&mut self.of_fab).desired_width(100.0));
+                    ui.label("Nº");
+                    ui.add(egui::TextEdit::singleline(&mut self.of_num).desired_width(80.0));
+                    ui.label("Fecha");
+                    ui.add(egui::TextEdit::singleline(&mut self.of_fecha).desired_width(80.0));
+                    ui.label("Válida hasta");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.of_validez)
+                            .hint_text("AAAA-MM-DD")
+                            .desired_width(80.0),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Documento");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.of_doc)
+                            .hint_text("ruta del PDF, donde esté")
+                            .desired_width(380.0),
+                    );
+                    if ui.button("Elegir…").clicked()
+                        && let Some(d) = elegir_documento(Some(self.of_doc.as_str()).filter(|d| !d.is_empty()))
+                    {
+                        self.of_doc = d;
+                    }
+                    if ui.button("Añadir oferta").clicked() {
+                        let fab = self.of_fab.trim().to_owned();
+                        if fab.is_empty() || self.of_num.trim().is_empty() {
+                            self.mensaje = Some(("Indique el fabricante y el número de la oferta.".into(), true));
+                        } else {
+                            let o = Oferta {
+                                numero: self.of_num.trim().to_owned(),
+                                fecha: self.of_fecha.trim().to_owned(),
+                                validez: Some(self.of_validez.trim().to_owned()).filter(|v| !v.is_empty()),
+                                obra: String::new(),
+                                lineas: Vec::new(),
+                                documento: Some(self.of_doc.trim().trim_matches('"').to_owned())
+                                    .filter(|d| !d.is_empty()),
+                            };
+                            let t = format!("Oferta {fab} {} añadida.", o.numero);
+                            if self.modificar(|b| b.anadir_oferta(&fab, o)).is_some() {
+                                self.mensaje = Some((t, false));
+                                self.of_num.clear();
+                                self.of_doc.clear();
+                            }
+                        }
+                    }
+                });
+                ui.separator();
+                // Datos del fabricante
+                ui.horizontal(|ui| {
+                    ui.label("Datos de");
+                    let mut elegir = None;
+                    egui::ComboBox::from_id_salt("datos_fab")
+                        .selected_text(if self.datos_de.is_empty() {
+                            "fabricante…"
+                        } else {
+                            self.datos_de.as_str()
+                        })
+                        .show_ui(ui, |ui| {
+                            for (k, f) in &self.b.fabricantes {
+                                if ui.selectable_label(*k == self.datos_de, &f.nombre).clicked() {
+                                    elegir = Some(k.clone());
+                                }
+                            }
+                        });
+                    if let Some(k) = elegir {
+                        self.datos = self.b.fabricante(&k).map(|f| f.datos.clone()).unwrap_or_default();
+                        self.datos_de = k;
+                    }
+                });
+                if !self.datos_de.is_empty() {
+                    let d = &mut self.datos;
+                    egui::Grid::new("datos_fab_grid").num_columns(4).show(ui, |ui| {
+                        ui.label("Razón social");
+                        ui.text_edit_singleline(&mut d.razon_social);
+                        ui.label("CIF");
+                        ui.text_edit_singleline(&mut d.cif);
+                        ui.end_row();
+                        ui.label("Contacto");
+                        ui.text_edit_singleline(&mut d.contacto);
+                        ui.label("Teléfono");
+                        ui.text_edit_singleline(&mut d.telefono);
+                        ui.end_row();
+                        ui.label("Email");
+                        ui.text_edit_singleline(&mut d.email);
+                        ui.end_row();
+                    });
+                    ui.label("Condiciones (plazo, portes, forma de pago…)");
+                    ui.add(
+                        egui::TextEdit::multiline(&mut d.condiciones)
+                            .desired_rows(2)
+                            .desired_width(f32::INFINITY),
+                    );
+                    if ui.button("Guardar datos").clicked() {
+                        let (k, d) = (self.datos_de.clone(), self.datos.clone());
+                        if self.modificar(|b| b.fijar_datos(&k, d)).is_some() {
+                            self.mensaje = Some((format!("Datos de {k} guardados."), false));
+                        }
+                    }
+                }
+            });
     }
 }

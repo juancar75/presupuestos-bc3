@@ -204,6 +204,8 @@ pub(crate) fn registrar_oferta(estado: &Estado, a: &Value) -> Result<String, Str
             .or_else(|| estado.obra_activa.clone())
             .unwrap_or_default(),
         lineas,
+        // Ruta del documento de la oferta (p. ej. el adjunto del mensaje)
+        documento: Some(cadena(a, "documento")).filter(|d| !d.is_empty()),
     };
     let numero = oferta.numero.clone();
     let n = oferta.lineas.len();

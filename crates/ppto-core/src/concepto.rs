@@ -87,6 +87,61 @@ pub struct Concepto {
     /// importe aunque cambie su coste; prevalece sobre el margen.
     #[serde(default)]
     pub venta_fija: Option<Decimal>,
+    /// De dónde sale el precio (oferta de fabricante o proveedor y su
+    /// documento), para poder justificarlo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origen: Option<OrigenPrecio>,
+}
+
+/// Procedencia del precio de un recurso: la oferta que lo justifica.
+///
+/// El documento se guarda con la **ruta que se elija en cada caso** (carpeta
+/// de la obra, unidad compartida, OneDrive…); no se copia.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct OrigenPrecio {
+    /// Fabricante o proveedor que oferta.
+    pub fabricante: String,
+    /// Número o referencia de la oferta.
+    pub oferta: String,
+    /// Fecha de la oferta (AAAA-MM-DD).
+    #[serde(default)]
+    pub fecha: String,
+    /// Fin de validez (AAAA-MM-DD), si la oferta la indica.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validez: Option<String>,
+    /// Referencia del artículo en la oferta.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub referencia: Option<String>,
+    /// Precio neto ofertado (para avisar si el del recurso ya no coincide).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub neto: Option<Decimal>,
+    /// Ruta del documento de la oferta (PDF, correo…), tal como se eligió.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documento: Option<String>,
+}
+
+impl OrigenPrecio {
+    /// La oferta ha caducado a fecha `hoy` (AAAA-MM-DD).
+    pub fn vencida(&self, hoy: &str) -> bool {
+        self.validez.as_deref().is_some_and(|v| !v.is_empty() && v < hoy)
+    }
+
+    /// El precio del recurso ya no es el ofertado.
+    pub fn precio_distinto(&self, precio: Decimal) -> bool {
+        self.neto.is_some_and(|n| n != precio)
+    }
+
+    /// Texto corto: «KOOLAIR · oferta 2026-118 (2026-05-04)».
+    pub fn etiqueta(&self) -> String {
+        let mut t = self.fabricante.clone();
+        if !self.oferta.is_empty() {
+            t.push_str(&format!(" · oferta {}", self.oferta));
+        }
+        if !self.fecha.is_empty() {
+            t.push_str(&format!(" ({})", self.fecha));
+        }
+        t
+    }
 }
 
 /// PVP de tarifa y fabricante de un recurso.
@@ -119,6 +174,7 @@ impl Concepto {
             tarifa: None,
             margen: None,
             venta_fija: None,
+            origen: None,
         }
     }
 
@@ -139,6 +195,7 @@ impl Concepto {
             tarifa: None,
             margen: None,
             venta_fija: None,
+            origen: None,
         }
     }
 
@@ -154,6 +211,7 @@ impl Concepto {
             tarifa: None,
             margen: None,
             venta_fija: None,
+            origen: None,
         }
     }
 
