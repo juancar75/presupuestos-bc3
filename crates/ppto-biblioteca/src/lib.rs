@@ -337,9 +337,7 @@ impl Biblioteca {
             };
             let r = f(&mut b);
             let t = serde_json::to_string_pretty(&b).map_err(std::io::Error::other)?;
-            let tmp = ruta.with_extension(format!("tmp{}", std::process::id()));
-            std::fs::write(&tmp, t)?;
-            std::fs::rename(&tmp, ruta)?;
+            ppto_propuestas::escribir(ruta, &t)?;
             Ok(r)
         })
     }

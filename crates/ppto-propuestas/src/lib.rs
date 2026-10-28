@@ -70,7 +70,12 @@ pub fn con_bloqueo<R>(ruta: &Path, f: impl FnOnce() -> std::io::Result<R>) -> st
     loop {
         match std::fs::OpenOptions::new().write(true).create_new(true).open(&cerrojo) {
             Ok(_) => break,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            // En Windows, un cerrojo que otro proceso está borrando da
+            // «acceso denegado» unos milisegundos: es lo mismo que ocupado.
+            Err(e)
+                if e.kind() == std::io::ErrorKind::AlreadyExists
+                    || e.kind() == std::io::ErrorKind::PermissionDenied =>
+            {
                 let abandonado = std::fs::metadata(&cerrojo)
                     .and_then(|m| m.modified())
                     .ok()
@@ -111,13 +116,30 @@ fn leer_estricto<T: Default + serde::de::DeserializeOwned>(ruta: &Path) -> std::
     }
 }
 
-fn escribir(ruta: &Path, texto: &str) -> std::io::Result<()> {
+/// Escribe `texto` en `ruta` sin dejarla a medias (fichero temporal y
+/// renombrado), reintentando si Windows la tiene abierta un instante.
+pub fn escribir(ruta: &Path, texto: &str) -> std::io::Result<()> {
     if let Some(d) = ruta.parent() {
         std::fs::create_dir_all(d)?;
     }
     let tmp = ruta.with_extension(format!("tmp{}", std::process::id()));
     std::fs::write(&tmp, texto)?;
-    std::fs::rename(&tmp, ruta)
+    // Windows (o OneDrive, o el antivirus) puede tener el fichero abierto un
+    // instante: se reintenta antes de dar error.
+    let mut intento = 0;
+    loop {
+        match std::fs::rename(&tmp, ruta) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && intento < 40 => {
+                intento += 1;
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(e);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
