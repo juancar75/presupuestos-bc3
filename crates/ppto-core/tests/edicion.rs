@@ -312,3 +312,54 @@ fn comparar_dos_revisiones() {
     // Sin cambios: nada que listar
     assert!(comparar(&r1, &r1).unwrap().cambios.is_empty());
 }
+
+#[test]
+fn copiar_y_pegar_entre_obras() {
+    use ppto_core::fragmento::{Fragmento, copiar, pegar};
+    let a = suelo_radiante();
+    // Ctrl+C de SR.M2 en la obra A → texto del portapapeles
+    let f = copiar(&a, "C01", &["SR.M2".into()]).unwrap();
+    let texto = f.a_texto();
+    assert!(texto.starts_with("PPTO-BC3/1"));
+    let f = Fragmento::de_texto(&texto).unwrap();
+    assert!(Fragmento::de_texto("hola").is_none());
+
+    // Obra B vacía: SR.M2 entra con su descompuesto y su medición → 210 m² × 29,89 = 6.276,90
+    let mut b = Presupuesto::new("B", "OBRA", "Obra B");
+    b.nuevo_capitulo("OBRA", "X1", "Calefacción").unwrap();
+    let inf = pegar(&mut b, &f, "X1").unwrap();
+    assert_eq!(inf.pegados, ["SR.M2"]);
+    assert_eq!(b.pem().unwrap(), dec!(6276.90));
+    assert!(b.mediciones.contains_key(&("X1".into(), "SR.M2".into())));
+
+    // Obra C con su propio oficial a 30,00 €/h: manda el de C.
+    // SR.M2: 9,98 + 7,70 + 0,24 + 0,25 h × 30,00 = 7,50 + 5,25 = 30,67; 2 % = 0,61 → 31,28
+    let mut c = Presupuesto::new("C", "OBRA", "Obra C");
+    c.nuevo_capitulo("OBRA", "X1", "Calefacción").unwrap();
+    c.nuevo_recurso("MO.OF1F", "h", "Oficial de C", Naturaleza::ManoObra, dec!(30))
+        .unwrap();
+    let inf = pegar(&mut c, &f, "X1").unwrap();
+    assert_eq!(inf.recursos_de_esta_obra, ["MO.OF1F"]);
+    assert_eq!(c.precio("SR.M2").unwrap(), dec!(31.28));
+
+    // Obra D con otra SR.M2 distinta: la pegada entra como SR.M2_1 con su precio de origen
+    let mut d = Presupuesto::new("D", "OBRA", "Obra D");
+    d.nuevo_capitulo("OBRA", "X1", "Calefacción").unwrap();
+    d.nueva_partida("X1", "SR.M2", "m2", "Otra cosa").unwrap();
+    let inf = pegar(&mut d, &f, "X1").unwrap();
+    assert_eq!(inf.renombrados, [("SR.M2".to_owned(), "SR.M2_1".to_owned())]);
+    assert_eq!(d.precio("SR.M2_1").unwrap(), dec!(29.89));
+
+    // Un capítulo entero (C01 de A, 7.005,15 €) en otra obra que ya tiene su C01
+    let fc = copiar(&a, &a.raiz.clone(), &["C01".into()]).unwrap();
+    let mut e = Presupuesto::new("E", "OBRA", "Obra E");
+    e.nuevo_capitulo("OBRA", "C01", "Fontanería").unwrap();
+    let inf = pegar(&mut e, &fc, "OBRA").unwrap();
+    assert_eq!(inf.pegados, ["C01_1"]);
+    assert_eq!(e.pem().unwrap(), dec!(7005.15));
+
+    // En la misma obra y el mismo capítulo no se duplica: error y nada cambia
+    let mut misma = a.clone();
+    assert!(pegar(&mut misma, &f, "C01").is_err());
+    assert_eq!(misma, a);
+}

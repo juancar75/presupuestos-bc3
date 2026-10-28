@@ -151,7 +151,7 @@ impl Presupuesto {
     }
 
     /// Recalcula el neto de todos los recursos con tarifa.
-    fn recalcular_tarifas(&mut self) {
+    pub(crate) fn recalcular_tarifas(&mut self) {
         let netos: Vec<(String, Decimal)> = self
             .conceptos
             .values()
