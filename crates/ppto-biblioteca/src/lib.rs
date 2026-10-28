@@ -172,12 +172,49 @@ pub struct Oferta {
     #[serde(default)]
     pub obra: String,
     pub lineas: Vec<LineaOferta>,
+    /// Ruta del documento de la oferta, la que se elija en cada caso (carpeta
+    /// de la obra, unidad compartida…). No se copia.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documento: Option<String>,
 }
 
 impl Oferta {
     pub fn vencida(&self, hoy: &str) -> bool {
-        self.validez.as_deref().is_some_and(|v| v < hoy)
+        self.validez.as_deref().is_some_and(|v| !v.is_empty() && v < hoy)
     }
+
+    /// Procedencia de precio para la línea `referencia` de esta oferta
+    /// (`None`: la oferta entera, sin artículo concreto).
+    pub fn origen(&self, fabricante: &str, referencia: Option<&str>) -> ppto_core::OrigenPrecio {
+        let l = referencia.and_then(|r| self.lineas.iter().find(|l| l.referencia == r));
+        ppto_core::OrigenPrecio {
+            fabricante: fabricante.to_owned(),
+            oferta: self.numero.clone(),
+            fecha: self.fecha.clone(),
+            validez: self.validez.clone(),
+            referencia: l.map(|l| l.referencia.clone()),
+            neto: l.map(|l| l.neto),
+            documento: self.documento.clone(),
+        }
+    }
+}
+
+/// Datos del fabricante o proveedor (para pedidos y para justificar precios).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DatosFabricante {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub razon_social: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub cif: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub contacto: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub telefono: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub email: String,
+    /// Plazos, portes, forma de pago…
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub condiciones: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -194,6 +231,8 @@ pub struct Fabricante {
     /// Subida estimada (puntos) sobre la última tarifa mientras no llegue la nueva.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subida_estimada: Option<Decimal>,
+    #[serde(default)]
+    pub datos: DatosFabricante,
 }
 
 impl Fabricante {
@@ -319,6 +358,11 @@ impl Biblioteca {
         })
     }
 
+    /// Datos del fabricante o proveedor (lo crea si no existe).
+    pub fn fijar_datos(&mut self, fabricante: &str, datos: DatosFabricante) {
+        self.fabricante_mut(fabricante).datos = datos;
+    }
+
     /// Descuento de un fabricante (o «FAB/GRUPO»). `None` lo quita.
     pub fn fijar_descuento(&mut self, fabricante: &str, pct: Option<Decimal>) {
         let (f, g) = partes(fabricante);
@@ -437,6 +481,22 @@ impl Biblioteca {
         fab.ofertas
             .retain(|o| o.numero != oferta.numero || oferta.numero.is_empty());
         fab.ofertas.push(oferta);
+    }
+
+    /// Vincula (o desvincula) el documento de una oferta: la ruta que se elija.
+    pub fn fijar_documento_oferta(&mut self, fabricante: &str, numero: &str, ruta: Option<String>) -> bool {
+        let ruta = ruta
+            .map(|r| r.trim().trim_matches('"').to_owned())
+            .filter(|r| !r.is_empty());
+        let Some(of) = self
+            .fabricantes
+            .get_mut(&normalizar(fabricante))
+            .and_then(|f| f.ofertas.iter_mut().find(|o| o.numero == numero))
+        else {
+            return false;
+        };
+        of.documento = ruta;
+        true
     }
 
     /// Descuento real de una oferta frente a la tarifa vigente: por grupo
@@ -751,6 +811,7 @@ mod tests {
                 fecha: "2026-10-10".into(),
                 validez: Some("2026-11-10".into()),
                 obra: "Berrocales".into(),
+                documento: Some(r"\\servidor\ofertas\LG OF-77.pdf".into()),
                 lineas: vec![
                     LineaOferta {
                         referencia: "ARUM100".into(),
@@ -768,6 +829,14 @@ mod tests {
                     },
                 ],
             },
+        );
+        let o = b.fabricante("LG").unwrap().ofertas[0].origen("LG", Some("ARNU07"));
+        assert_eq!(o.neto, Some(dec!(520)));
+        assert_eq!(o.documento.as_deref(), Some(r"\\servidor\ofertas\LG OF-77.pdf"));
+        assert!(b.fijar_documento_oferta("lg", "OF-77", Some("\"D:\\Obra X\\of.pdf\"".into())));
+        assert_eq!(
+            b.fabricante("LG").unwrap().ofertas[0].documento.as_deref(),
+            Some(r"D:\Obra X\of.pdf")
         );
         let d = b.descuento_de_oferta("lg", "OF-77");
         assert_eq!(d["VRF EXT"], (dec!(52), 1));

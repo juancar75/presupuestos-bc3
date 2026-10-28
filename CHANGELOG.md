@@ -5,6 +5,26 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.32] - 2026-10-28
+
+### Añadido
+- **Origen del precio**: cada recurso puede vincularse a la oferta que
+  justifica su precio (fabricante o proveedor, nº, fecha, validez, artículo,
+  neto ofertado y **documento**). En **Recursos**, columna «Origen del
+  precio»: 🖹 abre el documento, el texto sale en naranja si la oferta ha
+  vencido y «≠» avisa si el precio ya no es el ofertado.
+- El documento se guarda con la **ruta que se elija en cada caso** (carpeta
+  de la obra, unidad de red, OneDrive…), sin copiarlo. Si se mueve, el botón
+  pasa a «🖹 ?» y permite volver a vincularlo.
+- **Biblioteca → Ofertas y datos de fabricantes**: lista de ofertas con su
+  documento, alta de ofertas y datos del fabricante (razón social, CIF,
+  contacto, teléfono, email, condiciones). Al vincular un recurso se puede
+  elegir la oferta y el artículo de la biblioteca y aplicar su neto.
+- La IA guarda la ruta del documento al registrar una oferta (`documento`).
+
+### Corregido
+- Se quita el símbolo ⚠, que la fuente no tiene y salía como un cuadro.
+
 ## [0.1.0-alpha.31] - 2026-10-28
 
 ### Añadido

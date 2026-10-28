@@ -10,6 +10,7 @@ mod ciego;
 mod comparar;
 mod dificultad;
 mod legalizacion;
+mod ofertas;
 mod pdf;
 mod propuestas;
 mod ratio;
@@ -49,6 +50,9 @@ enum Pestana {
 enum Accion {
     Seleccionar(String, String),
     Precio(String, Decimal),
+    /// Origen del precio de un recurso (oferta y documento); `true`: poner
+    /// el neto ofertado como precio.
+    Origen(String, Option<Box<ppto_core::OrigenPrecio>>, bool),
     Rendimiento(String, String, Decimal),
     Medicion(String, String, Medicion),
     Resumen(String, String),
@@ -242,6 +246,10 @@ pub struct Aplicacion {
     ventana_tarifas: Option<tarifas::VentanaTarifas>,
     ventana_biblioteca: Option<biblioteca::VentanaBiblioteca>,
     ventana_bases: Option<bases::VentanaBases>,
+    /// Formulario «Origen del precio» de un recurso.
+    form_origen: Option<ofertas::FormOrigen>,
+    /// Si los documentos de las ofertas siguen donde se vincularon.
+    docs: ofertas::CacheDocumentos,
     ventana_comparar: Option<comparar::VentanaComparar>,
     ventana_legalizacion: Option<legalizacion::VentanaLegalizacion>,
     dificultad: dificultad::FormDificultad,
@@ -289,6 +297,7 @@ impl Historial {
 fn describir(a: &Accion) -> Option<(String, Option<String>)> {
     Some(match a {
         Accion::Precio(c, _) => (format!("precio de {c}"), None),
+        Accion::Origen(c, ..) => (format!("origen del precio de {c}"), None),
         Accion::Rendimiento(p, h, _) => (format!("cantidad de {h} en {p}"), None),
         Accion::Medicion(_, h, _) => (format!("medición de {h}"), None),
         Accion::Resumen(c, _) => (format!("resumen de {c}"), Some(format!("resumen|{c}"))),
@@ -401,6 +410,8 @@ impl Aplicacion {
             ventana_tarifas: None,
             ventana_biblioteca: None,
             ventana_bases: None,
+            form_origen: None,
+            docs: ofertas::CacheDocumentos::default(),
             ventana_comparar: None,
             ventana_legalizacion: None,
             dificultad: dificultad::FormDificultad::default(),
@@ -1240,6 +1251,7 @@ impl Aplicacion {
                     self.info(format!("{m}."));
                 }),
                 Accion::Precio(c, v) => self.p.fijar_precio(&c, v),
+                Accion::Origen(c, o, aplicar) => self.p.fijar_origen(&c, o.map(|b| *b), aplicar),
                 Accion::Rendimiento(padre, hijo, v) => self.p.fijar_rendimiento(&padre, &hijo, v),
                 Accion::Medicion(padre, hijo, m) => self.p.actualizar_medicion(&padre, &hijo, m).map(|av| {
                     self.avisos = av;
@@ -2393,7 +2405,7 @@ impl Aplicacion {
                     ui.label(RichText::new(&c.unidad).weak());
                 });
                 for a in &self.avisos {
-                    ui.label(RichText::new(format!("⚠ {a}")).color(Color32::from_rgb(220, 150, 40)));
+                    ui.label(RichText::new(a.to_string()).color(Color32::from_rgb(220, 150, 40)));
                 }
                 return;
             }
@@ -2424,7 +2436,7 @@ impl Aplicacion {
                 }
             }
             for a in &self.avisos {
-                ui.label(RichText::new(format!("⚠ {a}")).color(Color32::from_rgb(220, 150, 40)));
+                ui.label(RichText::new(a.to_string()).color(Color32::from_rgb(220, 150, 40)));
             }
         });
     }
@@ -2529,7 +2541,7 @@ impl Aplicacion {
             ui.end_row();
         });
         if let Err(e) = &res {
-            ui.label(RichText::new(format!("⚠ {e}")).color(Color32::from_rgb(220, 80, 60)));
+            ui.label(RichText::new(e.to_string()).color(Color32::from_rgb(220, 80, 60)));
         }
         ui.horizontal(|ui| {
             if ui.button("+ Añadir línea").clicked() {
@@ -2558,6 +2570,7 @@ impl Aplicacion {
         let dec = self.p.decimales;
         ui.label("Cantidades totales necesarias para ejecutar el presupuesto. Los precios se pueden editar aquí.");
         self.resumen_recursos(ui);
+        self.aviso_ofertas(ui);
         egui::CollapsingHeader::new(RichText::new("Descuentos por fabricante").strong())
             .id_salt("descuentos")
             .default_open(!self.p.fabricantes().is_empty())
@@ -2587,7 +2600,7 @@ impl Aplicacion {
                 );
                 egui::Grid::new(("recursos", nombre_naturaleza(nat)))
                     .striped(true)
-                    .num_columns(7)
+                    .num_columns(8)
                     .min_col_width(60.0)
                     .show(ui, |ui| {
                         for t in [
@@ -2598,6 +2611,7 @@ impl Aplicacion {
                             "Tarifa (PVP − dto.)",
                             "Precio",
                             "Importe",
+                            "Origen del precio",
                         ] {
                             ui.label(RichText::new(t).weak());
                         }
@@ -2679,6 +2693,11 @@ impl Aplicacion {
                                 }
                             }
                             ui.label(eur(r.importe));
+                            if nat == Naturaleza::Porcentaje {
+                                ui.label("");
+                            } else {
+                                self.celda_origen(ui, &r.codigo, acciones);
+                            }
                             ui.end_row();
                         }
                     });
@@ -3467,10 +3486,10 @@ impl eframe::App for Aplicacion {
             ui.horizontal(|ui| match (&self.calc.error, &self.mensaje) {
                 (Some(e), _) => {
                     let e = e.replace('→', "->");
-                    ui.label(RichText::new(format!("⚠ {e}")).color(Color32::from_rgb(220, 80, 60)));
+                    ui.label(RichText::new(e.to_string()).color(Color32::from_rgb(220, 80, 60)));
                 }
                 (None, Some((m, true))) => {
-                    ui.label(RichText::new(format!("⚠ {m}")).color(Color32::from_rgb(220, 80, 60)));
+                    ui.label(RichText::new(m.to_string()).color(Color32::from_rgb(220, 80, 60)));
                 }
                 (None, Some((m, false))) => {
                     ui.label(m);
@@ -3512,6 +3531,7 @@ impl eframe::App for Aplicacion {
         self.ventana_tarifas(&ctx);
         self.ventana_biblioteca(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
+        self.ventana_origen(&ctx, &mut acciones);
         self.ventana_comparar(&ctx, &mut acciones);
         self.ventana_legalizacion(&ctx);
         self.ventana_propuestas(&ctx, &mut acciones);
@@ -4797,7 +4817,7 @@ mod pruebas {
         let ctx = Context::default();
         let mut out = ctx.run_ui(RawInput::default(), |_| {});
         out.textures_delta.clear();
-        for c in ['⟲', '⟳', '⏵', '⏷', '⏶'] {
+        for c in ['⟲', '⟳', '⏵', '⏷', '⏶', '🖹', '≠'] {
             assert!(
                 ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::default(), c)),
                 "falta el símbolo {c}"
@@ -5020,5 +5040,71 @@ mod pruebas {
             });
             out.textures_delta.clear();
         }
+    }
+
+    #[test]
+    fn precio_vinculado_a_oferta_y_documento_en_cualquier_carpeta() {
+        // Oferta sintética; el documento está en una carpeta cualquiera
+        let dir = std::env::temp_dir().join(format!("gui-origen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("Obra X").join("ofertas")).unwrap();
+        let pdf = dir.join("Obra X").join("ofertas").join("of-77.pdf");
+        std::fs::write(&pdf, b"%PDF-1.4 sintetico").unwrap();
+        let mut bib = ppto_biblioteca::Biblioteca::default();
+        bib.anadir_oferta(
+            "ACME",
+            ppto_biblioteca::Oferta {
+                numero: "OF-77".into(),
+                fecha: "2026-10-01".into(),
+                validez: Some("2026-10-15".into()),
+                obra: String::new(),
+                lineas: vec![ppto_biblioteca::LineaOferta {
+                    referencia: "T16".into(),
+                    descripcion: "Tubo 16".into(),
+                    unidad: "m".into(),
+                    neto: dec!(0.95),
+                    cantidad: None,
+                }],
+                documento: Some(pdf.display().to_string()),
+            },
+        );
+        let mut app = Aplicacion::sin_ventana();
+        let precio = app.p.concepto("MT.TUBO16").unwrap().precio;
+        let mut f = ofertas::FormOrigen::con_biblioteca("MT.TUBO16", "Tubo", precio, None, bib);
+        f.desde_biblioteca("ACME", "OF-77", Some("T16"));
+        let o = f.origen().unwrap();
+        assert_eq!(o.neto, Some(dec!(0.95)));
+        assert_eq!(o.documento.as_deref(), Some(pdf.display().to_string().as_str()));
+        app.aplicar(vec![Accion::Origen("MT.TUBO16".into(), Some(Box::new(o)), true)]);
+        assert_eq!(app.p.concepto("MT.TUBO16").unwrap().precio, dec!(0.95));
+        // Otro recurso con un documento que ya no está (se marca para volver a vincular)
+        let mut perdido = app.p.concepto("MT.TUBO16").unwrap().origen.clone().unwrap();
+        perdido.documento = Some(dir.join("movido.pdf").display().to_string());
+        app.aplicar(vec![Accion::Origen("MT.PANEL".into(), Some(Box::new(perdido)), false)]);
+        assert!(app.docs.existe(&pdf.display().to_string(), 0.0));
+        assert!(!app.docs.existe(&dir.join("movido.pdf").display().to_string(), 0.0));
+        // Se pintan la tabla de recursos y el formulario
+        app.abrir_origen("MT.PANEL");
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let mut acc = Vec::new();
+                app.pestana_recursos(ui, &mut acc);
+                let c = ui.ctx().clone();
+                app.ventana_origen(&c, &mut acc);
+                assert!(acc.is_empty());
+            });
+            out.textures_delta.clear();
+        }
+        assert!(app.form_origen.is_some());
+        // Deshacer devuelve el precio anterior
+        app.aplicar(vec![Accion::Origen("MT.PANEL".into(), None, false)]);
+        assert!(app.p.concepto("MT.PANEL").unwrap().origen.is_none());
+        app.deshacer();
+        assert!(app.p.concepto("MT.PANEL").unwrap().origen.is_some());
+        app.deshacer();
+        app.deshacer();
+        assert_eq!(app.p.concepto("MT.TUBO16").unwrap().precio, precio);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

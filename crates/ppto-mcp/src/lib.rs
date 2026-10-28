@@ -379,6 +379,7 @@ fn herramientas() -> Value {
                 "fecha": { "type": "string", "description": "AAAA-MM-DD" },
                 "validez": { "type": "string", "description": "AAAA-MM-DD" },
                 "obra": { "type": "string" },
+                "documento": { "type": "string", "description": "Ruta del documento de la oferta (la del adjunto, tal cual)" },
                 "lineas": { "type": "array", "items": { "type": "object", "properties": {
                     "referencia": { "type": "string" }, "descripcion": { "type": "string" }, "unidad": { "type": "string" },
                     "neto": num, "cantidad": num

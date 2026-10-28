@@ -51,6 +51,7 @@ const MIGRACIONES: &[&str] = &[
     include_str!("../migrations/0005_grupo_descuento.sql"),
     include_str!("../migrations/0006_margen_partida.sql"),
     include_str!("../migrations/0007_venta_fija.sql"),
+    include_str!("../migrations/0008_origen_precio.sql"),
 ];
 
 pub struct Almacen {
@@ -246,7 +247,7 @@ impl Almacen {
 
         let mut conceptos = BTreeMap::new();
         let mut st = self.con.prepare(
-            "SELECT codigo, unidad, resumen, naturaleza, precio, texto, tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija
+            "SELECT codigo, unidad, resumen, naturaleza, precio, texto, tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija, origen
              FROM conceptos WHERE revision_id = ?1",
         )?;
         let filas = st.query_map([rev], |r| {
@@ -265,11 +266,12 @@ impl Almacen {
                     r.get::<_, Option<String>>(8)?,
                     r.get::<_, Option<String>>(9)?,
                     r.get::<_, Option<String>>(10)?,
+                    r.get::<_, Option<String>>(11)?,
                 ),
             ))
         })?;
         for f in filas {
-            let ((codigo, unidad, resumen, nat, precio, texto), (fab, pvp, grupo, margen, venta_fija)) = f?;
+            let ((codigo, unidad, resumen, nat, precio, texto), (fab, pvp, grupo, margen, venta_fija, origen)) = f?;
             let tarifa = match (fab, pvp) {
                 (Some(fabricante), Some(pvp)) => Some(ppto_core::PrecioTarifa {
                     fabricante,
@@ -291,6 +293,8 @@ impl Almacen {
                     tarifa,
                     margen: margen.as_deref().map(dec_de).transpose()?,
                     venta_fija: venta_fija.as_deref().map(dec_de).transpose()?,
+                    // Un origen ilegible no impide abrir la obra: se pierde solo la referencia
+                    origen: origen.as_deref().and_then(|o| serde_json::from_str(o).ok()),
                 },
             );
         }
@@ -444,8 +448,8 @@ fn escribir_contenido(tx: &Transaction, rev: i64, p: &Presupuesto) -> Resultado<
     {
         let mut st = tx.prepare(
             "INSERT INTO conceptos (revision_id, codigo, unidad, resumen, naturaleza, precio, texto,
-                tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija, origen)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         )?;
         for c in p.conceptos.values() {
             st.execute(params![
@@ -460,7 +464,8 @@ fn escribir_contenido(tx: &Transaction, rev: i64, p: &Presupuesto) -> Resultado<
                 c.tarifa.as_ref().map(|t| t.pvp.to_string()),
                 c.tarifa.as_ref().and_then(|t| t.grupo.clone()),
                 c.margen.map(|m| m.to_string()),
-                c.venta_fija.map(|v| v.to_string())
+                c.venta_fija.map(|v| v.to_string()),
+                c.origen.as_ref().and_then(|o| serde_json::to_string(o).ok())
             ])?;
         }
     }
@@ -712,12 +717,24 @@ mod tests {
         assert_eq!(p.concepto("MT.TUBO16").unwrap().precio, dec!(1));
         p.fijar_margen("SR.M2", Some(dec!(30))).unwrap();
         p.fijar_venta("SR.COL8", Some(dec!(99.5))).unwrap();
+        // Precio justificado con una oferta (ruta de red, la que se eligió)
+        let o = ppto_core::OrigenPrecio {
+            fabricante: "SCHAKO".into(),
+            oferta: "OF-12".into(),
+            fecha: "2026-10-01".into(),
+            validez: Some("2026-12-31".into()),
+            referencia: Some("P-20".into()),
+            neto: Some(dec!(11.60)),
+            documento: Some(r"\\servidor\obras\Torre\ofertas\schako OF-12.pdf".into()),
+        };
+        p.fijar_origen("MT.PANEL", Some(o.clone()), false).unwrap();
         let r1 = a.guardar_revision(id, "R1", "j", &p).unwrap();
         let r2 = a.derivar_revision(r1, "R2", "j").unwrap();
         for r in [r1, r2] {
             let leido = a.cargar_revision(r).unwrap();
             assert_eq!(leido.concepto("SR.M2").unwrap().margen, Some(dec!(30)));
             assert_eq!(leido.concepto("SR.COL8").unwrap().venta_fija, Some(dec!(99.5)));
+            assert_eq!(leido.concepto("MT.PANEL").unwrap().origen.as_ref(), Some(&o));
             assert_eq!(leido, p);
         }
         // Cambiar el neto a mano desliga la tarifa también en la base de datos

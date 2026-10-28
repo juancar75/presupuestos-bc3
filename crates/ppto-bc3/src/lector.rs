@@ -590,6 +590,7 @@ impl Lector {
                     tarifa: None,
                     margen: None,
                     venta_fija: None,
+                    origen: None,
                 },
             );
         }

@@ -344,7 +344,7 @@ impl Aplicacion {
                     });
                 }
                 if let Some(e) = &a.error {
-                    ui.label(RichText::new(format!("⚠ {e}")).color(Color32::from_rgb(220, 80, 60)));
+                    ui.label(RichText::new(e.to_string()).color(Color32::from_rgb(220, 80, 60)));
                 }
                 let mut quitar = None;
                 for (i, f) in a.adjuntos.iter().enumerate() {

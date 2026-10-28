@@ -363,3 +363,39 @@ fn copiar_y_pegar_entre_obras() {
     assert!(pegar(&mut misma, &f, "C01").is_err());
     assert_eq!(misma, a);
 }
+
+#[test]
+fn precio_vinculado_a_una_oferta() {
+    let mut p = suelo_radiante();
+    let o = ppto_core::OrigenPrecio {
+        fabricante: " KOOLAIR ".into(),
+        oferta: "2026-118".into(),
+        fecha: "2026-05-04".into(),
+        validez: Some("2026-08-04".into()),
+        referencia: Some("20-AL 425x225".into()),
+        neto: Some(dec!(12.50)),
+        documento: Some("\"D:\\Obras\\Torre\\ofertas\\koolair.pdf\"".into()),
+    };
+    // Sin aplicar el neto: el precio no cambia y se avisa de la diferencia
+    let antes = p.concepto("MT.TUBO16").unwrap().precio;
+    p.fijar_origen("MT.TUBO16", Some(o.clone()), false).unwrap();
+    let c = p.concepto("MT.TUBO16").unwrap();
+    assert_eq!(c.precio, antes);
+    let g = c.origen.as_ref().unwrap();
+    assert_eq!(g.fabricante, "KOOLAIR");
+    assert_eq!(g.documento.as_deref(), Some("D:\\Obras\\Torre\\ofertas\\koolair.pdf"));
+    assert!(g.precio_distinto(c.precio));
+    assert!(g.vencida("2026-10-28"));
+    assert!(!g.vencida("2026-06-01"));
+    assert_eq!(g.etiqueta(), "KOOLAIR · oferta 2026-118 (2026-05-04)");
+    // Aplicando el neto: el precio pasa a ser el ofertado
+    p.fijar_origen("MT.TUBO16", Some(o), true).unwrap();
+    let c = p.concepto("MT.TUBO16").unwrap();
+    assert_eq!(c.precio, dec!(12.50));
+    assert!(!c.origen.as_ref().unwrap().precio_distinto(c.precio));
+    // Una partida descompuesta no se vincula: se vinculan sus recursos
+    assert!(p.fijar_origen("SR.M2", Some(Default::default()), false).is_err());
+    // Desvincular
+    p.fijar_origen("MT.TUBO16", None, false).unwrap();
+    assert!(p.concepto("MT.TUBO16").unwrap().origen.is_none());
+}

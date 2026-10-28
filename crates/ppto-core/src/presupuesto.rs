@@ -214,6 +214,34 @@ impl Presupuesto {
         Ok(())
     }
 
+    /// Vincula (o desvincula con `None`) el precio de un recurso a la oferta
+    /// que lo justifica. Con `aplicar_neto`, el precio pasa a ser el ofertado.
+    pub fn fijar_origen(
+        &mut self,
+        codigo: &str,
+        origen: Option<crate::OrigenPrecio>,
+        aplicar_neto: bool,
+    ) -> Result<(), ErrorMotor> {
+        if let Some(n) = origen.as_ref().and_then(|o| o.neto).filter(|_| aplicar_neto) {
+            self.fijar_precio(codigo, n)?;
+        }
+        let c = self.concepto_mut(codigo)?;
+        if origen.is_some() && !c.naturaleza.es_basico() && !c.descomposicion.is_empty() {
+            return Err(ErrorMotor::ValorInvalido(format!(
+                "«{codigo}» tiene descompuesto: vincule la oferta a sus recursos"
+            )));
+        }
+        c.origen = origen.map(|mut o| {
+            o.fabricante = o.fabricante.trim().to_owned();
+            o.documento = o
+                .documento
+                .map(|d| d.trim().trim_matches('"').to_owned())
+                .filter(|d| !d.is_empty());
+            o
+        });
+        Ok(())
+    }
+
     /// Comprueba que todos los hijos existen y que no hay ciclos.
     pub fn validar(&self) -> Result<(), ErrorMotor> {
         let mut estado: HashMap<&str, u8> = HashMap::new(); // 1 = en pila, 2 = cerrado
