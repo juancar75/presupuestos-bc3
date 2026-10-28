@@ -5,6 +5,14 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.33] - 2026-10-28
+
+### Corregido
+- En Windows, guardar la bandeja de propuestas o la biblioteca podía fallar
+  con «Acceso denegado» si otro proceso (el programa y la IA a la vez,
+  OneDrive o el antivirus) tenía el fichero abierto un instante: ahora se
+  reintenta.
+
 ## [0.1.0-alpha.32] - 2026-10-28
 
 ### Añadido
