@@ -5,6 +5,18 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.31] - 2026-10-28
+
+### Añadido
+- **Copiar y pegar entre obras**, como en Presto: con dos ventanas abiertas
+  (**Archivo → Abrir en otra ventana…** o **Nueva ventana**), **Ctrl+C** copia
+  la partida elegida (o clic derecho → Copiar, también capítulos enteros) y
+  **Ctrl+V** la pega en el capítulo elegido de la otra obra, con su
+  descompuesto, recursos, medición y descuento de fabricante. Se puede deshacer.
+  - Lo que ya existe igual se reutiliza; una partida o capítulo con el mismo
+    código y distinto contenido entra como `CÓDIGO_1`; un recurso con el mismo
+    código y otro precio usa el de la obra de destino (y se avisa).
+
 ## [0.1.0-alpha.30] - 2026-10-27
 
 ### Añadido

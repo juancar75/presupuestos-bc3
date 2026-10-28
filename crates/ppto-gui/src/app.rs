@@ -95,6 +95,10 @@ enum Accion {
         codigos: Vec<String>,
         partida: Option<String>,
     },
+    /// Pegar en un capítulo lo copiado en otra ventana (u obra) con Ctrl+C.
+    PegarFragmento(Box<ppto_core::fragmento::Fragmento>, String),
+    /// Capítulo donde pegará Ctrl+V.
+    CapituloActivo(String),
     /// Cortar o copiar (origen, hijo, `true` = cortar); `None` = vaciar.
     Portapapeles(Option<(String, String, bool)>),
     Alta(TipoAlta),
@@ -227,6 +231,10 @@ pub struct Aplicacion {
     desplazar_arbol: bool,
     /// Partida cortada o copiada: (capítulo, partida, `true` = cortar).
     portapapeles: Option<(String, String, bool)>,
+    /// Texto para el portapapeles del sistema (se copia al final del fotograma).
+    copiar_al_sistema: Option<String>,
+    /// Capítulo donde pega Ctrl+V (el último elegido en el árbol).
+    capitulo_activo: Option<String>,
     historial: Historial,
     ratio: ratio::FormRatio,
     /// Tarifas de subcontratas del usuario (fuera del repositorio).
@@ -296,6 +304,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::Mover(p, h, _) => (format!("mover {h} en {p}"), None),
         Accion::Trasladar(o, h, d, _) => (format!("mover {h} de {o} a {d}"), None),
         Accion::Copiar(_, h, d) => (format!("copiar {h} a {d}"), None),
+        Accion::PegarFragmento(f, d) => (format!("pegar de «{}» en {d}", f.obra), None),
         Accion::CopiarDeBase { nombre, codigos, .. } => {
             (format!("copiar {} conceptos de {nombre}", codigos.len()), None)
         }
@@ -384,6 +393,8 @@ impl Aplicacion {
             enfocar_buscar: false,
             desplazar_arbol: false,
             portapapeles: None,
+            copiar_al_sistema: None,
+            capitulo_activo: None,
             historial: Historial::default(),
             ratio: ratio::FormRatio::default(),
             tarifas: ppto_tarifas::Biblioteca::default(),
@@ -425,6 +436,56 @@ impl Aplicacion {
         self.avisos.clear();
         self.recalcular();
         self.info("Ejemplo sintético cargado.");
+    }
+
+    /// Ctrl+C copia la partida elegida (también al portapapeles del sistema) y
+    /// Ctrl+V pega lo copiado, aunque venga de otra ventana (otra obra).
+    fn copiar_pegar_teclado(&mut self, ctx: &egui::Context, acciones: &mut Vec<Accion>) {
+        if !ctx.egui_wants_keyboard_input() {
+            let (copiar, pegado) = ctx.input(|i| {
+                let mut copiar = false;
+                let mut pegado = None;
+                for e in &i.events {
+                    match e {
+                        egui::Event::Copy => copiar = true,
+                        egui::Event::Paste(t) => pegado = Some(t.clone()),
+                        _ => {}
+                    }
+                }
+                (copiar, pegado)
+            });
+            if copiar && let Some((p, h)) = self.sel.clone() {
+                acciones.push(Accion::Portapapeles(Some((p, h, false))));
+            }
+            if let Some(t) = pegado {
+                match ppto_core::fragmento::Fragmento::de_texto(&t) {
+                    Some(f) => {
+                        let destino = self
+                            .capitulo_activo
+                            .clone()
+                            .filter(|c| self.p.conceptos.contains_key(c))
+                            .unwrap_or_else(|| self.p.raiz.clone());
+                        acciones.push(Accion::PegarFragmento(Box::new(f), destino));
+                    }
+                    None => self.info("En el portapapeles no hay partidas copiadas de este programa."),
+                }
+            }
+        }
+    }
+
+    /// Otra ventana del programa (proceso aparte), con una obra o vacía.
+    fn abrir_otra_ventana(&mut self, ruta: Option<PathBuf>) {
+        let r = std::env::current_exe().and_then(|exe| {
+            let mut c = std::process::Command::new(exe);
+            if let Some(r) = &ruta {
+                c.arg(r);
+            }
+            c.spawn()
+        });
+        match r {
+            Ok(_) => self.info("Otra ventana abierta: copie con Ctrl+C en una y pegue con Ctrl+V en la otra."),
+            Err(e) => self.error(format!("No se pudo abrir otra ventana: {e}")),
+        }
     }
 
     /// Presupuesto nuevo con la estructura de una plantilla (sin precios).
@@ -894,7 +955,10 @@ impl Aplicacion {
                 None => {
                     if !matches!(
                         a,
-                        Accion::Seleccionar(..) | Accion::Navegar(_) | Accion::SiguienteSinPrecio
+                        Accion::Seleccionar(..)
+                            | Accion::Navegar(_)
+                            | Accion::SiguienteSinPrecio
+                            | Accion::CapituloActivo(_)
                     ) {
                         self.historial.grupo = None;
                     }
@@ -903,6 +967,7 @@ impl Aplicacion {
             };
             let r = match a {
                 Accion::Seleccionar(padre, hijo) => {
+                    self.capitulo_activo = Some(padre.clone());
                     self.sel = Some((padre, hijo));
                     self.pestana = Pestana::Partida;
                     self.avisos.clear();
@@ -1042,11 +1107,21 @@ impl Aplicacion {
                     self.navegar(d, false);
                     continue;
                 }
+                Accion::CapituloActivo(c) => {
+                    self.capitulo_activo = Some(c);
+                    continue;
+                }
                 Accion::Portapapeles(x) => {
-                    if let Some((_, h, cortar)) = &x {
+                    if let Some((o, h, cortar)) = &x {
+                        // Al copiar, también al portapapeles del sistema: se puede
+                        // pegar con Ctrl+V en otra ventana del programa (otra obra).
+                        if !*cortar && let Ok(f) = ppto_core::fragmento::copiar(&self.p, o, std::slice::from_ref(h)) {
+                            self.copiar_al_sistema = Some(f.a_texto());
+                        }
                         self.info(format!(
-                            "{h} {}. Clic derecho sobre el capítulo de destino → «Pegar aquí».",
-                            if *cortar { "cortada" } else { "copiada" }
+                            "{h} {}. Clic derecho sobre el capítulo de destino → «Pegar aquí»{}.",
+                            if *cortar { "cortada" } else { "copiada" },
+                            if *cortar { "" } else { ", o Ctrl+V en otra ventana del programa" }
                         ));
                     }
                     self.portapapeles = x;
@@ -1146,6 +1221,24 @@ impl Aplicacion {
                     codigos,
                     partida,
                 } => self.copiar_de_base(&origen, &nombre, &codigos, partida.as_deref()),
+                Accion::PegarFragmento(f, destino) => ppto_core::fragmento::pegar(&mut self.p, &f, &destino).map(|inf| {
+                    let mut m = format!("Pegado de «{}» en {destino}: {}", f.obra, inf.pegados.join(", "));
+                    if !inf.renombrados.is_empty() {
+                        let r: Vec<String> = inf.renombrados.iter().map(|(a, b)| format!("{a} → {b}")).collect();
+                        m += &format!(". Ya había otra con el mismo código: {}", r.join(", "));
+                    }
+                    if !inf.recursos_de_esta_obra.is_empty() {
+                        m += &format!(
+                            ". Recursos con otro precio en esta obra (se usa el de esta obra): {}",
+                            inf.recursos_de_esta_obra.join(", ")
+                        );
+                    }
+                    if let Some(h) = inf.pegados.last() {
+                        self.sel = Some((destino.clone(), h.clone()));
+                        self.desplazar_arbol = true;
+                    }
+                    self.info(format!("{m}."));
+                }),
                 Accion::Precio(c, v) => self.p.fijar_precio(&c, v),
                 Accion::Rendimiento(padre, hijo, v) => self.p.fijar_rendimiento(&padre, &hijo, v),
                 Accion::Medicion(padre, hijo, m) => self.p.actualizar_medicion(&padre, &hijo, m).map(|av| {
@@ -1389,6 +1482,25 @@ impl Aplicacion {
         if boton(ui, "📂 Abrir…", "Ctrl+O").clicked() {
             ui.close();
             self.dialogo_abrir();
+        }
+        if ui
+            .button("Abrir en otra ventana…")
+            .on_hover_text(
+                "Otra obra en otra ventana (p. ej. en el otro monitor) para copiar partidas con Ctrl+C / Ctrl+V",
+            )
+            .clicked()
+        {
+            ui.close();
+            if let Some(r) = rfd::FileDialog::new()
+                .add_filter("Presupuesto (SQLite o BC3)", &["sqlite", "db", "bc3", "BC3"])
+                .pick_file()
+            {
+                self.abrir_otra_ventana(Some(r));
+            }
+        }
+        if ui.button("Nueva ventana").clicked() {
+            ui.close();
+            self.abrir_otra_ventana(None);
         }
         let txt_guardar = if self.fichero.is_some() {
             "💾 Guardar revisión"
@@ -1694,6 +1806,18 @@ impl Aplicacion {
                 .weak()
                 .small(),
         );
+        let destino = self
+            .capitulo_activo
+            .clone()
+            .filter(|c| self.p.conceptos.contains_key(c))
+            .unwrap_or_else(|| raiz.clone());
+        ui.label(
+            RichText::new(format!(
+                "Ctrl+C copia la partida elegida · Ctrl+V pega en {destino} (también entre ventanas)"
+            ))
+            .weak()
+            .small(),
+        );
         let campo = ui.add(
             egui::TextEdit::singleline(&mut self.buscar)
                 .hint_text("Buscar partida por código o texto… (Ctrl+F)")
@@ -1806,6 +1930,9 @@ impl Aplicacion {
                         }
                     });
                 let cab = cabecera.inner;
+                if cab.clicked() || cab.secondary_clicked() {
+                    acciones.push(Accion::CapituloActivo(l.hijo.clone()));
+                }
                 if cab.clicked() {
                     let mut e = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true);
                     e.toggle(ui);
@@ -3256,6 +3383,8 @@ impl eframe::App for Aplicacion {
         let mut acciones = Vec::new();
         // Ctrl+Z / Ctrl+Y (o Ctrl+Mayús+Z): deshacer / rehacer, salvo mientras
         // se escribe en un campo (allí deshace el propio campo).
+        // Ctrl+C / Ctrl+V fuera de los campos de texto (también entre ventanas)
+        self.copiar_pegar_teclado(&ui.ctx().clone(), &mut acciones);
         if !ui.ctx().egui_wants_keyboard_input() {
             let (rehacer, deshacer) = ui.ctx().input_mut(|i| {
                 let r = i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::Z)
@@ -3389,6 +3518,9 @@ impl eframe::App for Aplicacion {
         if !acciones.is_empty() {
             self.aplicar(acciones);
         }
+        if let Some(t) = self.copiar_al_sistema.take() {
+            ui.ctx().copy_text(t);
+        }
     }
 }
 
@@ -3414,11 +3546,14 @@ fn menu_linea(ui: &mut Ui, padre: &str, hijo: &str, es_capitulo: bool, acciones:
     {
         acciones.push(Accion::Portapapeles(Some((padre.to_owned(), hijo.to_owned(), true))));
     }
-    if !es_capitulo
-        && ui
-            .button("Copiar")
-            .on_hover_text("Para ponerla también en otro capítulo, con su cantidad")
-            .clicked()
+    if ui
+        .button("Copiar")
+        .on_hover_text(if es_capitulo {
+            "Para pegarlo con Ctrl+V en otra obra (otra ventana del programa)"
+        } else {
+            "Para ponerla también en otro capítulo, o con Ctrl+V en otra obra (otra ventana)"
+        })
+        .clicked()
     {
         acciones.push(Accion::Portapapeles(Some((padre.to_owned(), hijo.to_owned(), false))));
     }
@@ -4835,6 +4970,43 @@ mod pruebas {
         assert!(app.p.conceptos.contains_key("P01.02"), "detector óptico");
         assert_eq!(app.calc.pem, dec!(0));
         assert!(!app.cambios || app.fichero.is_none());
+    }
+
+    #[test]
+    fn ctrl_c_en_una_ventana_y_ctrl_v_en_otra() {
+        use eframe::egui::Event;
+        let pulsar = |app: &mut Aplicacion, ctx: &Context, ev: Event| {
+            let mut acc = Vec::new();
+            let mut out = ctx.run_ui(
+                RawInput {
+                    events: vec![ev],
+                    ..Default::default()
+                },
+                |ui| app.copiar_pegar_teclado(&ui.ctx().clone(), &mut acc),
+            );
+            out.textures_delta.clear();
+            app.aplicar(acc);
+        };
+        // Ventana A (ejemplo): SR.M2 elegida, Ctrl+C
+        let mut a = Aplicacion::sin_ventana();
+        a.sel = Some(("C01".into(), "SR.M2".into()));
+        pulsar(&mut a, &Context::default(), Event::Copy);
+        let texto = a.copiar_al_sistema.take().expect("va al portapapeles del sistema");
+        // Ventana B (obra vacía con un capítulo elegido): Ctrl+V → 210 m² × 29,89 = 6.276,90
+        let mut b = Aplicacion::sin_ventana();
+        b.nuevo_presupuesto();
+        b.p.nuevo_capitulo("OBRA", "X1", "Calefacción").unwrap();
+        b.recalcular();
+        b.aplicar(vec![Accion::CapituloActivo("X1".into())]);
+        pulsar(&mut b, &Context::default(), Event::Paste(texto));
+        assert_eq!(b.calc.pem, dec!(6276.90));
+        assert_eq!(b.sel, Some(("X1".into(), "SR.M2".into())));
+        // Se puede deshacer
+        b.deshacer();
+        assert_eq!(b.calc.pem, dec!(0));
+        // Texto cualquiera: no pega nada
+        pulsar(&mut b, &Context::default(), Event::Paste("hola".into()));
+        assert_eq!(b.calc.pem, dec!(0));
     }
 
     #[test]

@@ -27,6 +27,7 @@ pub mod ejemplos;
 pub mod error;
 pub mod explosion;
 pub mod formato;
+pub mod fragmento;
 pub mod medicion;
 pub mod plantillas;
 pub mod presupuesto;
