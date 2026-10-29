@@ -29,6 +29,7 @@ pub mod explosion;
 pub mod formato;
 pub mod fragmento;
 pub mod medicion;
+pub mod pedidos;
 pub mod plantillas;
 pub mod presupuesto;
 pub mod propuesta;

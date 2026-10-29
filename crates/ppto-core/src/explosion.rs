@@ -51,12 +51,27 @@ impl Explosion {
 
 impl Presupuesto {
     pub fn explosion_recursos(&self) -> Result<Explosion, ErrorMotor> {
+        let mut e = self.explosion_de(&self.cantidades_partidas()?)?;
+        let coste_directo = self.coste_directo()?;
+        e.coste_directo = coste_directo;
+        e.descuadre_redondeo = coste_directo - e.total;
+        Ok(e)
+    }
+
+    /// Recursos de un capítulo (con sus subcapítulos), con las cantidades de
+    /// sus partidas. Aquí el coste directo es el total de la explosión.
+    pub fn explosion_capitulo(&self, capitulo: &str) -> Result<Explosion, ErrorMotor> {
+        self.explosion_de(&self.cantidades_capitulo(capitulo)?)
+    }
+
+    /// Explosión de unas partidas con sus cantidades.
+    pub fn explosion_de(&self, partidas: &BTreeMap<String, Decimal>) -> Result<Explosion, ErrorMotor> {
         self.validar()?;
         let mut cantidades: BTreeMap<String, Decimal> = BTreeMap::new();
         let mut importes_pct: BTreeMap<String, Decimal> = BTreeMap::new();
         let mut cache = HashMap::new();
-        for (partida, cant) in self.cantidades_partidas()? {
-            self.explotar(&partida, cant, &mut cantidades, &mut importes_pct, &mut cache)?;
+        for (partida, cant) in partidas {
+            self.explotar(partida, *cant, &mut cantidades, &mut importes_pct, &mut cache)?;
         }
         let d = &self.decimales;
         let mut recursos = Vec::new();
@@ -86,12 +101,11 @@ impl Presupuesto {
             });
         }
         let total: Decimal = recursos.iter().map(|r| r.importe).sum();
-        let coste_directo = self.coste_directo()?;
         Ok(Explosion {
             recursos,
             total,
-            coste_directo,
-            descuadre_redondeo: coste_directo - total,
+            coste_directo: total,
+            descuadre_redondeo: Decimal::ZERO,
         })
     }
 

@@ -229,3 +229,23 @@ fn margen_propio_de_partida_en_el_pdf() {
     assert_eq!(pv, l.precio + redondear(l.precio * dec!(0.3), 2));
     assert!(texto.contains(&format!("\"precio\":\"{}\"", eur(pv))), "{texto}");
 }
+
+#[test]
+fn pedido_a_fabricante_y_a_subcontrata_en_pdf() {
+    use ppto_core::pedidos::pedidos;
+    let mut p = ppto_core::ejemplos::suelo_radiante();
+    p.fijar_descuento("SCHAKO", rust_decimal_macros::dec!(40)).unwrap();
+    p.fijar_tarifa("MT.PANEL", "schako", rust_decimal_macros::dec!(20))
+        .unwrap();
+    let o = ppto_pdf::DatosPedido {
+        empresa: "Instaladora de ejemplo, S.L.".into(),
+        fecha: "29/10/2026".into(),
+        proveedor: vec![("CIF".into(), "B00000000".into())],
+        condiciones: "Portes pagados. Entrega en obra.".into(),
+        ..Default::default()
+    };
+    for x in pedidos(&p).unwrap() {
+        let b = ppto_pdf::pdf_pedido(&p, &x, &o).unwrap();
+        assert!(b.starts_with(b"%PDF"), "{}", x.nombre());
+    }
+}

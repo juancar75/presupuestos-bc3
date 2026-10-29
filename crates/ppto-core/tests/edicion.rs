@@ -399,3 +399,62 @@ fn precio_vinculado_a_una_oferta() {
     p.fijar_origen("MT.TUBO16", None, false).unwrap();
     assert!(p.concepto("MT.TUBO16").unwrap().origen.is_none());
 }
+
+#[test]
+fn pedidos_mano_de_obra_y_coste_de_obra() {
+    use ppto_core::pedidos::{TipoPedido, coste_obra, mano_obra, pedidos};
+    let mut p = suelo_radiante();
+    p.fijar_descuento("SCHAKO", dec!(40)).unwrap();
+    p.fijar_tarifa("MT.PANEL", "schako", dec!(20)).unwrap();
+    p.fijar_origen(
+        "MT.TUBO16",
+        Some(ppto_core::OrigenPrecio {
+            fabricante: "uponor".into(),
+            oferta: "OF-9".into(),
+            fecha: "2026-10-01".into(),
+            referencia: Some("1005".into()),
+            ..Default::default()
+        }),
+        false,
+    )
+    .unwrap();
+    let v = pedidos(&p).unwrap();
+    let schako = v.iter().find(|x| x.proveedor == "SCHAKO").unwrap();
+    let panel = &schako.lineas[0];
+    assert_eq!(
+        (panel.pvp, panel.descuento, panel.precio),
+        (Some(dec!(20)), Some(dec!(40)), dec!(12))
+    );
+    assert!(!panel.partidas.is_empty());
+    let uponor = v.iter().find(|x| x.proveedor == "UPONOR").unwrap();
+    assert_eq!(uponor.lineas[0].referencia.as_deref(), Some("1005"));
+    assert_eq!(uponor.lineas[0].oferta.as_deref(), Some("OF-9 (2026-10-01)"));
+    // Todo el material y la subcontrata salen en algún pedido
+    let e = p.explosion_recursos().unwrap();
+    let mat: ppto_core::Decimal = e
+        .recursos
+        .iter()
+        .filter(|r| !matches!(r.naturaleza, Naturaleza::ManoObra | Naturaleza::Porcentaje))
+        .map(|r| r.importe)
+        .sum();
+    assert_eq!(v.iter().map(|x| x.total).sum::<ppto_core::Decimal>(), mat);
+    assert!(
+        v.iter()
+            .all(|x| x.tipo == TipoPedido::Material || x.tipo == TipoPedido::Subcontrata)
+    );
+
+    let mo = mano_obra(&p).unwrap();
+    assert!(mo.horas > dec!(0));
+    // Por capítulos suma lo mismo que en total
+    assert_eq!(
+        mo.capitulos.iter().map(|c| c.importe).sum::<ppto_core::Decimal>(),
+        mo.importe
+    );
+
+    let c = coste_obra(&p, dec!(13), dec!(6)).unwrap();
+    assert_eq!(c.pem, p.pem().unwrap());
+    assert_eq!(c.capitulos.iter().map(|x| x.coste).sum::<ppto_core::Decimal>(), c.pem);
+    assert_eq!(c.desglose.total(), e.total);
+    // Con GG 13 % + BI 6 % y sin márgenes propios: venta = PEM × 1,19 (± redondeo)
+    assert!((c.venta - c.pem * dec!(1.19)).abs() < c.pem * dec!(0.001));
+}
