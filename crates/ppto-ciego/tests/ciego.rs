@@ -438,3 +438,129 @@ fn listado_sin_mediciones_con_pres_y_totales_en_resumen() {
     );
     assert_eq!(p.concepto("06710604").unwrap().naturaleza, Naturaleza::Partida);
 }
+
+/// Código, Nat, Ud, Resumen, Comentario, Cantidad y fórmula de CanPres.
+type Fila<'a> = (
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    Option<f64>,
+    Option<&'a str>,
+);
+
+/// Listado de solo mediciones (Código, Nat, Ud, Resumen, Comentario,
+/// Cantidad, CanPres), sin columna de precio, con resumen y texto en la misma
+/// celda y «Total 00» en la columna Cantidad. Datos sintéticos.
+fn solo_mediciones() -> Vec<u8> {
+    let mut wb = Workbook::new();
+    let h = wb.add_worksheet();
+    h.set_name("Hoja1").unwrap();
+    h.write(0, 0, "B").unwrap();
+    h.write(1, 0, "Presupuesto").unwrap();
+    for (j, t) in ["Código", "Nat", "Ud", "Resumen", "Comentario", "Cantidad", "CanPres"]
+        .iter()
+        .enumerate()
+    {
+        h.write(2, j as u16, *t).unwrap();
+    }
+    let filas: &[Fila] = &[
+        ("00", "Capítulo", "", "NOTAS", "", None, Some("=G7")),
+        ("00.01", "Partida", "", "NOTAS GENERALES", "", None, None),
+        ("", "", "", "Consideraciones generales de la oferta.", "", None, None),
+        ("", "", "", "", "", None, None),
+        ("", "", "", "", "", None, None),
+        ("", "", "", "", "", None, None),
+        ("21", "Capítulo", "", "VENTILACIÓN", "", None, None),
+        ("21.01", "Capítulo", "", "GARAJE", "", None, None),
+        (
+            "21.01.01",
+            "Partida",
+            "u",
+            "DETECTOR CO\nSuministro y montaje de detector de CO.",
+            "",
+            None,
+            Some("=SUM(F13:F15)"),
+        ),
+        ("", "", "", "", "S1", Some(6.0), None),
+        ("", "", "", "", "S2", Some(6.0), None),
+        ("", "", "", "", "S3", Some(4.0), None),
+        (
+            "21.01.02",
+            "Partida",
+            "m2",
+            "CONDUCTO CHAPA\nConducto rectangular de chapa galvanizada.",
+            "",
+            None,
+            Some("=SUM(F17:F18)"),
+        ),
+        ("", "", "", "", "Aporte", Some(120.5), None),
+        ("", "", "", "", "Extracción", Some(99.25), None),
+        ("", "", "", "Total 21.01", "", None, None),
+    ];
+    for (i, (c, nat, ud, res, com, q, canpres)) in filas.iter().enumerate() {
+        let f = 3 + i as u32;
+        for (j, v) in [c, nat, ud, res, com].iter().enumerate() {
+            if !v.is_empty() {
+                h.write(f, j as u16, **v).unwrap();
+            }
+        }
+        if let Some(q) = q {
+            h.write(f, 5, *q).unwrap();
+        }
+        if let Some(cp) = canpres {
+            h.write_formula(f, 6, Formula::new(*cp)).unwrap();
+        }
+    }
+    // Fila 7 (índice 6): «Total 00» en Cantidad y 1 en CanPres
+    h.write(6, 5, "Total 00").unwrap();
+    h.write(6, 6, 1).unwrap();
+    wb.save_to_buffer().unwrap()
+}
+
+#[test]
+fn mediciones_sin_columna_de_precio() {
+    let bytes = solo_mediciones();
+    let c = ppto_ciego::leer_bytes(&bytes, "SIC ventilación").unwrap();
+    let p = &c.presupuesto;
+    assert_eq!(p.concepto(&p.raiz).unwrap().resumen, "SIC ventilación");
+    let det = p.concepto("21.01.01").unwrap();
+    assert_eq!(det.resumen, "DETECTOR CO");
+    assert_eq!(det.texto.as_deref(), Some("Suministro y montaje de detector de CO."));
+    assert_eq!(det.naturaleza, Naturaleza::Partida);
+    let q = |cap: &str, h: &str| {
+        p.concepto(cap)
+            .unwrap()
+            .descomposicion
+            .iter()
+            .find(|l| l.hijo == h)
+            .unwrap()
+            .cantidad()
+    };
+    assert_eq!(q("21.01", "21.01.01"), dec!(16));
+    assert_eq!(q("21.01", "21.01.02"), dec!(219.75));
+    assert_eq!(
+        p.concepto("00.01").unwrap().texto.as_deref(),
+        Some("Consideraciones generales de la oferta.")
+    );
+    let nuevas = c.columnas_nuevas.unwrap();
+    assert_eq!((nuevas.precio, nuevas.importe, nuevas.cantidad), (7, 8, 6));
+
+    // Valorar: precio en la columna H nueva, importe en I con fórmula
+    let mut v = p.clone();
+    v.fijar_precio("21.01.01", dec!(85)).unwrap();
+    v.fijar_precio("21.01.02", dec!(32.4)).unwrap();
+    let r = ppto_ciego::valorar(&bytes, &c, &v).unwrap();
+    assert_eq!(r.total_excel, dec!(1360) + dec!(7119.90));
+    let mut libro: calamine::Xlsx<_> = calamine::open_workbook_from_rs(std::io::Cursor::new(r.bytes)).unwrap();
+    let h = libro.worksheet_range("Hoja1").unwrap();
+    assert_eq!(h.get_value((2, 7)), Some(&Data::String("PrPres".into())));
+    assert_eq!(h.get_value((2, 8)), Some(&Data::String("ImpPres".into())));
+    assert_eq!(h.get_value((11, 7)), Some(&Data::Float(85.0)));
+    assert_eq!(h.get_value((15, 7)), Some(&Data::Float(32.4)));
+    let f = libro.worksheet_formula("Hoja1").unwrap();
+    assert_eq!(f.get_value((11, 8)).map(String::as_str), Some("ROUND(G12*H12,2)"));
+    // Lo que había sigue igual
+    assert_eq!(h.get_value((12, 4)), Some(&Data::String("S1".into())));
+}

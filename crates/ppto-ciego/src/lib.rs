@@ -4,7 +4,8 @@
 //! Presupuestos ciegos en Excel: el listado «Presupuesto y mediciones» que
 //! exporta Presto (columnas Código, Nat, Ud, Resumen, Comentario, N,
 //! Longitud, Anchura, Altura, Parcial, CanPres, PrPres, ImpPres) con los
-//! precios a cero.
+//! precios a cero, o el de solo mediciones (Código, Nat, Ud, Resumen,
+//! Comentario, Cantidad, CanPres), al que se añaden PrPres e ImpPres.
 //!
 //! 1. [`leer`] lo convierte en un [`Presupuesto`]: capítulos y subcapítulos,
 //!    partidas con su texto y sus líneas de medición, y anota en qué celda
@@ -28,7 +29,7 @@ pub enum ErrorCiego {
     #[error("no se pudo leer el Excel: {0}")]
     Lectura(String),
     #[error(
-        "no se encuentra la fila de cabecera de Presto (Código, Nat, Ud, Resumen, … CanPres, PrPres o Pres) en ninguna hoja"
+        "no se encuentra la fila de cabecera de Presto (Código, Nat, Ud, Resumen y CanPres o Cantidad) en ninguna hoja"
     )]
     SinCabecera,
     #[error(transparent)]
@@ -76,8 +77,22 @@ pub struct Aparicion {
 pub struct Ciego {
     pub presupuesto: Presupuesto,
     pub hoja: String,
+    /// El Excel no traía columna de precio (solo mediciones): al valorar se
+    /// añaden PrPres e ImpPres en esta fila de cabecera, detrás de la última.
+    pub columnas_nuevas: Option<ColumnasNuevas>,
     pub apariciones: Vec<Aparicion>,
     pub incidencias: Vec<String>,
+}
+
+/// Columnas de precio que se añaden a un Excel de solo mediciones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ColumnasNuevas {
+    /// Fila de cabecera (desde 0).
+    pub cabecera: u32,
+    pub precio: u32,
+    pub importe: u32,
+    /// Columna CanPres, para la fórmula del importe.
+    pub cantidad: u32,
 }
 
 /// Resultado de devolver el Excel valorado.
@@ -114,23 +129,38 @@ struct Columnas([Option<u32>; 13]);
 impl Columnas {
     fn de(fila: &[Data], inicio: u32) -> Option<Self> {
         let mut c = [None; 13];
-        for (j, v) in fila.iter().enumerate() {
-            let t = texto(v).to_lowercase();
+        let rotulos: Vec<String> = fila.iter().map(|v| texto(v).trim().to_lowercase()).collect();
+        let hay_canpres = rotulos.iter().any(|t| t == "canpres");
+        let mut ultima = None;
+        for (j, t) in rotulos.iter().enumerate() {
             // Otras exportaciones de Presto rotulan «Pres» en lugar de «PrPres»
-            let t = match t.trim() {
+            let t = match t.as_str() {
                 "pres" | "precio" => "prpres",
                 "importe" => "imppres",
+                // Con CanPres, «Cantidad» es la de cada línea de medición
+                "cantidad" if hay_canpres => "n",
                 "cantidad" => "canpres",
                 "naturaleza" => "nat",
                 "codigo" => "código",
                 otro => otro,
             };
             if let Some(k) = COLUMNAS.iter().position(|n| *n == t) {
-                c[k] = Some(inicio + u32::try_from(j).ok()?);
+                let col = inicio + u32::try_from(j).ok()?;
+                c[k] = Some(col);
+                ultima = Some(ultima.map_or(col, |u: u32| u.max(col)));
             }
         }
-        // Imprescindibles: Código, Nat, Resumen, CanPres, PrPres
-        [0, 1, 3, 10, 11].iter().all(|&k| c[k].is_some()).then_some(Self(c))
+        // Imprescindibles: Código, Nat, Resumen y CanPres
+        if ![0, 1, 3, 10].iter().all(|&k| c[k].is_some()) {
+            return None;
+        }
+        // Mediciones sin columna de precio: se añaden PrPres e ImpPres detrás
+        if c[11].is_none() {
+            let u = ultima.unwrap_or(inicio);
+            c[11] = Some(u + 1);
+            c[12] = Some(u + 2);
+        }
+        Some(Self(c))
     }
 }
 
@@ -176,16 +206,40 @@ pub fn leer_bytes(bytes: &[u8], nombre: &str) -> Result<Ciego, ErrorCiego> {
         else {
             continue;
         };
+        // Título: el primer texto con sentido sobre la cabecera (no «B» ni
+        // «Presupuesto», que pone Presto), o el nombre del fichero
         let titulo = filas
             .iter()
             .take(i_cab)
             .flat_map(|f| f.iter())
             .map(texto)
-            .find(|t| !t.trim().is_empty())
+            .map(|t| t.trim().to_owned())
+            .find(|t| {
+                t.chars().count() > 2
+                    && !matches!(
+                        t.to_lowercase().as_str(),
+                        "presupuesto" | "mediciones" | "presupuesto y mediciones" | "mediciones y presupuesto"
+                    )
+            })
             .unwrap_or_else(|| nombre.to_owned());
         let mut lector = Lector::new(&hoja, cols, c0, titulo);
         lector.formulas = formulas;
-        return lector.leer(&filas, f0, i_cab + 1);
+        let sin_precio = !filas[i_cab]
+            .iter()
+            .any(|v| matches!(texto(v).trim().to_lowercase().as_str(), "prpres" | "pres" | "precio"));
+        let mut ciego = lector.leer(&filas, f0, i_cab + 1)?;
+        if sin_precio {
+            ciego.columnas_nuevas = Some(ColumnasNuevas {
+                cabecera: f0 + u32::try_from(i_cab).unwrap_or(0),
+                precio: cols.0[11].unwrap_or(0),
+                importe: cols.0[12].unwrap_or(0),
+                cantidad: cols.0[10].unwrap_or(0),
+            });
+            ciego.incidencias.push(
+                "el Excel solo trae mediciones: al devolverlo valorado se añaden las columnas PrPres e ImpPres".into(),
+            );
+        }
+        return Ok(ciego);
     }
     Err(ErrorCiego::SinCabecera)
 }
@@ -257,11 +311,16 @@ impl Lector {
         if !texto(self.valor(f, 0)).trim().is_empty() || !texto(self.valor(f, 1)).trim().is_empty() {
             return String::new();
         }
-        texto(self.valor(f, 3))
-            .trim()
-            .strip_prefix("Total ")
-            .map(|c| c.trim().to_owned())
-            .filter(|c| !c.is_empty() && !c.contains(' '))
+        // «Total CÓDIGO» en Resumen o, en algunas exportaciones, en Cantidad
+        [3, 5]
+            .iter()
+            .find_map(|&k| {
+                texto(self.valor(f, k))
+                    .trim()
+                    .strip_prefix("Total ")
+                    .map(|c| c.trim().to_owned())
+                    .filter(|c| !c.is_empty() && !c.contains(' '))
+            })
             .unwrap_or_default()
     }
 
@@ -296,10 +355,23 @@ impl Lector {
                 self.pila.join(", ")
             ));
         }
+        // Formatos sin fila de total por partida: un solo aviso, no uno por partida
+        let sin_total = self
+            .incidencias
+            .iter()
+            .filter(|i| i.contains("medición sin fila de total"))
+            .count();
+        if sin_total > 3 {
+            self.incidencias.retain(|i| !i.contains("medición sin fila de total"));
+            self.incidencias.push(format!(
+                "{sin_total} partidas sin fila de total: el precio se escribirá en la fila de cada partida"
+            ));
+        }
         self.p.validar()?;
         Ok(Ciego {
             presupuesto: self.p,
             hoja: self.hoja,
+            columnas_nuevas: None,
             apariciones: self.apariciones,
             incidencias: self.incidencias,
         })
@@ -335,8 +407,18 @@ impl Lector {
                 return Ok(());
             };
             let unidad = texto(self.valor(f, 2)).trim().to_owned();
+            // Resumen y texto en la misma celda: la 1.ª línea es el resumen
+            let (resumen, texto_largo) = match resumen.split_once('\n') {
+                Some((r, t)) if !t.trim().is_empty() => (r.trim().to_owned(), Some(t.trim().to_owned())),
+                _ => (resumen, None),
+            };
             if !self.p.conceptos.contains_key(&codigo) {
                 self.p.nueva_partida(&capitulo, &codigo, &unidad, &resumen)?;
+                if let Some(t) = texto_largo
+                    && let Some(c) = self.p.conceptos.get_mut(&codigo)
+                {
+                    c.texto = Some(t);
+                }
             } else if let Err(e) = self.p.anadir_linea(&capitulo, &codigo, Decimal::ONE) {
                 self.incidencias.push(format!("fila {}: {e}", fila + 1));
                 return Ok(());
@@ -511,7 +593,7 @@ pub fn valorar(original: &[u8], ciego: &Ciego, p: &Presupuesto) -> Result<Valora
             precio.insert((cap.as_str(), l.hijo.as_str()), l.precio);
         }
     }
-    let mut celdas: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut celdas: BTreeMap<String, Contenido> = BTreeMap::new();
     let mut total_excel = Decimal::ZERO;
     let mut sin_precio = Vec::new();
     for a in &ciego.apariciones {
@@ -523,7 +605,36 @@ pub fn valorar(original: &[u8], ciego: &Ciego, p: &Presupuesto) -> Result<Valora
             sin_precio.push(a.partida.clone());
         }
         total_excel += redondear(pr * a.cantidad_excel, 2);
-        celdas.insert(a.celda_precio.referencia(), pr);
+        celdas.insert(a.celda_precio.referencia(), Contenido::Numero(pr));
+        if let Some(n) = ciego.columnas_nuevas {
+            let fila = a.celda_precio.fila;
+            let q = Celda {
+                fila,
+                columna: n.cantidad,
+            }
+            .referencia();
+            let pr_ref = a.celda_precio.referencia();
+            celdas.insert(
+                Celda {
+                    fila,
+                    columna: n.importe,
+                }
+                .referencia(),
+                Contenido::Formula(format!("ROUND({q}*{pr_ref},2)")),
+            );
+        }
+    }
+    if let Some(n) = ciego.columnas_nuevas {
+        for (col, t) in [(n.precio, "PrPres"), (n.importe, "ImpPres")] {
+            celdas.insert(
+                Celda {
+                    fila: n.cabecera,
+                    columna: col,
+                }
+                .referencia(),
+                Contenido::Texto(t.into()),
+            );
+        }
     }
 
     let mut zip = zip::ZipArchive::new(Cursor::new(original)).map_err(|_| ErrorCiego::NoXlsx)?;
@@ -625,32 +736,93 @@ fn ruta_de_hoja<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>, hoja: &st
     Err(ErrorCiego::NoXlsx)
 }
 
-/// Sustituye el contenido de las celdas indicadas por un número, conservando
-/// su estilo. Devuelve el XML nuevo y cuántas celdas se han escrito.
-fn escribir_celdas(xml: &[u8], celdas: &BTreeMap<String, Decimal>) -> Result<(Vec<u8>, usize), ErrorCiego> {
+/// Lo que se escribe en una celda.
+#[derive(Debug, Clone, PartialEq)]
+enum Contenido {
+    Numero(Decimal),
+    Texto(String),
+    Formula(String),
+}
+
+/// Fila (desde 1) y columna (desde 0) de una referencia «H12».
+fn fila_col(rf: &str) -> (u32, u32) {
+    let letras: String = rf.chars().take_while(char::is_ascii_alphabetic).collect();
+    let fila = rf[letras.len()..].parse().unwrap_or(0);
+    let col = letras
+        .bytes()
+        .fold(0u32, |a, b| a * 26 + u32::from(b.to_ascii_uppercase() - b'A' + 1));
+    (fila, col.saturating_sub(1))
+}
+
+/// Escribe una celda `<c>` con los atributos de `base` (estilo) y el contenido.
+fn escribir_celda(
+    w: &mut quick_xml::Writer<Vec<u8>>,
+    rf: &str,
+    base: Option<&BytesStart>,
+    v: &Contenido,
+) -> Result<(), ErrorCiego> {
+    use quick_xml::events::BytesEnd;
+    let err = |e: &dyn std::fmt::Display| ErrorCiego::Escritura(e.to_string());
+    let mut c = BytesStart::new("c");
+    match base {
+        // fuera el tipo (t="s", t="str"...): lo pone el contenido nuevo
+        Some(e) => {
+            for a in e.attributes().flatten() {
+                if a.key.as_ref() != b"t" {
+                    c.push_attribute(a);
+                }
+            }
+        }
+        None => c.push_attribute(("r", rf)),
+    }
+    if matches!(v, Contenido::Texto(_)) {
+        c.push_attribute(("t", "inlineStr"));
+    }
+    w.write_event(Event::Start(c)).map_err(|e| err(&e))?;
+    let (abre, cierra_interior, texto) = match v {
+        Contenido::Numero(n) => ("v", None, n.normalize().to_string()),
+        Contenido::Formula(f) => ("f", None, f.clone()),
+        Contenido::Texto(t) => ("is", Some("t"), t.clone()),
+    };
+    w.write_event(Event::Start(BytesStart::new(abre)))
+        .map_err(|e| err(&e))?;
+    if let Some(t) = cierra_interior {
+        w.write_event(Event::Start(BytesStart::new(t))).map_err(|e| err(&e))?;
+    }
+    w.write_event(Event::Text(BytesText::new(&texto)))
+        .map_err(|e| err(&e))?;
+    if let Some(t) = cierra_interior {
+        w.write_event(Event::End(BytesEnd::new(t))).map_err(|e| err(&e))?;
+    }
+    w.write_event(Event::End(BytesEnd::new(abre))).map_err(|e| err(&e))?;
+    w.write_event(Event::End(BytesEnd::new("c"))).map_err(|e| err(&e))?;
+    Ok(())
+}
+
+/// Sustituye el contenido de las celdas indicadas conservando su estilo. Las
+/// que no existen (columnas nuevas, siempre a la derecha de las de la hoja)
+/// se añaden al final de su fila. Devuelve el XML nuevo y cuántas celdas se
+/// han escrito.
+fn escribir_celdas(xml: &[u8], celdas: &BTreeMap<String, Contenido>) -> Result<(Vec<u8>, usize), ErrorCiego> {
     let err = |e: &dyn std::fmt::Display| ErrorCiego::Escritura(e.to_string());
     let mut r = quick_xml::Reader::from_reader(xml);
     let mut w = quick_xml::Writer::new(Vec::with_capacity(xml.len()));
     let mut buf = Vec::new();
     let mut saltar = 0usize; // profundidad dentro de una celda sustituida
     let mut escritas = 0;
-    let celda_nueva = |w: &mut quick_xml::Writer<Vec<u8>>, e: &BytesStart, v: Decimal| -> Result<(), ErrorCiego> {
-        let mut c = BytesStart::new("c");
-        for a in e.attributes().flatten() {
-            // fuera el tipo (t="s", t="str"...): ahora es un número
-            if a.key.as_ref() != b"t" {
-                c.push_attribute(a);
-            }
-        }
-        w.write_event(Event::Start(c)).map_err(|e| err(&e))?;
-        w.write_event(Event::Start(BytesStart::new("v"))).map_err(|e| err(&e))?;
-        w.write_event(Event::Text(BytesText::new(&v.normalize().to_string())))
-            .map_err(|e| err(&e))?;
-        w.write_event(Event::End(quick_xml::events::BytesEnd::new("v")))
-            .map_err(|e| err(&e))?;
-        w.write_event(Event::End(quick_xml::events::BytesEnd::new("c")))
-            .map_err(|e| err(&e))?;
-        Ok(())
+    let mut hechas: HashSet<String> = HashSet::new();
+    let mut fila_actual = 0u32;
+    // Celdas pendientes de una fila, ordenadas por columna
+    let pendientes = |fila: u32, hechas: &HashSet<String>| -> Vec<(u32, String)> {
+        let mut v: Vec<(u32, String)> = celdas
+            .keys()
+            .filter(|k| !hechas.contains(*k))
+            .map(|k| (fila_col(k), k.clone()))
+            .filter(|((f, _), _)| *f == fila)
+            .map(|((_, c), k)| (c, k))
+            .collect();
+        v.sort();
+        v
     };
     loop {
         let ev = r.read_event_into(&mut buf).map_err(|e| err(&e))?;
@@ -661,10 +833,39 @@ fn escribir_celdas(xml: &[u8], celdas: &BTreeMap<String, Decimal>) -> Result<(Ve
                 Event::End(_) => saltar -= 1,
                 _ => {}
             },
+            Event::Start(ref e) if e.local_name().as_ref() == b"row" => {
+                fila_actual = atributo(e, b"r").and_then(|x| x.parse().ok()).unwrap_or(0);
+                w.write_event(ev.borrow()).map_err(|e| err(&e))?;
+            }
+            Event::Empty(ref e) if e.local_name().as_ref() == b"row" => {
+                let f: u32 = atributo(e, b"r").and_then(|x| x.parse().ok()).unwrap_or(0);
+                let p = pendientes(f, &hechas);
+                if p.is_empty() {
+                    w.write_event(ev.borrow()).map_err(|e| err(&e))?;
+                } else {
+                    w.write_event(Event::Start(e.to_owned())).map_err(|e| err(&e))?;
+                    for (_, k) in p {
+                        escribir_celda(&mut w, &k, None, &celdas[&k])?;
+                        hechas.insert(k);
+                        escritas += 1;
+                    }
+                    w.write_event(Event::End(quick_xml::events::BytesEnd::new("row")))
+                        .map_err(|e| err(&e))?;
+                }
+            }
+            Event::End(ref e) if e.local_name().as_ref() == b"row" => {
+                for (_, k) in pendientes(fila_actual, &hechas) {
+                    escribir_celda(&mut w, &k, None, &celdas[&k])?;
+                    hechas.insert(k);
+                    escritas += 1;
+                }
+                w.write_event(ev.borrow()).map_err(|e| err(&e))?;
+            }
             Event::Start(ref e) if e.local_name().as_ref() == b"c" => {
-                match atributo(e, b"r").and_then(|rf| celdas.get(&rf).copied()) {
-                    Some(v) => {
-                        celda_nueva(&mut w, e, v)?;
+                match atributo(e, b"r").filter(|rf| celdas.contains_key(rf)) {
+                    Some(rf) => {
+                        escribir_celda(&mut w, &rf, Some(e), &celdas[&rf])?;
+                        hechas.insert(rf);
                         escritas += 1;
                         saltar = 1;
                     }
@@ -672,9 +873,10 @@ fn escribir_celdas(xml: &[u8], celdas: &BTreeMap<String, Decimal>) -> Result<(Ve
                 }
             }
             Event::Empty(ref e) if e.local_name().as_ref() == b"c" => {
-                match atributo(e, b"r").and_then(|rf| celdas.get(&rf).copied()) {
-                    Some(v) => {
-                        celda_nueva(&mut w, e, v)?;
+                match atributo(e, b"r").filter(|rf| celdas.contains_key(rf)) {
+                    Some(rf) => {
+                        escribir_celda(&mut w, &rf, Some(e), &celdas[&rf])?;
+                        hechas.insert(rf);
                         escritas += 1;
                     }
                     None => w.write_event(ev.borrow()).map_err(|e| err(&e))?,
