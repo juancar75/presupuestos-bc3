@@ -5,6 +5,16 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.35] - 2026-10-29
+
+### Añadido
+- **Árbol con lo que falta por valorar**: en **rojo** las partidas sin
+  precio y en **naranja** las de descompuesto a medias (mano de obra sin
+  material o material sin mano de obra; las subcontratadas no se marcan).
+  Cada capítulo toma el color de lo peor que contiene, para encontrarlo
+  aunque esté plegado. Encima del árbol, el recuento («■ 12 sin valorar ·
+  ■ 5 incompletas»); al pasar el ratón, el motivo. También en la búsqueda.
+
 ## [0.1.0-alpha.34] - 2026-10-29
 
 ### Añadido

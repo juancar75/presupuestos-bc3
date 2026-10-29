@@ -35,6 +35,7 @@ pub mod presupuesto;
 pub mod propuesta;
 pub mod ratio;
 pub mod subcontrata;
+pub mod valoracion;
 pub mod venta;
 
 pub use concepto::{Concepto, LineaDescomposicion, Naturaleza, OrigenPrecio, PrecioTarifa};

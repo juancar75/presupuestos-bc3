@@ -135,6 +135,11 @@ enum Accion {
     SiguienteSinPrecio,
 }
 
+/// Partida sin valorar (árbol).
+const COLOR_SIN_VALORAR: Color32 = Color32::from_rgb(225, 70, 60);
+/// Partida con el descompuesto a medias (árbol).
+const COLOR_INCOMPLETA: Color32 = Color32::from_rgb(235, 150, 40);
+
 /// Resultados del motor para el estado actual del presupuesto.
 #[derive(Default)]
 struct Calculo {
@@ -145,6 +150,8 @@ struct Calculo {
     precios: HashMap<String, Decimal>,
     cantidades: BTreeMap<String, Decimal>,
     explosion: Option<Explosion>,
+    /// Qué falta por valorar (rojo / naranja en el árbol).
+    estados: HashMap<String, ppto_core::valoracion::Estado>,
 }
 
 impl Calculo {
@@ -162,6 +169,7 @@ impl Calculo {
             c.coste_directo = v.coste_directo;
             c.cantidades = p.cantidades_partidas()?;
             c.explosion = Some(p.explosion_recursos()?);
+            c.estados = ppto_core::valoracion::estados(p);
             Ok(())
         })();
         if let Err(e) = r {
@@ -1795,6 +1803,47 @@ impl Aplicacion {
         }
     }
 
+    /// Rojo: sin valorar. Naranja: mano de obra sin material o al revés.
+    fn color_estado(&self, t: RichText, codigo: &str) -> RichText {
+        use ppto_core::valoracion::Estado;
+        match self.calc.estados.get(codigo) {
+            Some(Estado::SinPrecio) => t.color(COLOR_SIN_VALORAR),
+            Some(e) if e.incompleta() => t.color(COLOR_INCOMPLETA),
+            _ => t,
+        }
+    }
+
+    /// Recuento de lo que falta, encima del árbol.
+    fn leyenda_estados(&self, ui: &mut Ui) {
+        use ppto_core::valoracion::Estado;
+        let partidas = self
+            .p
+            .conceptos
+            .values()
+            .filter(|c| c.naturaleza == Naturaleza::Partida);
+        let (mut rojas, mut naranjas) = (0, 0);
+        for c in partidas {
+            match self.calc.estados.get(&c.codigo) {
+                Some(Estado::SinPrecio) => rojas += 1,
+                Some(e) if e.incompleta() => naranjas += 1,
+                _ => {}
+            }
+        }
+        if rojas + naranjas == 0 {
+            return;
+        }
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            if rojas > 0 {
+                ui.label(RichText::new(format!("■ {rojas} sin valorar")).color(COLOR_SIN_VALORAR).small());
+            }
+            if naranjas > 0 {
+                ui.label(RichText::new(format!("■ {naranjas} incompletas")).color(COLOR_INCOMPLETA).small())
+                    .on_hover_text("Con mano de obra pero sin material, o con material sin mano de obra (las subcontratadas no se marcan)");
+            }
+        });
+    }
+
     fn arbol(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
         let raiz = self.p.raiz.clone();
         // Clic derecho en el nombre de la obra o en el espacio libre del
@@ -1844,6 +1893,7 @@ impl Aplicacion {
             campo.request_focus();
         }
         let buscar = self.buscar.trim().to_lowercase();
+        self.leyenda_estados(ui);
         egui::ScrollArea::vertical().show(ui, |ui| {
             if buscar.is_empty() {
                 self.rama(ui, &raiz, acciones);
@@ -1887,8 +1937,11 @@ impl Aplicacion {
             let elegido = self.sel.as_ref() == Some(&(cap.clone(), hijo.clone()));
             let precio = self.calc.precios.get(&hijo).copied().unwrap_or_default();
             let r = ui.add(
-                egui::Button::selectable(elegido, format!("{}  {}", c.codigo, corto(&c.resumen, 34)))
-                    .wrap_mode(egui::TextWrapMode::Truncate),
+                egui::Button::selectable(
+                    elegido,
+                    self.color_estado(RichText::new(format!("{}  {}", c.codigo, corto(&c.resumen, 34))), &hijo),
+                )
+                .wrap_mode(egui::TextWrapMode::Truncate),
             );
             ui.label(
                 RichText::new(format!("    en {cap} · {} €/{}", eur(precio), c.unidad))
@@ -1929,10 +1982,15 @@ impl Aplicacion {
                 let (_, cabecera, cuerpo) = estado
                     .show_header(ui, |ui| {
                         ui.add(
-                            egui::Button::new(RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong())
-                                .frame(false)
-                                .wrap_mode(egui::TextWrapMode::Truncate)
-                                .sense(egui::Sense::click_and_drag()),
+                            egui::Button::new(
+                                self.color_estado(
+                                    RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong(),
+                                    &l.hijo,
+                                ),
+                            )
+                            .frame(false)
+                            .wrap_mode(egui::TextWrapMode::Truncate)
+                            .sense(egui::Sense::click_and_drag()),
                         )
                     })
                     .body(|ui| {
@@ -2068,10 +2126,20 @@ impl Aplicacion {
                 // Un solo botón para clic (abrir la partida) y arrastre (moverla):
                 // envolverlo en dnd_drag_source anula el clic.
                 let r = ui.add(
-                    egui::Button::selectable(elegido, format!("{}  {}", c.codigo, corto(&c.resumen, 34)))
-                        .wrap_mode(egui::TextWrapMode::Truncate)
-                        .sense(egui::Sense::click_and_drag()),
+                    egui::Button::selectable(
+                        elegido,
+                        self.color_estado(
+                            RichText::new(format!("{}  {}", c.codigo, corto(&c.resumen, 34))),
+                            &l.hijo,
+                        ),
+                    )
+                    .wrap_mode(egui::TextWrapMode::Truncate)
+                    .sense(egui::Sense::click_and_drag()),
                 );
+                let r = match self.calc.estados.get(&l.hijo) {
+                    Some(e) if *e != ppto_core::valoracion::Estado::Valorada => r.on_hover_text(e.texto()),
+                    _ => r,
+                };
                 r.dnd_set_drag_payload(carga);
                 if r.dragged() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -5132,5 +5200,27 @@ mod pruebas {
             }
             assert_eq!(app.ventana_informes.as_ref().unwrap().tipo, t);
         }
+    }
+
+    #[test]
+    fn arbol_en_rojo_y_naranja_lo_que_falta() {
+        use ppto_core::valoracion::Estado;
+        let mut app = Aplicacion::sin_ventana();
+        let raiz = app.p.raiz.clone();
+        app.p.nuevo_capitulo(&raiz, "C9", "Pruebas").unwrap();
+        app.p.nueva_partida("C9", "P.VACIA", "ud", "Sin valorar").unwrap();
+        app.recalcular();
+        assert_eq!(app.calc.estados["P.VACIA"], Estado::SinPrecio);
+        assert_eq!(app.calc.estados["C9"], Estado::SinPrecio);
+        assert_eq!(app.calc.estados["C01"], Estado::Valorada);
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let mut acc = Vec::new();
+                app.arbol(ui, &mut acc);
+            });
+            out.textures_delta.clear();
+        }
+        assert!(ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::default(), '■')));
     }
 }
