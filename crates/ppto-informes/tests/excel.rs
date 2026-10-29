@@ -105,3 +105,50 @@ fn excel_con_costes_indirectos() {
     assert!(cerca(numero(&mut l, "Presupuesto", 0, "SR.M2", 4), "43.34"));
     assert!(cerca(numero(&mut l, "Descompuestos", 0, "SR.M2", 6), "29.89"));
 }
+
+#[test]
+fn pedidos_mano_de_obra_y_coste_en_excel() {
+    use ppto_core::pedidos::{coste_obra, mano_obra, pedidos};
+    use ppto_informes::{CabeceraPedido, excel_coste, excel_mano_obra, excel_pedido, excel_pedidos};
+    let mut p = suelo_radiante();
+    p.fijar_descuento("SCHAKO", dec!(40)).unwrap();
+    p.fijar_tarifa("MT.PANEL", "schako", dec!(20)).unwrap();
+    let v = pedidos(&p).unwrap();
+    let schako = v.iter().find(|x| x.proveedor == "SCHAKO").unwrap();
+    let cab = CabeceraPedido {
+        fecha: "29/10/2026".into(),
+        proveedor: vec![("CIF".into(), "B00000000".into())],
+        condiciones: "Portes pagados".into(),
+    };
+    let mut l = abrir(excel_pedido(&p, schako, &cab).unwrap());
+    assert!(cerca(
+        numero(&mut l, "Pedido", 2, "Total pedido (sin IVA)", 8),
+        &schako.total.to_string()
+    ));
+    assert!(cerca(numero(&mut l, "Pedido", 0, "MT.PANEL", 6), "40"));
+    // Todos: una hoja por proveedor más el resumen
+    let mut l = abrir(excel_pedidos(&p, &v, |_| CabeceraPedido::default()).unwrap());
+    assert_eq!(l.sheet_names().len(), v.len() + 1);
+    assert!(cerca(
+        numero(&mut l, "SCHAKO", 0, "MT.PANEL", 8),
+        &schako.lineas[0].importe.to_string()
+    ));
+    // Mano de obra
+    let mo = mano_obra(&p).unwrap();
+    let mut l = abrir(excel_mano_obra(&p, &mo).unwrap());
+    assert!(cerca(
+        numero(&mut l, "Mano de obra", 1, "Total horas", 3),
+        &mo.horas.to_string()
+    ));
+    // Coste
+    let c = coste_obra(&p, dec!(13), dec!(6)).unwrap();
+    let mut l = abrir(excel_coste(&p, &c).unwrap());
+    assert!(cerca(
+        numero(&mut l, "Coste de obra", 1, "Total obra", 7),
+        &c.pem.to_string()
+    ));
+    assert!(cerca(
+        numero(&mut l, "Coste de obra", 1, "Total obra", 8),
+        &c.venta.to_string()
+    ));
+}

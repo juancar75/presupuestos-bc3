@@ -5,6 +5,22 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.34] - 2026-10-29
+
+### Añadido
+- Menú **Informes** con un desplegable de cuatro informes:
+  - **Pedido a fabricante**: el material de cada fabricante (por su tarifa
+    o por la oferta de su precio) con cantidad total, PVP, descuento, neto,
+    oferta y partidas que lo usan. En **PDF** listo para enviar (con los
+    datos de la empresa del perfil de PDF y los del fabricante de la
+    Biblioteca) o en **Excel**; también todos en un Excel, una hoja por
+    fabricante. Lo que no tiene proveedor sale aparte, en naranja.
+  - **Pedido a subcontrata**: lo mismo para las subcontratas.
+  - **Mano de obra prevista**: horas y jornadas por oficio, en toda la obra
+    y por capítulo.
+  - **Coste de la obra**: material, mano de obra, maquinaria, subcontratas
+    y otros por capítulo, frente a la venta, con beneficio y margen.
+
 ## [0.1.0-alpha.33] - 2026-10-28
 
 ### Corregido

@@ -9,6 +9,7 @@ mod biblioteca;
 mod ciego;
 mod comparar;
 mod dificultad;
+mod informes;
 mod legalizacion;
 mod ofertas;
 mod pdf;
@@ -248,6 +249,8 @@ pub struct Aplicacion {
     ventana_bases: Option<bases::VentanaBases>,
     /// Formulario «Origen del precio» de un recurso.
     form_origen: Option<ofertas::FormOrigen>,
+    /// Ventana de informes (pedidos, mano de obra, coste de obra).
+    ventana_informes: Option<informes::VentanaInformes>,
     /// Si los documentos de las ofertas siguen donde se vincularon.
     docs: ofertas::CacheDocumentos,
     ventana_comparar: Option<comparar::VentanaComparar>,
@@ -411,6 +414,7 @@ impl Aplicacion {
             ventana_biblioteca: None,
             ventana_bases: None,
             form_origen: None,
+            ventana_informes: None,
             docs: ofertas::CacheDocumentos::default(),
             ventana_comparar: None,
             ventana_legalizacion: None,
@@ -1374,6 +1378,7 @@ impl Aplicacion {
             ui.menu_button("Archivo", |ui| self.menu_archivo(ui));
             ui.menu_button("Edición", |ui| self.menu_edicion(ui, acciones));
             ui.menu_button("Precios", |ui| self.menu_precios(ui));
+            ui.menu_button("Informes", |ui| self.menu_informes(ui));
             ui.menu_button("IA", |ui| self.menu_ia(ui));
             ui.menu_button("Ver", |ui| {
                 for (n, (p, t, _)) in vistas::VISTAS.iter().enumerate() {
@@ -3532,6 +3537,7 @@ impl eframe::App for Aplicacion {
         self.ventana_biblioteca(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_origen(&ctx, &mut acciones);
+        self.ventana_informes(&ctx);
         self.ventana_comparar(&ctx, &mut acciones);
         self.ventana_legalizacion(&ctx);
         self.ventana_propuestas(&ctx, &mut acciones);
@@ -5106,5 +5112,25 @@ mod pruebas {
         app.deshacer();
         assert_eq!(app.p.concepto("MT.TUBO16").unwrap().precio, precio);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn informes_de_pedidos_mano_de_obra_y_coste() {
+        let mut app = Aplicacion::sin_ventana();
+        app.p.fijar_descuento("SCHAKO", dec!(40)).unwrap();
+        app.p.fijar_tarifa("MT.PANEL", "schako", dec!(20)).unwrap();
+        app.recalcular();
+        let ctx = Context::default();
+        for t in informes::TipoInforme::TODOS {
+            app.abrir_informe(t);
+            for _ in 0..2 {
+                let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                    let c = ui.ctx().clone();
+                    app.ventana_informes(&c);
+                });
+                out.textures_delta.clear();
+            }
+            assert_eq!(app.ventana_informes.as_ref().unwrap().tipo, t);
+        }
     }
 }

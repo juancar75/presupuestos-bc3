@@ -493,6 +493,14 @@ impl Presupuesto {
         Ok(out)
     }
 
+    /// Cantidades de las partidas de un capítulo y sus subcapítulos.
+    pub fn cantidades_capitulo(&self, capitulo: &str) -> Result<BTreeMap<String, Decimal>, ErrorMotor> {
+        self.validar()?;
+        let mut out = BTreeMap::new();
+        self.cantidades_rec(capitulo, Decimal::ONE, &mut out)?;
+        Ok(out)
+    }
+
     fn cantidades_rec(
         &self,
         capitulo: &str,

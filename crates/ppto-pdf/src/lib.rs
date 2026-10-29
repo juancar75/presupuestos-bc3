@@ -20,7 +20,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use typst_as_lib::TypstEngine;
 
+pub mod pedido;
 pub mod perfiles;
+pub use pedido::{DatosPedido, pdf_pedido};
 pub use perfiles::{Perfil, Perfiles};
 use typst_layout::PagedDocument;
 
