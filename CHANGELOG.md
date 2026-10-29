@@ -21,6 +21,13 @@ versionado [semántico](https://semver.org/lang/es/).
   - **Coste de la obra**: material, mano de obra, maquinaria, subcontratas
     y otros por capítulo, frente a la venta, con beneficio y margen.
 
+### Corregido
+- **Importar ciego** acepta el Excel de **solo mediciones** de Presto
+  (Código, Nat, Ud, Resumen, Comentario, Cantidad, CanPres), sin columna de
+  precio: lee las líneas de medición, separa el resumen del texto cuando
+  vienen en la misma celda y, al devolverlo valorado, añade las columnas
+  PrPres e ImpPres (con fórmula) detrás de las del cliente.
+
 ## [0.1.0-alpha.33] - 2026-10-28
 
 ### Corregido
