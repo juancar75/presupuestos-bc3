@@ -458,3 +458,68 @@ fn pedidos_mano_de_obra_y_coste_de_obra() {
     // Con GG 13 % + BI 6 % y sin márgenes propios: venta = PEM × 1,19 (± redondeo)
     assert!((c.venta - c.pem * dec!(1.19)).abs() < c.pem * dec!(0.001));
 }
+
+#[test]
+fn estado_de_valoracion_para_el_arbol() {
+    use ppto_core::valoracion::{Estado, estado, estados};
+    use ppto_core::{Concepto, LineaDescomposicion as L};
+    let mut p = suelo_radiante();
+    // El ejemplo está completo
+    let e = estados(&p);
+    assert_eq!(e[&p.raiz], Estado::Valorada);
+    // Partidas nuevas: sin precio, solo mano de obra y solo material
+    p.nuevo_capitulo(&p.raiz.clone(), "C9", "Pruebas").unwrap();
+    p.nueva_partida("C9", "P.VACIA", "ud", "Sin valorar").unwrap();
+    p.insertar(Concepto::basico("MO.X", "h", "Oficial", Naturaleza::ManoObra, dec!(30)))
+        .unwrap();
+    p.insertar(Concepto::basico(
+        "MT.X",
+        "ud",
+        "Equipo",
+        Naturaleza::Material,
+        dec!(100),
+    ))
+    .unwrap();
+    p.insertar(Concepto::basico(
+        "SUB.X",
+        "ud",
+        "Subcontrata",
+        Naturaleza::Subcontrata,
+        dec!(50),
+    ))
+    .unwrap();
+    p.insertar(Concepto::partida(
+        "P.MO",
+        "ud",
+        "Solo MO",
+        vec![L::new("MO.X", dec!(2))],
+    ))
+    .unwrap();
+    p.insertar(Concepto::partida(
+        "P.MT",
+        "ud",
+        "Solo material",
+        vec![L::new("MT.X", dec!(1))],
+    ))
+    .unwrap();
+    p.insertar(Concepto::partida(
+        "P.SUB",
+        "ud",
+        "Subcontrata",
+        vec![L::new("SUB.X", dec!(1))],
+    ))
+    .unwrap();
+    for c in ["P.MO", "P.MT", "P.SUB"] {
+        p.anadir_linea("C9", c, dec!(1)).unwrap();
+    }
+    assert_eq!(estado(&p, "P.VACIA"), Estado::SinPrecio);
+    assert_eq!(estado(&p, "P.MO"), Estado::SoloManoObra);
+    assert_eq!(estado(&p, "P.MT"), Estado::SoloMaterial);
+    assert_eq!(estado(&p, "P.SUB"), Estado::Valorada);
+    let e = estados(&p);
+    assert_eq!(e["C9"], Estado::SinPrecio);
+    assert_eq!(e[&p.raiz], Estado::SinPrecio);
+    // Con precio en la vacía, el capítulo queda en naranja
+    p.fijar_precio("P.VACIA", dec!(10)).unwrap();
+    assert!(estados(&p)["C9"].incompleta());
+}
