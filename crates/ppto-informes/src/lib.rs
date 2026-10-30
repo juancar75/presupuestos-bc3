@@ -576,19 +576,21 @@ fn hoja_horas(
     Ok(())
 }
 
-const ORDEN: [Naturaleza; 6] = [
+const ORDEN: [Naturaleza; 7] = [
     Naturaleza::ManoObra,
     Naturaleza::Material,
     Naturaleza::Maquinaria,
     Naturaleza::Subcontrata,
     Naturaleza::Otros,
     Naturaleza::Porcentaje,
+    // Partidas de precio directo (sin descomponer)
+    Naturaleza::Partida,
 ];
 
 fn naturaleza(n: Naturaleza) -> &'static str {
     match n {
         Naturaleza::Capitulo => "Capítulo",
-        Naturaleza::Partida => "Partida",
+        Naturaleza::Partida => "Partida sin descomponer",
         Naturaleza::ManoObra => "Mano de obra",
         Naturaleza::Maquinaria => "Maquinaria",
         Naturaleza::Material => "Material",

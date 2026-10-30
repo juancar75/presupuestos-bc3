@@ -567,7 +567,7 @@ impl Aplicacion {
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             egui::Grid::new("informe_coste")
                 .striped(true)
-                .num_columns(11)
+                .num_columns(12)
                 .show(ui, |ui| {
                     for t in [
                         "Capítulo",
@@ -577,6 +577,7 @@ impl Aplicacion {
                         "Maquinaria",
                         "Subcontrata",
                         "Otros",
+                        "Sin descomponer",
                         "Coste",
                         "Venta",
                         "Beneficio",
@@ -592,6 +593,7 @@ impl Aplicacion {
                             d.maquinaria,
                             d.subcontrata,
                             d.otros,
+                            d.sin_descomponer,
                             coste,
                             venta,
                         ] {

@@ -52,6 +52,7 @@ const MIGRACIONES: &[&str] = &[
     include_str!("../migrations/0006_margen_partida.sql"),
     include_str!("../migrations/0007_venta_fija.sql"),
     include_str!("../migrations/0008_origen_precio.sql"),
+    include_str!("../migrations/0009_datos_obra.sql"),
 ];
 
 pub struct Almacen {
@@ -155,7 +156,13 @@ impl Almacen {
             return Err(ErrorDb::RevisionInexistente(origen));
         }
         let nueva = tx.last_insert_rowid();
-        for tabla in ["conceptos", "descomposicion", "medicion_lineas", "descuentos"] {
+        for tabla in [
+            "conceptos",
+            "descomposicion",
+            "medicion_lineas",
+            "descuentos",
+            "datos_obra",
+        ] {
             let cols = columnas(&tx, tabla)?;
             let resto: Vec<&str> = cols
                 .iter()
@@ -173,6 +180,33 @@ impl Almacen {
         auditar(&tx, nueva, autor, "derivar_revision", &format!("origen={origen}"))?;
         tx.commit()?;
         Ok(nueva)
+    }
+
+    /// Guarda los datos de la obra de una revisión (GG, BI, IVA, ciego…),
+    /// sustituyendo los que tuviera.
+    pub fn guardar_datos_obra(&mut self, rev: i64, datos: &BTreeMap<String, String>) -> Resultado<()> {
+        let tx = self.con.transaction()?;
+        comprobar_editable(&tx, rev)?;
+        tx.execute("DELETE FROM datos_obra WHERE revision_id = ?1", [rev])?;
+        {
+            let mut st = tx.prepare("INSERT INTO datos_obra (revision_id, clave, valor) VALUES (?1, ?2, ?3)")?;
+            for (k, v) in datos {
+                st.execute(params![rev, k, v])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Datos de la obra de una revisión (vacío en ficheros antiguos).
+    pub fn datos_obra(&self, rev: i64) -> Resultado<BTreeMap<String, String>> {
+        let mut st = self
+            .con
+            .prepare("SELECT clave, valor FROM datos_obra WHERE revision_id = ?1")?;
+        let v = st
+            .query_map([rev], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<BTreeMap<String, String>, _>>()?;
+        Ok(v)
     }
 
     pub fn bloquear_revision(&mut self, rev: i64, usuario: &str) -> Resultado<()> {
@@ -782,5 +816,34 @@ mod tests {
         let id = a.crear_presupuesto("x").unwrap();
         a.guardar_revision(id, "R1", "j", &suelo_radiante()).unwrap();
         assert!(a.guardar_revision(id, "R1", "j", &suelo_radiante()).is_err());
+    }
+}
+
+#[cfg(test)]
+mod integridad {
+    use super::*;
+    use ppto_core::ejemplos::aleatorio;
+
+    /// Lo que se guarda en el .ppto vuelve idéntico, en la revisión y en las
+    /// derivadas, con presupuestos aleatorios que usan todos los campos.
+    #[test]
+    fn guardar_y_abrir_aleatorios() {
+        let mut a = Almacen::en_memoria().unwrap();
+        for s in 0..120 {
+            let p = aleatorio(s, true);
+            let id = a.crear_presupuesto(&p.nombre).unwrap();
+            let r1 = a.guardar_revision(id, "R1", "prueba", &p).unwrap();
+            let leido = a.cargar_revision(r1).unwrap();
+            assert_eq!(leido, p, "semilla {s}");
+            let datos = BTreeMap::from([
+                ("gg".to_owned(), "13.5".to_owned()),
+                ("ciego".to_owned(), r"\\servidor\Ciegos\Obra «X».xlsx".to_owned()),
+            ]);
+            a.guardar_datos_obra(r1, &datos).unwrap();
+            let r2 = a.derivar_revision(r1, "R2", "prueba").unwrap();
+            assert_eq!(a.cargar_revision(r2).unwrap(), p, "semilla {s}");
+            assert_eq!(a.datos_obra(r2).unwrap(), datos, "semilla {s}");
+            assert_eq!(leido.pem().unwrap(), p.pem().unwrap(), "semilla {s}");
+        }
     }
 }

@@ -144,11 +144,11 @@ fn pedidos_mano_de_obra_y_coste_en_excel() {
     let c = coste_obra(&p, dec!(13), dec!(6)).unwrap();
     let mut l = abrir(excel_coste(&p, &c).unwrap());
     assert!(cerca(
-        numero(&mut l, "Coste de obra", 1, "Total obra", 7),
+        numero(&mut l, "Coste de obra", 1, "Total obra", 8),
         &c.pem.to_string()
     ));
     assert!(cerca(
-        numero(&mut l, "Coste de obra", 1, "Total obra", 8),
+        numero(&mut l, "Coste de obra", 1, "Total obra", 9),
         &c.venta.to_string()
     ));
 }
