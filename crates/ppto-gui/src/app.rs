@@ -15,6 +15,7 @@ mod ofertas;
 mod pdf;
 mod propuestas;
 mod ratio;
+mod recuperacion;
 mod tarifas;
 mod tema;
 mod vistas;
@@ -264,6 +265,8 @@ pub struct Aplicacion {
     form_origen: Option<ofertas::FormOrigen>,
     /// Dónde abre renglón F5 (lo que está bajo el ratón en este fotograma).
     f5: std::cell::RefCell<Option<Accion>>,
+    /// Guardado automático (copia de recuperación).
+    recuperacion: recuperacion::Recuperacion,
     /// Ventana de informes (pedidos, mano de obra, coste de obra).
     ventana_informes: Option<informes::VentanaInformes>,
     /// Si los documentos de las ofertas siguen donde se vincularon.
@@ -362,6 +365,7 @@ impl Aplicacion {
         let mut app = Self::sin_ventana();
         app.enlace = propuestas::Enlace::en_disco();
         app.asistente = asistente::PanelAsistente::en_disco();
+        app.recuperacion = recuperacion::Recuperacion::en_disco();
         if let Some(r) = tarifas::ruta_tarifas() {
             app.tarifas = ppto_tarifas::Biblioteca::cargar(&r);
         }
@@ -431,6 +435,7 @@ impl Aplicacion {
             form_origen: None,
             ventana_informes: None,
             f5: std::cell::RefCell::new(None),
+            recuperacion: recuperacion::Recuperacion::default(),
             docs: ofertas::CacheDocumentos::default(),
             ventana_comparar: None,
             ventana_legalizacion: None,
@@ -3741,9 +3746,11 @@ impl eframe::App for Aplicacion {
         self.ventana_comparar(&ctx, &mut acciones);
         self.ventana_legalizacion(&ctx);
         self.ventana_propuestas(&ctx, &mut acciones);
+        self.ventana_recuperacion(&ctx);
         if !acciones.is_empty() {
             self.aplicar(acciones);
         }
+        self.autoguardar(&ctx);
         if let Some(t) = self.copiar_al_sistema.take() {
             ui.ctx().copy_text(t);
         }
@@ -5482,5 +5489,66 @@ mod pruebas {
         }
         assert!(app.ventana_legalizacion.is_some());
         assert!(app.ventana_tarifas.is_some());
+    }
+
+    #[test]
+    fn autoguardado_y_recuperacion() {
+        let dir = std::env::temp_dir().join(format!("gui-autoguardado-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let propia = dir.join(format!("obra-{}.json", std::process::id()));
+        let mut app = Aplicacion::sin_ventana();
+        app.recuperacion = recuperacion::Recuperacion::en(&dir, 0);
+        app.gg = dec!(16);
+        app.aplicar(vec![Accion::Precio("MT.TUBO16".into(), dec!(1.30))]);
+        assert!(app.cambios);
+        let pem = app.calc.pem;
+        let ctx = Context::default();
+        let fotograma = |app: &mut Aplicacion, t: f64| {
+            let entrada = RawInput {
+                time: Some(t),
+                ..RawInput::default()
+            };
+            let mut out = ctx.run_ui(entrada, |ui| app.autoguardar(ui.ctx()));
+            out.textures_delta.clear();
+        };
+        // Cerrar la ventana a los pocos segundos de un cambio: copia en el acto
+        let mut cierre = RawInput {
+            time: Some(0.5),
+            ..RawInput::default()
+        };
+        cierre
+            .viewports
+            .entry(egui::ViewportId::ROOT)
+            .or_default()
+            .events
+            .push(egui::ViewportEvent::Close);
+        let mut out = ctx.run_ui(cierre, |ui| app.autoguardar(ui.ctx()));
+        out.textures_delta.clear();
+        assert!(propia.exists(), "copia al cerrar");
+        std::fs::remove_file(&propia).unwrap();
+        app.recuperacion = recuperacion::Recuperacion::en(&dir, 0);
+        fotograma(&mut app, 1.0);
+        assert!(!propia.exists(), "la primera copia, al cabo de un minuto");
+        fotograma(&mut app, 30.0);
+        assert!(!propia.exists());
+        fotograma(&mut app, 62.0);
+        assert!(propia.exists(), "copia de recuperación escrita");
+        // «Se cierra de golpe»: otra sesión la encuentra y la recupera
+        std::fs::rename(&propia, dir.join("obra-1.json")).unwrap();
+        let mut otra = Aplicacion::sin_ventana();
+        otra.recuperacion = recuperacion::Recuperacion::en(&dir, 0);
+        assert_eq!(otra.recuperacion.pendientes.len(), 1);
+        let (_, c) = otra.recuperacion.pendientes.remove(0);
+        otra.recuperar(c);
+        assert!(otra.cambios);
+        assert_eq!(otra.calc.pem, pem);
+        assert_eq!(otra.gg, dec!(16));
+        // Al guardar ya no hay cambios y la copia se borra
+        app.fichero = Some(dir.join("obra.sqlite"));
+        app.guardar(false);
+        std::fs::write(&propia, "x").unwrap();
+        fotograma(&mut app, 130.0);
+        assert!(!propia.exists(), "sin cambios, la copia sobra");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

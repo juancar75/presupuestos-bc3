@@ -20,6 +20,11 @@ versionado [semántico](https://semver.org/lang/es/).
   de esa fila. También con clic derecho → «Insertar partida aquí» y con el
   botón «+» de cada fila del descompuesto. Un solo «Deshacer» lo quita.
 
+- **Guardado automático**: cada minuto, si hay cambios sin guardar, se
+  escribe una copia de recuperación (no crea revisiones), y también al cerrar
+  la ventana. Si el programa se cierra de golpe, al abrirlo de nuevo pregunta
+  si quiere **recuperar** el trabajo. Al guardar, la copia se borra.
+
 ### Corregido (revisión de integridad de datos)
 - **Partidas de precio directo** (sin descomponer) faltaban en Recursos, en
   la explosión, en los pedidos y en el coste de obra. Ahora salen en su
