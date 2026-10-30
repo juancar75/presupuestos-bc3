@@ -20,6 +20,32 @@ versionado [semántico](https://semver.org/lang/es/).
   de esa fila. También con clic derecho → «Insertar partida aquí» y con el
   botón «+» de cada fila del descompuesto. Un solo «Deshacer» lo quita.
 
+### Corregido (revisión de integridad de datos)
+- **Partidas de precio directo** (sin descomponer) faltaban en Recursos, en
+  la explosión, en los pedidos y en el coste de obra. Ahora salen en su
+  propio grupo («Partidas de precio directo») y en la columna «Sin
+  descomponer» del coste de obra.
+- Con **factores** en el descompuesto (p. ej. 0,1 × 2,002), las cantidades
+  de recursos usaban la cantidad redondeada y el precio la exacta (como
+  Presto): la explosión, los pedidos y las horas podían desviarse. Ahora
+  usan la exacta.
+- **GG, BI e IVA** se guardan con la obra: al volver a abrirla ya no vuelven
+  a 13/6/21. También se recuerda el **Excel del ciego**, para «Devolver
+  valorado» sin tener que buscarlo.
+- El **BC3** avisa si la obra usa opciones de costes indirectos o de
+  redondeo distintas de las de Presto (no caben en el formato), con el PEM
+  que saldrá en Presto.
+- Los saltos de línea de los textos de un BC3 se leen como en el resto del
+  programa.
+
+### Pruebas
+- Generador de **presupuestos aleatorios repetibles** y pruebas de ida y
+  vuelta con cientos de ellos: fichero de la obra (y revisiones), BC3, copiar
+  y pegar entre obras y JSON; explosión, pedidos, mano de obra y coste
+  cuadran con el PEM.
+- Pruebas de punta a punta de la herramienta `ppto` y medición de la
+  **cobertura** en cada PR.
+
 ## [0.1.0-alpha.34] - 2026-10-29
 
 ### Añadido

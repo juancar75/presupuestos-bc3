@@ -41,6 +41,21 @@ pub struct Exportacion {
 
 pub fn exportar(p: &Presupuesto, o: &OpcionesExportacion) -> Result<Exportacion, ErrorMotor> {
     let mut e = Escritor::default();
+    // Las opciones de cálculo no viajan en el BC3: Presto usa las suyas
+    let presto = ppto_core::presupuesto::OpcionesCi::default();
+    if p.opciones_ci != presto {
+        let mut q = p.clone();
+        q.opciones_ci = presto;
+        let (a, b) = (p.pem()?, q.pem()?);
+        if a != b {
+            e.avisos.push(format!(
+                "la obra usa opciones de cálculo distintas de las de Presto (costes indirectos o redondeo de \
+                 auxiliares), que no caben en el BC3: en Presto el PEM saldrá {} € en vez de {} €",
+                ppto_core::formato::eur(b),
+                ppto_core::formato::eur(a)
+            ));
+        }
+    }
     let corto;
     let p = if let Some(max) = o.longitud_codigo {
         let (q, avisos) = p.con_codigos_cortos(max);

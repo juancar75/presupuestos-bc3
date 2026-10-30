@@ -115,11 +115,11 @@ jobs:
               k = n.split("/")[1]
               a = crates.setdefault(k, [0, 0]); a[0] += c; a[1] += t
           tot = d["totals"]["lines"]
+          # GitHub muestra 10 avisos por paso: pocos y compactos
           print(f"::notice title=Cobertura total::{tot['percent']:.1f} % de líneas ({tot['covered']}/{tot['count']})")
-          for k, (c, t) in sorted(crates.items()):
-              print(f"::notice title=Cobertura {k}::{100*c/max(t,1):.1f} % ({c}/{t})")
-          peores = sorted(filas, key=lambda x: x[1]/max(x[2],1))[:25]
-          print("::notice title=Ficheros con menos cobertura::" + " | ".join(f"{n} {100*c/max(t,1):.0f}% ({t-c} sin probar)" for n, c, t in peores))
+          print("::notice title=Cobertura por crate::" + " | ".join(f"{k} {100*c/max(t,1):.1f} %" for k, (c, t) in sorted(crates.items())))
+          peores = sorted(filas, key=lambda x: x[2] - x[1], reverse=True)[:20]
+          print("::notice title=Más líneas sin probar::" + " | ".join(f"{n} {100*c/max(t,1):.0f} % ({t-c})" for n, c, t in peores))
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as s:
               s.write("| Fichero | Líneas | Cubiertas | % |\n|---|---:|---:|---:|\n")
               for n, c, t in sorted(filas):

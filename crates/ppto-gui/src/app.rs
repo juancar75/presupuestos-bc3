@@ -633,14 +633,15 @@ impl Aplicacion {
             let revs = a.listar_revisiones()?;
             let ultima = revs.last().cloned();
             let p = match &ultima {
-                Some(r) => Some(a.cargar_revision(r.id)?),
+                Some(r) => Some((a.cargar_revision(r.id)?, a.datos_obra(r.id)?)),
                 None => None,
             };
             Ok((revs, ultima, p))
         })();
         match r {
-            Ok((revs, Some(ultima), Some(p))) => {
+            Ok((revs, Some(ultima), Some((p, datos)))) => {
                 self.p = p;
+                self.aplicar_datos_obra(&datos);
                 self.presupuesto_id = Some(ultima.presupuesto_id);
                 self.revision_actual = Some(ultima.id);
                 self.revisiones = revs;
@@ -908,9 +909,10 @@ impl Aplicacion {
 
     fn cambiar_revision(&mut self, id: i64) {
         let Some(ruta) = self.fichero.clone() else { return };
-        match Almacen::abrir(&ruta).and_then(|a| a.cargar_revision(id)) {
-            Ok(p) => {
+        match Almacen::abrir(&ruta).and_then(|a| Ok((a.cargar_revision(id)?, a.datos_obra(id)?))) {
+            Ok((p, datos)) => {
                 self.p = p;
+                self.aplicar_datos_obra(&datos);
                 self.historial.limpiar();
                 self.revision_actual = Some(id);
                 self.cambios = false;
@@ -948,6 +950,7 @@ impl Aplicacion {
             };
             let etiqueta = a.siguiente_etiqueta(pid)?;
             let rev = a.guardar_revision(pid, &etiqueta, &autor, &self.p)?;
+            a.guardar_datos_obra(rev, &self.datos_obra())?;
             for n in &self.notas_revision {
                 a.anotar(rev, &autor, "dificultad", n)?;
             }
@@ -966,6 +969,46 @@ impl Aplicacion {
                 ));
             }
             Err(e) => self.error(format!("No se pudo guardar: {e}")),
+        }
+    }
+
+    /// Datos de la obra que se guardan con cada revisión además del
+    /// presupuesto: GG, BI e IVA del resumen y el Excel del ciego.
+    fn datos_obra(&self) -> BTreeMap<String, String> {
+        let mut d = BTreeMap::from([
+            ("gg".to_owned(), self.gg.to_string()),
+            ("bi".to_owned(), self.bi.to_string()),
+            ("iva".to_owned(), self.iva.to_string()),
+        ]);
+        if let Some(c) = &self.ciego {
+            d.insert("ciego".into(), c.ruta.display().to_string());
+        }
+        d
+    }
+
+    /// Recupera los datos de la obra al abrir (los ficheros antiguos no
+    /// los tienen: se dejan los valores actuales).
+    fn aplicar_datos_obra(&mut self, d: &BTreeMap<String, String>) {
+        let dec = |k: &str| d.get(k).and_then(|v| v.parse::<Decimal>().ok());
+        if let Some(v) = dec("gg") {
+            self.gg = v;
+        }
+        if let Some(v) = dec("bi") {
+            self.bi = v;
+        }
+        if let Some(v) = dec("iva") {
+            self.iva = v;
+        }
+        self.ciego = None;
+        if let Some(r) = d.get("ciego").map(PathBuf::from) {
+            match ppto_ciego::leer(&r) {
+                Ok(c) => self.ciego = Some(ciego::CiegoAbierto { ruta: r, ciego: c }),
+                // Movido o borrado: «Devolver valorado» lo pedirá
+                Err(_) => self.info(format!(
+                    "No se encuentra el Excel del ciego ({}): al devolverlo valorado se le pedirá.",
+                    r.display()
+                )),
+            }
         }
     }
 
@@ -2742,14 +2785,20 @@ impl Aplicacion {
                 Naturaleza::Subcontrata,
                 Naturaleza::Otros,
                 Naturaleza::Porcentaje,
+                Naturaleza::Partida,
             ] {
                 let grupo: Vec<_> = e.por_naturaleza(nat).cloned().collect();
                 if grupo.is_empty() {
                     continue;
                 }
                 let subtotal: Decimal = grupo.iter().map(|r| r.importe).sum();
+                let titulo = if nat == Naturaleza::Partida {
+                    "Partidas de precio directo (sin descomponer)"
+                } else {
+                    nombre_naturaleza(nat)
+                };
                 ui.label(
-                    RichText::new(format!("{}  —  {} €", nombre_naturaleza(nat), eur(subtotal)))
+                    RichText::new(format!("{titulo}  —  {} €", eur(subtotal)))
                         .strong()
                         .color(color_naturaleza(nat, ui.visuals().dark_mode)),
                 );
@@ -5375,5 +5424,37 @@ mod pruebas {
             d[0].clone(),
         )]);
         assert_eq!(app.alta.as_ref().unwrap().antes.as_deref(), Some(d[0].as_str()));
+    }
+
+    #[test]
+    fn gg_bi_iva_y_ciego_se_guardan_con_la_obra() {
+        let dir = std::env::temp_dir().join(format!("gui-datos-obra-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ruta = dir.join("obra.sqlite");
+        let mut app = Aplicacion::sin_ventana();
+        app.gg = dec!(15);
+        app.bi = dec!(7.5);
+        app.iva = dec!(10);
+        app.fichero = Some(ruta.clone());
+        app.guardar(false);
+        assert!(!app.cambios);
+        // Datos de la obra guardados con la revisión
+        let a = Almacen::abrir(&ruta).unwrap();
+        let rev = a.listar_revisiones().unwrap().last().unwrap().id;
+        let d = a.datos_obra(rev).unwrap();
+        assert_eq!(d["gg"], "15");
+        assert!(!d.contains_key("ciego"));
+        drop(a);
+        // Al abrir en otra sesión vuelven GG, BI e IVA (no los de por defecto)
+        let mut otra = Aplicacion::sin_ventana();
+        otra.abrir(ruta.clone());
+        assert_eq!((otra.gg, otra.bi, otra.iva), (dec!(15), dec!(7.5), dec!(10)));
+        // Un ciego que ya no está en su sitio no impide abrir
+        let mut d = d.clone();
+        d.insert("ciego".into(), dir.join("no-existe.xlsx").display().to_string());
+        otra.aplicar_datos_obra(&d);
+        assert!(otra.ciego.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

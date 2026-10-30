@@ -27,7 +27,9 @@ pub struct Presupuesto {
     /// Código del concepto raíz (capítulo «obra»).
     pub raiz: String,
     pub conceptos: BTreeMap<String, Concepto>,
-    /// Mediciones por par (padre, hijo).
+    /// Mediciones por par (padre, hijo). En JSON van como lista
+    /// `[padre, hijo, medición]` (JSON no admite claves compuestas).
+    #[serde(with = "mediciones_json")]
     pub mediciones: BTreeMap<(String, String), Medicion>,
     /// Costes indirectos de la obra, en puntos (45 = 45 %). Se aplican a cada
     /// unidad de obra colgada de un capítulo, como hace Presto.
@@ -650,5 +652,24 @@ mod tests {
         assert_eq!(p.precio("FAB").unwrap(), dec!(17.38));
         let lv = p.lineas_valoradas("FAB").unwrap();
         assert_eq!(lv[1].importe, dec!(1.63));
+    }
+}
+
+/// Mediciones como lista `[padre, hijo, medición]` en serde.
+mod mediciones_json {
+    use crate::medicion::Medicion;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::BTreeMap;
+
+    type Mapa = BTreeMap<(String, String), Medicion>;
+
+    pub fn serialize<S: Serializer>(m: &Mapa, s: S) -> Result<S::Ok, S::Error> {
+        let v: Vec<(&String, &String, &Medicion)> = m.iter().map(|((a, b), x)| (a, b, x)).collect();
+        v.serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Mapa, D::Error> {
+        let v: Vec<(String, String, Medicion)> = Vec::deserialize(d)?;
+        Ok(v.into_iter().map(|(a, b, x)| ((a, b), x)).collect())
     }
 }

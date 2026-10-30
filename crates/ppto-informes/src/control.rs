@@ -281,6 +281,7 @@ pub fn excel_coste(p: &Presupuesto, c: &CosteObra) -> Result<Vec<u8>, ErrorInfor
             ("Maquinaria €", 12.0),
             ("Subcontrata €", 13.0),
             ("Otros €", 11.0),
+            ("Sin descomponer €", 13.0),
             ("Coste (PEM) €", 14.0),
             ("Venta €", 14.0),
             ("Beneficio €", 13.0),
@@ -302,6 +303,7 @@ pub fn excel_coste(p: &Presupuesto, c: &CosteObra) -> Result<Vec<u8>, ErrorInfor
             d.maquinaria,
             d.subcontrata,
             d.otros,
+            d.sin_descomponer,
             coste,
             venta,
             venta - coste,
@@ -312,7 +314,7 @@ pub fn excel_coste(p: &Presupuesto, c: &CosteObra) -> Result<Vec<u8>, ErrorInfor
             h.write_number_with_format(fila, 2 + i as u16, n(v), fmt)?;
         }
         if !venta.is_zero() {
-            h.write_number_with_format(fila, 10, n((venta - coste) / venta), &f.pct)?;
+            h.write_number_with_format(fila, 11, n((venta - coste) / venta), &f.pct)?;
         }
         Ok(())
     };
@@ -333,7 +335,7 @@ pub fn excel_coste(p: &Presupuesto, c: &CosteObra) -> Result<Vec<u8>, ErrorInfor
         ("Beneficio", c.beneficio()),
     ] {
         h.write_string_with_format(fila, 1, t, &f.total)?;
-        h.write_number_with_format(fila, 7, n(v), &f.num2)?;
+        h.write_number_with_format(fila, 8, n(v), &f.num2)?;
         fila += 1;
     }
     fila += 1;

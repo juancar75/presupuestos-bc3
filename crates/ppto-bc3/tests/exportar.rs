@@ -28,7 +28,13 @@ fn ida_y_vuelta(p: &Presupuesto) -> Presupuesto {
     assert_eq!(q.conceptos.len(), p.conceptos.len());
     for (codigo, c) in &p.conceptos {
         let d = &q.conceptos[codigo];
-        assert_eq!(d.naturaleza, c.naturaleza, "{codigo}");
+        // FIEBDC-3 no tiene tipo «subcontrata»: sale como material (con aviso)
+        let esperada = if c.naturaleza == Naturaleza::Subcontrata {
+            Naturaleza::Material
+        } else {
+            c.naturaleza
+        };
+        assert_eq!(d.naturaleza, esperada, "{codigo}");
         assert_eq!(
             (&d.unidad, &d.resumen, &d.texto),
             (&c.unidad, &c.resumen, &c.texto),
@@ -337,4 +343,26 @@ fn descuentos_visibles_cuadran_al_centimo() {
     let r = importar(&ex.bytes).unwrap().presupuesto;
     assert_eq!(r.pem().unwrap(), pem);
     assert!(!r.conceptos.contains_key("AJ.REDONDEO"));
+}
+
+/// Presupuestos aleatorios (sin los datos propios del programa que el BC3
+/// no admite): estructura, mediciones, precios e importes vuelven igual.
+#[test]
+fn ida_y_vuelta_de_aleatorios() {
+    let presto = ppto_core::presupuesto::OpcionesCi::default();
+    for s in 0..120 {
+        let mut p = ppto_core::ejemplos::aleatorio(s, false);
+        // Las opciones de cálculo no caben en el BC3: si no son las de Presto,
+        // se avisa con el PEM que saldrá en Presto
+        if p.opciones_ci != presto {
+            let mut q = p.clone();
+            q.opciones_ci = presto;
+            let ex = exportar(&p, &OpcionesExportacion::default()).unwrap();
+            let avisa = ex.avisos.iter().any(|a| a.contains("opciones de cálculo"));
+            assert_eq!(avisa, p.pem().unwrap() != q.pem().unwrap(), "semilla {s}");
+            p = q;
+        }
+        let r = std::panic::catch_unwind(|| ida_y_vuelta(&p));
+        assert!(r.is_ok(), "semilla {s}");
+    }
 }

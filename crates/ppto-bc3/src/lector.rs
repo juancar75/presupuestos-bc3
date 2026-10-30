@@ -258,7 +258,8 @@ impl Lector {
             "D" | "Y" => self.registro_d(&campos, linea, tipo == "Y"),
             "T" => {
                 let codigo = self.codigo(campo(1));
-                let texto = campo(2).trim().to_owned();
+                // Saltos de línea de Windows (\r\n) como \n dentro del programa
+                let texto = campo(2).trim().replace("\r\n", "\n").replace('\r', "\n");
                 if codigo.is_empty() {
                     self.anotar(Gravedad::Error, linea, "T", "texto sin código de concepto");
                 } else {

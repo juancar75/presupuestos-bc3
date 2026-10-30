@@ -147,61 +147,7 @@ pub struct ObraActiva {
     pub clave: String,
     /// Segundos desde 1970 de la última copia.
     pub guardada: u64,
-    #[serde(with = "plano")]
     pub presupuesto: Presupuesto,
-}
-
-/// JSON no admite claves compuestas: las mediciones (padre, hijo) se
-/// guardan como lista.
-mod plano {
-    use ppto_core::{Decimal, Decimales, Medicion, Presupuesto};
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::collections::BTreeMap;
-
-    #[derive(Serialize, Deserialize)]
-    struct Plano {
-        nombre: String,
-        decimales: Decimales,
-        raiz: String,
-        conceptos: BTreeMap<String, ppto_core::Concepto>,
-        mediciones: Vec<(String, String, Medicion)>,
-        costes_indirectos: Decimal,
-        opciones_ci: ppto_core::presupuesto::OpcionesCi,
-        #[serde(default)]
-        descuentos: BTreeMap<String, Decimal>,
-    }
-
-    pub fn serialize<S: Serializer>(p: &Presupuesto, s: S) -> Result<S::Ok, S::Error> {
-        Plano {
-            nombre: p.nombre.clone(),
-            decimales: p.decimales,
-            raiz: p.raiz.clone(),
-            conceptos: p.conceptos.clone(),
-            mediciones: p
-                .mediciones
-                .iter()
-                .map(|((a, b), m)| (a.clone(), b.clone(), m.clone()))
-                .collect(),
-            costes_indirectos: p.costes_indirectos,
-            opciones_ci: p.opciones_ci,
-            descuentos: p.descuentos.clone(),
-        }
-        .serialize(s)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Presupuesto, D::Error> {
-        let x = Plano::deserialize(d)?;
-        Ok(Presupuesto {
-            nombre: x.nombre,
-            decimales: x.decimales,
-            raiz: x.raiz,
-            conceptos: x.conceptos,
-            mediciones: x.mediciones.into_iter().map(|(a, b, m)| ((a, b), m)).collect(),
-            costes_indirectos: x.costes_indirectos,
-            opciones_ci: x.opciones_ci,
-            descuentos: x.descuentos,
-        })
-    }
 }
 
 impl ObraActiva {

@@ -265,6 +265,8 @@ pub struct Desglose {
     pub subcontrata: Decimal,
     /// Otros y medios auxiliares (%).
     pub otros: Decimal,
+    /// Partidas de precio directo (sin descomponer).
+    pub sin_descomponer: Decimal,
 }
 
 impl Desglose {
@@ -276,6 +278,7 @@ impl Desglose {
                 Naturaleza::ManoObra => &mut d.mano_obra,
                 Naturaleza::Maquinaria => &mut d.maquinaria,
                 Naturaleza::Subcontrata => &mut d.subcontrata,
+                Naturaleza::Partida | Naturaleza::Capitulo => &mut d.sin_descomponer,
                 _ => &mut d.otros,
             };
             *x += r.importe;
@@ -284,7 +287,7 @@ impl Desglose {
     }
 
     pub fn total(&self) -> Decimal {
-        self.material + self.mano_obra + self.maquinaria + self.subcontrata + self.otros
+        self.material + self.mano_obra + self.maquinaria + self.subcontrata + self.otros + self.sin_descomponer
     }
 }
 

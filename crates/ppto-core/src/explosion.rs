@@ -118,16 +118,21 @@ impl Presupuesto {
         cache: &mut HashMap<String, Decimal>,
     ) -> Result<(), ErrorMotor> {
         let c = self.concepto(codigo)?;
-        if c.naturaleza.es_basico() {
+        // Un recurso básico, o una partida de precio directo (sin
+        // descomponer): se cuenta tal cual, con su precio
+        if c.naturaleza.es_basico() || c.descomposicion.is_empty() {
             *cantidades.entry(codigo.to_owned()).or_insert(Decimal::ZERO) += mult;
             return Ok(());
         }
-        for lv in self.lineas_rec(codigo, cache)? {
+        // Cantidad exacta (factor × rendimiento sin redondear), la misma con
+        // la que se calcula el importe de la línea (como Presto 8.8)
+        let valoradas = self.lineas_rec(codigo, cache)?;
+        for (l, lv) in c.descomposicion.iter().zip(valoradas) {
             match lv.naturaleza {
                 Naturaleza::Porcentaje => {
                     *importes_pct.entry(lv.hijo).or_insert(Decimal::ZERO) += mult * lv.importe;
                 }
-                _ => self.explotar(&lv.hijo, mult * lv.cantidad, cantidades, importes_pct, cache)?,
+                _ => self.explotar(&l.hijo, mult * l.cantidad(), cantidades, importes_pct, cache)?,
             }
         }
         Ok(())
