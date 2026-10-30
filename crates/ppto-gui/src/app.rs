@@ -5457,4 +5457,30 @@ mod pruebas {
         assert!(otra.ciego.is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn se_pintan_las_ventanas_sin_pruebas() {
+        // Legalización, tarifas de subcontratas, Subcontratar (ratio) y
+        // Recursos (dificultad y descuentos): que se abran y se pinten sin
+        // romperse con el ejemplo.
+        let mut app = Aplicacion::sin_ventana();
+        app.ventana_legalizacion = Some(legalizacion::VentanaLegalizacion::abrir(&app.p));
+        app.abrir_tarifas();
+        let ctx = Context::default();
+        for _ in 0..3 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let c = ui.ctx().clone();
+                app.ventana_legalizacion(&c);
+                app.ventana_tarifas(&c);
+                let mut acc = Vec::new();
+                app.pestana_subcontratar(ui, &mut acc);
+                app.pestana_recursos(ui, &mut acc);
+                app.pestana_resumen(ui, &mut acc);
+                assert!(acc.is_empty());
+            });
+            out.textures_delta.clear();
+        }
+        assert!(app.ventana_legalizacion.is_some());
+        assert!(app.ventana_tarifas.is_some());
+    }
 }
