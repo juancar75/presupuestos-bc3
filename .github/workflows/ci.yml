@@ -82,3 +82,46 @@ jobs:
           if [ -n "$faltan" ]; then
             echo "Commits sin Signed-off-by (usa git commit -s):"; echo "$faltan"; exit 1
           fi
+
+  cobertura:
+    name: Cobertura de pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: Medir cobertura
+        run: |
+          cargo llvm-cov --workspace --summary-only --json --output-path cobertura.json
+          # Resumen por fichero como avisos (se ven en el PR) y en el resumen del trabajo
+          python3 - <<'PY'
+          import json, os
+          d = json.load(open("cobertura.json"))["data"][0]
+          raiz = os.getcwd() + "/"
+          filas = []
+          for f in d["files"]:
+              n = f["filename"].replace(raiz, "")
+              if "/tests/" in n or not n.startswith("crates/"):
+                  continue
+              l = f["summary"]["lines"]
+              filas.append((n, l["covered"], l["count"]))
+          crates = {}
+          for n, c, t in filas:
+              k = n.split("/")[1]
+              a = crates.setdefault(k, [0, 0]); a[0] += c; a[1] += t
+          tot = d["totals"]["lines"]
+          print(f"::notice title=Cobertura total::{tot['percent']:.1f} % de líneas ({tot['covered']}/{tot['count']})")
+          for k, (c, t) in sorted(crates.items()):
+              print(f"::notice title=Cobertura {k}::{100*c/max(t,1):.1f} % ({c}/{t})")
+          peores = sorted(filas, key=lambda x: x[1]/max(x[2],1))[:25]
+          print("::notice title=Ficheros con menos cobertura::" + " | ".join(f"{n} {100*c/max(t,1):.0f}% ({t-c} sin probar)" for n, c, t in peores))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as s:
+              s.write("| Fichero | Líneas | Cubiertas | % |\n|---|---:|---:|---:|\n")
+              for n, c, t in sorted(filas):
+                  s.write(f"| {n} | {t} | {c} | {100*c/max(t,1):.1f} |\n")
+          PY
