@@ -107,6 +107,11 @@ enum Accion {
     /// Cortar o copiar (origen, hijo, `true` = cortar); `None` = vaciar.
     Portapapeles(Option<(String, String, bool)>),
     Alta(TipoAlta),
+    /// Alta encima de una línea (F5 o «Insertar aquí»).
+    Insertar(TipoAlta, String),
+    /// Coloca lo recién creado encima de otra línea; va con el alta en el
+    /// mismo «Deshacer».
+    Colocar(String, String, String),
     AplicarRatio(ppto_core::ratio::PaqueteRatio),
     AceptarPropuesta(u64),
     /// Volver a aplicar las propuestas ya aceptadas cuyas partidas están
@@ -257,6 +262,8 @@ pub struct Aplicacion {
     ventana_bases: Option<bases::VentanaBases>,
     /// Formulario «Origen del precio» de un recurso.
     form_origen: Option<ofertas::FormOrigen>,
+    /// Dónde abre renglón F5 (lo que está bajo el ratón en este fotograma).
+    f5: std::cell::RefCell<Option<Accion>>,
     /// Ventana de informes (pedidos, mano de obra, coste de obra).
     ventana_informes: Option<informes::VentanaInformes>,
     /// Si los documentos de las ofertas siguen donde se vincularon.
@@ -423,6 +430,7 @@ impl Aplicacion {
             ventana_bases: None,
             form_origen: None,
             ventana_informes: None,
+            f5: std::cell::RefCell::new(None),
             docs: ofertas::CacheDocumentos::default(),
             ventana_comparar: None,
             ventana_legalizacion: None,
@@ -1158,6 +1166,24 @@ impl Aplicacion {
                     self.abrir_alta(t);
                     continue;
                 }
+                Accion::Insertar(t, antes) => {
+                    self.abrir_alta(t);
+                    if let Some(a) = self.alta.as_mut() {
+                        a.antes = Some(antes);
+                    }
+                    continue;
+                }
+                Accion::Colocar(padre, hijo, antes) => {
+                    let esta = self
+                        .p
+                        .conceptos
+                        .get(&padre)
+                        .is_some_and(|c| c.descomposicion.iter().any(|l| l.hijo == hijo));
+                    if !esta {
+                        continue;
+                    }
+                    self.p.trasladar_linea(&padre, &hijo, &padre, Some(&antes))
+                }
                 Accion::Unidad(c, u) => self.p.fijar_unidad(&c, &u),
                 Accion::NuevoCapitulo { padre, codigo, resumen } => {
                     self.p.nuevo_capitulo(&padre, &codigo, &resumen).map(|()| {
@@ -1803,6 +1829,28 @@ impl Aplicacion {
         }
     }
 
+    /// F5 (como en Presto): abrir renglón encima de lo que señala el ratón;
+    /// si no señala nada, encima de la partida elegida.
+    fn tecla_f5(&self, ctx: &egui::Context, acciones: &mut Vec<Accion>) {
+        if !ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5)) {
+            return;
+        }
+        let a = self.f5.take().or_else(|| {
+            self.sel
+                .as_ref()
+                .filter(|(cap, _)| {
+                    self.p
+                        .conceptos
+                        .get(cap)
+                        .is_some_and(|c| c.naturaleza == Naturaleza::Capitulo)
+                })
+                .map(|(cap, h)| Accion::Insertar(TipoAlta::Partida { capitulo: cap.clone() }, h.clone()))
+        });
+        if let Some(a) = a {
+            acciones.push(a);
+        }
+    }
+
     /// Rojo: sin valorar. Naranja: mano de obra sin material o al revés.
     fn color_estado(&self, t: RichText, codigo: &str) -> RichText {
         use ppto_core::valoracion::Estado;
@@ -1845,6 +1893,7 @@ impl Aplicacion {
     }
 
     fn arbol(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+        self.f5.replace(None);
         let raiz = self.p.raiz.clone();
         // Clic derecho en el nombre de la obra o en el espacio libre del
         // árbol: nuevo capítulo (y pegar en el nivel principal).
@@ -2005,6 +2054,12 @@ impl Aplicacion {
                         }
                     });
                 let cab = cabecera.inner;
+                if cab.hovered() {
+                    // F5 sobre un capítulo: partida nueva al final de él
+                    self.f5.replace(Some(Accion::Alta(TipoAlta::Partida {
+                        capitulo: l.hijo.clone(),
+                    })));
+                }
                 if cab.clicked() || cab.secondary_clicked() {
                     acciones.push(Accion::CapituloActivo(l.hijo.clone()));
                 }
@@ -2140,6 +2195,14 @@ impl Aplicacion {
                     Some(e) if *e != ppto_core::valoracion::Estado::Valorada => r.on_hover_text(e.texto()),
                     _ => r,
                 };
+                if r.hovered() {
+                    self.f5.replace(Some(Accion::Insertar(
+                        TipoAlta::Partida {
+                            capitulo: capitulo.to_owned(),
+                        },
+                        l.hijo.clone(),
+                    )));
+                }
                 r.dnd_set_drag_payload(carga);
                 if r.dragged() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -2317,6 +2380,7 @@ impl Aplicacion {
                         ui.end_row();
                         for l in &lineas {
                             let h = &self.p.conceptos[&l.hijo];
+                            let y0 = ui.cursor().top();
                             if h.naturaleza == Naturaleza::Partida {
                                 if ui
                                     .link(&h.codigo)
@@ -2412,6 +2476,16 @@ impl Aplicacion {
                             }
                             ui.label(eur(l.importe));
                             ui.horizontal(|ui| {
+                                if ui
+                                    .small_button("+")
+                                    .on_hover_text("Insertar una línea encima de esta (F5)")
+                                    .clicked()
+                                {
+                                    acciones.push(Accion::Insertar(
+                                        TipoAlta::Linea { padre: hijo.clone() },
+                                        l.hijo.clone(),
+                                    ));
+                                }
                                 if ui.small_button("^").on_hover_text("Subir").clicked() {
                                     acciones.push(Accion::Mover(hijo.clone(), l.hijo.clone(), true));
                                 }
@@ -2426,6 +2500,14 @@ impl Aplicacion {
                                     acciones.push(Accion::QuitarLinea(hijo.clone(), l.hijo.clone(), false));
                                 }
                             });
+                            // F5 con el ratón en esta fila: línea nueva encima
+                            let y1 = ui.min_rect().bottom();
+                            if ui.rect_contains_pointer(egui::Rect::from_x_y_ranges(ui.min_rect().x_range(), y0..=y1)) {
+                                self.f5.replace(Some(Accion::Insertar(
+                                    TipoAlta::Linea { padre: hijo.clone() },
+                                    l.hijo.clone(),
+                                )));
+                            }
                             ui.end_row();
                         }
                         for _ in 0..5 {
@@ -3507,6 +3589,7 @@ impl eframe::App for Aplicacion {
         if pdf {
             self.abrir_pdf();
         }
+        self.tecla_f5(ui.ctx(), &mut acciones);
         // Ctrl+1…Ctrl+6: vistas
         if let Some(p) = ui.ctx().input_mut(|i| {
             vistas::VISTAS
@@ -3633,6 +3716,21 @@ struct Arrastre {
 
 /// Opciones comunes a cualquier línea del árbol.
 fn menu_linea(ui: &mut Ui, padre: &str, hijo: &str, es_capitulo: bool, acciones: &mut Vec<Accion>) {
+    if !es_capitulo {
+        if ui
+            .button("Insertar partida aquí   F5")
+            .on_hover_text("Partida nueva encima de esta")
+            .clicked()
+        {
+            acciones.push(Accion::Insertar(
+                TipoAlta::Partida {
+                    capitulo: padre.to_owned(),
+                },
+                hijo.to_owned(),
+            ));
+        }
+        ui.separator();
+    }
     if ui
         .button("Cortar")
         .on_hover_text("Para moverla: luego clic derecho en el capítulo de destino → «Pegar aquí»")
@@ -5222,5 +5320,60 @@ mod pruebas {
             out.textures_delta.clear();
         }
         assert!(ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::default(), '■')));
+    }
+
+    #[test]
+    fn f5_abre_renglon_encima() {
+        let mut app = Aplicacion::sin_ventana();
+        let orden = |app: &Aplicacion, c: &str| -> Vec<String> {
+            app.p.conceptos[c]
+                .descomposicion
+                .iter()
+                .map(|l| l.hijo.clone())
+                .collect()
+        };
+        let antes = orden(&app, "C01");
+        let segunda = antes[1].clone();
+        // F5 sin nada bajo el ratón: encima de la partida elegida
+        app.sel = Some(("C01".into(), segunda.clone()));
+        let ctx = Context::default();
+        let mut entrada = RawInput::default();
+        entrada.events.push(egui::Event::Key {
+            key: egui::Key::F5,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let mut acc = Vec::new();
+        let mut out = ctx.run_ui(entrada, |ui| app.tecla_f5(ui.ctx(), &mut acc));
+        out.textures_delta.clear();
+        assert_eq!(acc.len(), 1);
+        app.aplicar(acc);
+        let a = app.alta.as_ref().unwrap();
+        assert_eq!(a.antes.as_deref(), Some(segunda.as_str()));
+        // Lo que haría «Crear partida» en la ventana de alta
+        app.aplicar(vec![
+            Accion::NuevaPartida {
+                capitulo: "C01".into(),
+                codigo: "P.NUEVA".into(),
+                unidad: "ud".into(),
+                resumen: "Nueva".into(),
+            },
+            Accion::Colocar("C01".into(), "P.NUEVA".into(), segunda.clone()),
+        ]);
+        let ahora = orden(&app, "C01");
+        assert_eq!(ahora[1], "P.NUEVA");
+        assert_eq!(ahora[2], segunda);
+        // Un solo «Deshacer» la quita
+        app.deshacer();
+        assert_eq!(orden(&app, "C01"), antes);
+        // Línea nueva encima en un descompuesto
+        let d = orden(&app, "SR.M2");
+        app.aplicar(vec![Accion::Insertar(
+            TipoAlta::Linea { padre: "SR.M2".into() },
+            d[0].clone(),
+        )]);
+        assert_eq!(app.alta.as_ref().unwrap().antes.as_deref(), Some(d[0].as_str()));
     }
 }

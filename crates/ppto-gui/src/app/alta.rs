@@ -29,6 +29,8 @@ pub(super) struct Alta {
     /// Línea: tomar el recurso de una tarifa de subcontrata.
     pub de_tarifa: bool,
     pub tarifa_elegida: Option<ppto_tarifas::Encontrada>,
+    /// Insertar encima de esta línea (F5) en vez de al final.
+    pub antes: Option<String>,
 }
 
 const NATURALEZAS: [Naturaleza; 7] = [
@@ -66,6 +68,7 @@ impl Aplicacion {
             elegido: None,
             de_tarifa: false,
             tarifa_elegida: None,
+            antes: None,
         });
     }
 
@@ -79,6 +82,11 @@ impl Aplicacion {
             TipoAlta::Partida { capitulo } => format!("Nueva partida en {capitulo}"),
             TipoAlta::Linea { padre } => format!("Añadir línea a {padre}"),
         };
+        let titulo = match &a.antes {
+            Some(x) => format!("{titulo} (encima de {x})"),
+            None => titulo,
+        };
+        let n_antes = acciones.len();
         let mut abierta = true;
         let mut cerrar = false;
         egui::Window::new(titulo)
@@ -125,6 +133,22 @@ impl Aplicacion {
                     cerrar = self.form_linea(ui, &mut a, &padre, acciones);
                 }
             });
+        // F5: lo creado se coloca encima de la línea elegida
+        if cerrar
+            && let Some(antes) = &a.antes
+            && acciones.len() > n_antes
+        {
+            let nuevo = match acciones.last() {
+                Some(Accion::NuevaPartida { capitulo, codigo, .. }) => Some((capitulo.clone(), codigo.clone())),
+                Some(Accion::NuevoCapitulo { padre, codigo, .. }) => Some((padre.clone(), codigo.clone())),
+                Some(Accion::NuevoRecurso { en, codigo, .. }) => Some((en.clone(), codigo.clone())),
+                Some(Accion::AnadirLinea(padre, hijo, _)) => Some((padre.clone(), hijo.clone())),
+                _ => None,
+            };
+            if let Some((padre, hijo)) = nuevo {
+                acciones.push(Accion::Colocar(padre, hijo, antes.clone()));
+            }
+        }
         if abierta && !cerrar {
             self.alta = Some(a);
         }

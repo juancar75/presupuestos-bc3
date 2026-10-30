@@ -14,6 +14,11 @@ versionado [semántico](https://semver.org/lang/es/).
   Cada capítulo toma el color de lo peor que contiene, para encontrarlo
   aunque esté plegado. Encima del árbol, el recuento («■ 12 sin valorar ·
   ■ 5 incompletas»); al pasar el ratón, el motivo. También en la búsqueda.
+- **F5 abre renglón**, como en Presto 8.8: con el ratón sobre una partida
+  del árbol, partida nueva **encima** de ella (sobre un capítulo, al final
+  de él); con el ratón sobre una fila del descompuesto, línea nueva encima
+  de esa fila. También con clic derecho → «Insertar partida aquí» y con el
+  botón «+» de cada fila del descompuesto. Un solo «Deshacer» lo quita.
 
 ## [0.1.0-alpha.34] - 2026-10-29
 
