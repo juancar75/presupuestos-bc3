@@ -20,8 +20,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use typst_as_lib::TypstEngine;
 
+pub mod certificacion;
 pub mod pedido;
 pub mod perfiles;
+pub use certificacion::{DatosCertificacion, pdf_certificacion};
 pub use pedido::{DatosPedido, pdf_pedido};
 pub use perfiles::{Perfil, Perfiles};
 use typst_layout::PagedDocument;
@@ -93,6 +95,9 @@ pub struct OpcionesPdf {
     pub precios_venta: bool,
     /// Plantilla Typst propia; `None` usa [`PLANTILLA`].
     pub plantilla: Option<PathBuf>,
+    /// Recuadro de firma «Conforme» para el cliente junto al de la empresa
+    /// (contradictorios).
+    pub conformidad: bool,
 }
 
 impl Default for OpcionesPdf {
@@ -120,6 +125,7 @@ impl Default for OpcionesPdf {
             desglose_contrata: true,
             precios_venta: false,
             plantilla: None,
+            conformidad: false,
         }
     }
 }
@@ -324,6 +330,8 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
         "total": eur(r.total),
         "total_letra": en_letra(r.total),
         "observaciones": o.observaciones.iter().filter(|s| !s.trim().is_empty()).collect::<Vec<_>>(),
+        "conformidad": o.conformidad,
+        "cliente_firma": if o.cliente.trim().is_empty() { "El cliente".to_owned() } else { o.cliente.clone() },
     }))
 }
 

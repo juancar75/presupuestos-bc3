@@ -170,7 +170,27 @@
 #v(1.2em)
 #par[Asciende el importe total a la expresada cantidad de *#upper(d.total_letra)* (#d.total €)#if d.iva != none [, IVA incluido].]
 
-#if d.autor != "" or d.lugar_fecha != "" [
+#if d.at("conformidad", default: false) [
+  #v(2.5em)
+  #align(center, d.lugar_fecha)
+  #v(0.8em)
+  #grid(columns: (1fr, 1fr), column-gutter: 2cm, align: center,
+    [
+      #text(fill: gris)[Conforme] \
+      #v(3.5em)
+      #line(length: 80%, stroke: 0.4pt)
+      #d.cliente_firma \
+      #text(fill: gris, size: 8.5pt)[Firma, fecha y sello]
+    ],
+    [
+      #text(fill: gris)[Por la empresa] \
+      #v(3.5em)
+      #line(length: 80%, stroke: 0.4pt)
+      #if d.autor != "" [#d.autor] else [#d.empresa] \
+      #text(fill: gris, size: 8.5pt, d.autor_datos)
+    ],
+  )
+] else if d.autor != "" or d.lugar_fecha != "" [
   #v(2.5em)
   #align(right, block(width: 8cm, align(center)[
     #d.lugar_fecha
