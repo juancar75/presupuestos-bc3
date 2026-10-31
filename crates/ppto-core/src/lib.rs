@@ -34,6 +34,7 @@ pub mod plantillas;
 pub mod presupuesto;
 pub mod propuesta;
 pub mod ratio;
+pub mod seguimiento;
 pub mod subcontrata;
 pub mod valoracion;
 pub mod venta;

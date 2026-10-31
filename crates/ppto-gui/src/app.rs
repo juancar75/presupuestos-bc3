@@ -11,6 +11,7 @@ mod comparar;
 mod dificultad;
 mod informes;
 mod legalizacion;
+mod obra;
 mod ofertas;
 mod pdf;
 mod propuestas;
@@ -139,6 +140,8 @@ enum Accion {
     /// Ir a la partida anterior (-1) o siguiente (+1) del presupuesto.
     Navegar(i32),
     SiguienteSinPrecio,
+    /// Contradictorios y certificaciones.
+    Obra(obra::OpObra),
 }
 
 /// Partida sin valorar (árbol).
@@ -235,6 +238,8 @@ pub struct Aplicacion {
     gg: Decimal,
     bi: Decimal,
     iva: Decimal,
+    /// Retención de garantía de las certificaciones (puntos).
+    retencion: Decimal,
     ofertas: Vec<PaqueteTrabajo>,
     form: FormOferta,
     informe: Option<ppto_bc3::Importacion>,
@@ -269,6 +274,8 @@ pub struct Aplicacion {
     recuperacion: recuperacion::Recuperacion,
     /// Ventana de informes (pedidos, mano de obra, coste de obra).
     ventana_informes: Option<informes::VentanaInformes>,
+    /// Contradictorios y certificaciones.
+    ventana_obra: Option<obra::VentanaObra>,
     /// Si los documentos de las ofertas siguen donde se vincularon.
     docs: ofertas::CacheDocumentos,
     ventana_comparar: Option<comparar::VentanaComparar>,
@@ -352,6 +359,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
             coeficiente,
             motivo,
         } => (dificultad::describir(ambito, *coeficiente, motivo), None),
+        Accion::Obra(op) => op.describir(),
         _ => return None,
     })
 }
@@ -412,6 +420,7 @@ impl Aplicacion {
             gg: venta::GG_HABITUAL,
             bi: venta::BI_HABITUAL,
             iva: venta::IVA_GENERAL,
+            retencion: Decimal::ZERO,
             ofertas: ofertas_montaje_suelo_radiante().to_vec(),
             form: FormOferta::default(),
             informe: None,
@@ -434,6 +443,7 @@ impl Aplicacion {
             ventana_bases: None,
             form_origen: None,
             ventana_informes: None,
+            ventana_obra: None,
             f5: std::cell::RefCell::new(None),
             recuperacion: recuperacion::Recuperacion::default(),
             docs: ofertas::CacheDocumentos::default(),
@@ -450,6 +460,9 @@ impl Aplicacion {
 
     fn recalcular(&mut self) {
         self.calc = Calculo::de(&self.p);
+        if let Some(v) = &mut self.ventana_obra {
+            v.sucia = true;
+        }
         self.enlace.sucia = true;
     }
 
@@ -984,6 +997,7 @@ impl Aplicacion {
             ("gg".to_owned(), self.gg.to_string()),
             ("bi".to_owned(), self.bi.to_string()),
             ("iva".to_owned(), self.iva.to_string()),
+            ("retencion".to_owned(), self.retencion.to_string()),
         ]);
         if let Some(c) = &self.ciego {
             d.insert("ciego".into(), c.ruta.display().to_string());
@@ -1004,6 +1018,7 @@ impl Aplicacion {
         if let Some(v) = dec("iva") {
             self.iva = v;
         }
+        self.retencion = dec("retencion").unwrap_or_default();
         self.ciego = None;
         if let Some(r) = d.get("ciego").map(PathBuf::from) {
             match ppto_ciego::leer(&r) {
@@ -1336,6 +1351,11 @@ impl Aplicacion {
                     }
                     self.info(format!("{m}."));
                 }),
+                Accion::Obra(op) => op.aplicar(&mut self.p).map(|m| {
+                    if let Some(m) = m {
+                        self.info(m);
+                    }
+                }),
                 Accion::Precio(c, v) => self.p.fijar_precio(&c, v),
                 Accion::Origen(c, o, aplicar) => self.p.fijar_origen(&c, o.map(|b| *b), aplicar),
                 Accion::Rendimiento(padre, hijo, v) => self.p.fijar_rendimiento(&padre, &hijo, v),
@@ -1461,6 +1481,7 @@ impl Aplicacion {
             ui.menu_button("Edición", |ui| self.menu_edicion(ui, acciones));
             ui.menu_button("Precios", |ui| self.menu_precios(ui));
             ui.menu_button("Informes", |ui| self.menu_informes(ui));
+            ui.menu_button("Obra", |ui| self.menu_obra(ui));
             ui.menu_button("IA", |ui| self.menu_ia(ui));
             ui.menu_button("Ver", |ui| {
                 for (n, (p, t, _)) in vistas::VISTAS.iter().enumerate() {
@@ -3230,11 +3251,13 @@ impl Aplicacion {
                 ("Gastos generales %", "gg"),
                 ("Beneficio industrial %", "bi"),
                 ("IVA %", "iva"),
+                ("Retención de garantía % (certificaciones)", "ret"),
             ] {
                 ui.label(nombre);
                 let v = match clave {
                     "gg" => &mut self.gg,
                     "bi" => &mut self.bi,
+                    "ret" => &mut self.retencion,
                     _ => &mut self.iva,
                 };
                 if let Some(n) = self.edicion.decimal(ui, &format!("pct|{clave}"), *v, 2, 60.0) {
@@ -3743,6 +3766,7 @@ impl eframe::App for Aplicacion {
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_origen(&ctx, &mut acciones);
         self.ventana_informes(&ctx);
+        self.ventana_obra(&ctx);
         self.ventana_comparar(&ctx, &mut acciones);
         self.ventana_legalizacion(&ctx);
         self.ventana_propuestas(&ctx, &mut acciones);
@@ -5334,6 +5358,72 @@ mod pruebas {
         app.deshacer();
         assert_eq!(app.p.concepto("MT.TUBO16").unwrap().precio, precio);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn contradictorios_y_certificaciones() {
+        use obra::{OpObra, PestanaObra};
+        let mut app = Aplicacion::sin_ventana();
+        let ctx = Context::default();
+        let pinta = |app: &mut Aplicacion| {
+            for _ in 0..2 {
+                let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                    let c = ui.ctx().clone();
+                    app.ventana_obra(&c);
+                });
+                out.textures_delta.clear();
+            }
+        };
+        app.abrir_obra(PestanaObra::Contradictorios);
+        pinta(&mut app);
+        app.aplicar(vec![Accion::Obra(OpObra::NuevoContradictorio {
+            resumen: "Extra".into(),
+            fecha: "01/11/2026".into(),
+            nota: "DF".into(),
+        })]);
+        assert!(app.p.seguimiento.contradictorios.contains_key("CTR-01"));
+        app.aplicar(vec![Accion::AnadirLinea("CTR-01".into(), "SR.M2".into(), dec!(10))]);
+        app.aplicar(vec![Accion::Obra(OpObra::Estado(
+            "CTR-01".into(),
+            ppto_core::seguimiento::EstadoContradictorio::Aprobado,
+        ))]);
+        pinta(&mut app);
+        let r = app.p.resumen_contrato().unwrap();
+        assert_eq!(r.contratado, dec!(7005.15));
+        assert!(r.aprobados > Decimal::ZERO);
+        // PDF del contradictorio con la firma
+        let c = app.p.seguimiento.contradictorios["CTR-01"].clone();
+        assert!(app.pdf_contradictorio("CTR-01", &c).unwrap().starts_with(b"%PDF"));
+        // Certificación: del mes, 100 %, cerrar; deshacer
+        app.abrir_obra(PestanaObra::Certificaciones);
+        pinta(&mut app);
+        app.aplicar(vec![Accion::Obra(OpObra::NuevaCertificacion("30/11/2026".into()))]);
+        app.aplicar(vec![
+            Accion::Obra(OpObra::Mes(1, "C01".into(), "SR.M2".into(), dec!(50))),
+            Accion::Obra(OpObra::Completa(1, "C01".into(), "SR.COL8".into())),
+        ]);
+        pinta(&mut app);
+        assert!(app.ventana_obra.as_ref().unwrap().numero == Some(1));
+        app.aplicar(vec![Accion::Obra(OpObra::Cerrar(1, app.gg, app.bi))]);
+        assert!(app.p.seguimiento.certificaciones[0].cerrada);
+        // Error del motor: no queda en el historial
+        let antes = app.historial.deshacer.len();
+        app.aplicar(vec![Accion::Obra(OpObra::Mes(
+            1,
+            "C01".into(),
+            "SR.M2".into(),
+            dec!(1),
+        ))]);
+        assert_eq!(app.historial.deshacer.len(), antes);
+        app.deshacer();
+        assert!(!app.p.seguimiento.certificaciones[0].cerrada);
+        pinta(&mut app);
+        // Se guarda con la obra (y la retención con sus datos)
+        app.retencion = dec!(5);
+        let d = app.datos_obra();
+        let mut otra = Aplicacion::sin_ventana();
+        otra.aplicar_datos_obra(&d);
+        assert_eq!(otra.retencion, dec!(5));
     }
 
     #[test]

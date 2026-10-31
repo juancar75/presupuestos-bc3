@@ -857,6 +857,7 @@ impl Lector {
             costes_indirectos: self.porcentajes.costes_indirectos.unwrap_or_default(),
             opciones_ci: OpcionesCi::default(),
             descuentos: Default::default(),
+            seguimiento: Default::default(),
         };
 
         // 7. Ciclos: se rompe la última relación de cada ciclo encontrado.

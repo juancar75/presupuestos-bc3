@@ -5,6 +5,25 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.36] - 2026-10-31
+
+### Añadido
+- **Menú Obra → Contradictorios**: unidades o precios no previstos como
+  capítulos `CTR-01`, `CTR-02`… (o marcando un capítulo existente), con
+  fecha, motivo y estado (pendiente, aprobado, rechazado). Resumen del
+  contrato: contratado + aprobados = vigente, y pendientes aparte. PDF de
+  cada contradictorio con recuadro «Conforme» para la firma del cliente.
+- **Menú Obra → Certificaciones**: lo ejecutado cada mes por partida,
+  tecleando lo del mes o a origen (botón «100 %»), con anterior, mes y
+  origen, % ejecutado y aviso en rojo si se supera lo presupuestado. A
+  precios de venta (instaladora) o de ejecución con GG y BI en el resumen.
+  Al **cerrar**, los precios quedan congelados; solo se reabre la última.
+  Relación valorada en **PDF** (con IVA, retención, «a cobrar» y firmas) y
+  en **Excel**.
+- **Retención de garantía** (pestaña Resumen), guardada con la obra.
+- Contradictorios y certificaciones se guardan en el fichero de la obra y
+  en cada revisión (migración 0010).
+
 ## [0.1.0-alpha.35] - 2026-10-29
 
 ### Añadido

@@ -14,7 +14,9 @@
 //! Todas las cifras salen de `ppto-core`: Excel no recalcula nada, de modo que
 //! el informe coincide al céntimo con la pantalla.
 
+mod certificacion;
 mod control;
+pub use certificacion::excel_certificacion;
 pub use control::{CabeceraPedido, excel_coste, excel_mano_obra, excel_pedido, excel_pedidos};
 
 use ppto_core::concepto::Naturaleza;

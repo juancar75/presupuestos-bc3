@@ -400,6 +400,57 @@ pub fn aleatorio(semilla: u64, extras: bool) -> Presupuesto {
             )
             .ok();
         }
+        // Seguimiento: un contradictorio y certificaciones (al final, para no
+        // cambiar el resto de semillas)
+        if r(2) == 0 {
+            seguimiento_aleatorio(&mut p, &mut r);
+        }
     }
     p
+}
+
+fn seguimiento_aleatorio(p: &mut Presupuesto, r: &mut impl FnMut(u64) -> u64) {
+    use crate::Decimal;
+    // Pares (capítulo, partida) del árbol
+    let pares: Vec<(String, String)> = p
+        .conceptos
+        .values()
+        .filter(|c| c.naturaleza == Naturaleza::Capitulo)
+        .flat_map(|c| {
+            c.descomposicion
+                .iter()
+                .filter(|l| {
+                    p.conceptos
+                        .get(&l.hijo)
+                        .is_some_and(|h| h.naturaleza != Naturaleza::Capitulo)
+                })
+                .map(|l| (c.codigo.clone(), l.hijo.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    if let Ok(ctr) = p.nuevo_contradictorio("Unidades no previstas", "15/10/2026", "Orden de la DF nº 3") {
+        if let Some((_, partida)) = pares.first() {
+            p.colgar(&ctr, partida, None).ok();
+        }
+        if r(2) == 0 {
+            p.fijar_estado_contradictorio(&ctr, crate::seguimiento::EstadoContradictorio::Aprobado)
+                .ok();
+        }
+    }
+    for n in 0..r(3) + 1 {
+        let Ok(num) = p.nueva_certificacion(&format!("{}/2026", 10 + n)) else {
+            break;
+        };
+        for (cap, partida) in &pares {
+            if r(2) == 0 {
+                p.certificar_mes(num, cap, partida, Decimal::new(i64::try_from(r(500)).unwrap_or(0), 2))
+                    .ok();
+            }
+        }
+        if r(3) != 0 {
+            p.cerrar_certificacion(num, Decimal::from(13), Decimal::from(6)).ok();
+        } else {
+            break;
+        }
+    }
 }

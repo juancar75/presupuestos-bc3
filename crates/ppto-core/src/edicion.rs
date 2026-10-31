@@ -345,6 +345,7 @@ impl Presupuesto {
         }
         self.conceptos.remove(codigo);
         self.mediciones.retain(|(pa, _), _| pa != codigo);
+        self.seguimiento.contradictorios.remove(codigo);
         Ok(())
     }
 
