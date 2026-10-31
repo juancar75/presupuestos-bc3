@@ -373,6 +373,35 @@ impl Aplicacion {
 
     /// Clave de la obra para sus datos del PDF: el presupuesto guardado o,
     /// si aún no se ha guardado, su nombre.
+    /// Opciones del PDF con el perfil activo y los datos guardados de la obra
+    /// (título, dirección, cliente, referencia).
+    pub(super) fn opciones_pdf_obra(&self) -> OpcionesPdf {
+        let perfiles = ruta_perfiles().map(|r| Perfiles::cargar(&r)).unwrap_or_default();
+        let mut o = OpcionesPdf {
+            fecha: ppto_pdf::fecha_hoy(),
+            ..OpcionesPdf::default()
+        };
+        let mut guardados = leer_datos_obras();
+        if let Some([t, d, c, r]) = guardados
+            .remove(&self.clave_obra())
+            .or_else(|| guardados.remove(&format!("nombre:{}", self.p.nombre)))
+        {
+            o.titulo = t;
+            o.direccion = d;
+            o.cliente = c;
+            o.referencia = r;
+        }
+        if o.titulo.trim().is_empty() {
+            o.titulo = self.p.conceptos[&self.p.raiz].resumen.clone();
+        }
+        perfiles.activo().aplicar(&mut o);
+        if !o.desglose_contrata && o.precios_venta {
+            o.gastos_generales = self.gg;
+            o.beneficio_industrial = self.bi;
+        }
+        o
+    }
+
     fn clave_obra(&self) -> String {
         match self.presupuesto_id {
             Some(id) => format!("id:{id}"),
