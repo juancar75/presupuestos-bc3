@@ -41,6 +41,9 @@ pub struct Presupuesto {
     /// aplica a los recursos con [`crate::concepto::PrecioTarifa`].
     #[serde(default)]
     pub descuentos: BTreeMap<String, Decimal>,
+    /// Contradictorios y certificaciones.
+    #[serde(default, skip_serializing_if = "crate::seguimiento::Seguimiento::esta_vacio")]
+    pub seguimiento: crate::seguimiento::Seguimiento,
 }
 
 /// Opciones de aplicación de los costes indirectos (equivalentes a las de
@@ -115,6 +118,7 @@ impl Presupuesto {
             costes_indirectos: Decimal::ZERO,
             opciones_ci: OpcionesCi::default(),
             descuentos: BTreeMap::new(),
+            seguimiento: Default::default(),
         }
     }
 

@@ -53,6 +53,7 @@ const MIGRACIONES: &[&str] = &[
     include_str!("../migrations/0007_venta_fija.sql"),
     include_str!("../migrations/0008_origen_precio.sql"),
     include_str!("../migrations/0009_datos_obra.sql"),
+    include_str!("../migrations/0010_seguimiento.sql"),
 ];
 
 pub struct Almacen {
@@ -162,6 +163,7 @@ impl Almacen {
             "medicion_lineas",
             "descuentos",
             "datos_obra",
+            "seguimiento",
         ] {
             let cols = columnas(&tx, tabla)?;
             let resto: Vec<&str> = cols
@@ -401,8 +403,19 @@ impl Almacen {
             descuentos.insert(fab, dec_de(&pct)?);
         }
 
+        let seguimiento = match self
+            .con
+            .query_row("SELECT datos FROM seguimiento WHERE revision_id = ?1", [rev], |r| {
+                r.get::<_, String>(0)
+            }) {
+            Ok(t) => serde_json::from_str(&t).map_err(|e| ErrorDb::Corrupto(format!("seguimiento: {e}")))?,
+            Err(rusqlite::Error::QueryReturnedNoRows) => Default::default(),
+            Err(e) => return Err(e.into()),
+        };
+
         let (ci_txt, redondear_coste_antes, aplicar_a_sin_descomponer, redondear_auxiliares) = ci;
         Ok(Presupuesto {
+            seguimiento,
             descuentos,
             costes_indirectos: dec_de(&ci_txt)?,
             opciones_ci: OpcionesCi {
@@ -549,6 +562,13 @@ fn escribir_contenido(tx: &Transaction, rev: i64, p: &Presupuesto) -> Resultado<
                 l.formula
             ])?;
         }
+    }
+    if !p.seguimiento.esta_vacio() {
+        let t = serde_json::to_string(&p.seguimiento).map_err(|e| ErrorDb::Corrupto(e.to_string()))?;
+        tx.execute(
+            "INSERT INTO seguimiento (revision_id, datos) VALUES (?1, ?2)",
+            params![rev, t],
+        )?;
     }
     Ok(())
 }

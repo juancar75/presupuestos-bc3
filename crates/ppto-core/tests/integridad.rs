@@ -129,3 +129,49 @@ fn error_redondeo(p: &Presupuesto, codigo: &str) -> Decimal {
     }
     e
 }
+
+/// Certificaciones: anterior + mes = origen en cada fila y en los totales, y
+/// los subtotales de capítulo suman el total.
+#[test]
+fn certificaciones_cuadran() {
+    use ppto_core::seguimiento::FilaRelacion;
+    let mut probadas = 0;
+    for s in 0..300 {
+        let p = ppto_core::ejemplos::aleatorio(s, true);
+        for c in &p.seguimiento.certificaciones {
+            probadas += 1;
+            for pr in [
+                ppto_core::seguimiento::Precios::Ejecucion {
+                    gg: dec!(13),
+                    bi: dec!(6),
+                },
+                ppto_core::seguimiento::Precios::Venta {
+                    gg: dec!(13),
+                    bi: dec!(6),
+                },
+            ] {
+                let r = p.relacion_valorada(c.numero, pr).unwrap();
+                assert_eq!(r.total.anterior + r.total.actual, r.total.origen, "semilla {s}");
+                let mut suma = Decimal::ZERO;
+                for f in &r.filas {
+                    match f {
+                        FilaRelacion::Partida(f) => {
+                            assert_eq!(
+                                f.importes.anterior + f.importes.actual,
+                                f.importes.origen,
+                                "semilla {s}"
+                            );
+                            assert_eq!(f.cant_anterior + f.cant_actual, f.cant_origen, "semilla {s}");
+                        }
+                        FilaRelacion::Capitulo { nivel: 0, importes, .. } => suma += importes.origen,
+                        FilaRelacion::Capitulo { .. } => {}
+                    }
+                }
+                assert_eq!(suma, r.total.origen, "semilla {s}");
+                let res = p.resumen_certificacion(&r, pr, dec!(21), dec!(5));
+                assert_eq!(res.anterior.total + res.actual.total, res.origen.total, "semilla {s}");
+            }
+        }
+    }
+    assert!(probadas > 50, "{probadas}");
+}
