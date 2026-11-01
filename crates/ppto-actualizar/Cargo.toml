@@ -1,0 +1,17 @@
+[package]
+name = "ppto-actualizar"
+description = "Aviso de versión nueva y actualización con un clic desde las publicaciones de GitHub"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde_json = "1.0"
+ureq = { version = "3.4", default-features = false, features = ["rustls-no-provider", "_ring", "platform-verifier", "gzip"] }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
+
+[lints]
+workspace = true

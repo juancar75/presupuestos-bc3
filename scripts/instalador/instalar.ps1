@@ -2,7 +2,17 @@
 # - Copia los programas a %LOCALAPPDATA%\Programs\presupuestos-bc3
 # - Crea accesos directos en el escritorio y en el menú Inicio
 # - Si está Claude Desktop, añade el servidor MCP «presupuestos» (con copia de seguridad)
+# - Con -Abrir (actualización desde el programa): sin preguntas y lo abre al terminar
+param([switch]$Abrir)
 $ErrorActionPreference = 'Stop'
+if ($Abrir) {
+    # Sin consola a la vista: si algo falla, se avisa en una ventana
+    trap {
+        Add-Type -AssemblyName PresentationFramework
+        [void][System.Windows.MessageBox]::Show("No se pudo actualizar Presupuestos BC3:`n$_`n`nEjecute instalar.bat de la carpeta:`n$PSScriptRoot", 'Presupuestos BC3')
+        exit 1
+    }
+}
 $origen  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $destino = Join-Path $env:LOCALAPPDATA 'Programs\presupuestos-bc3'
 
@@ -90,3 +100,4 @@ if (-not $hecho) {
 }
 Write-Host ""
 Write-Host "Listo. Abra «Presupuestos BC3» desde el escritorio."
+if ($Abrir) { Start-Process -FilePath $gui -WorkingDirectory $destino }

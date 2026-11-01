@@ -8,6 +8,12 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [0.1.0-alpha.37] - 2026-11-01
 
 ### Añadido
+- **Actualización con un clic**: al arrancar, el programa mira si hay versión
+  nueva en GitHub (sin enviar ningún dato) y muestra «⏶ Versión … disponible»
+  en la barra de arriba. «Actualizar ahora» guarda la obra si hace falta,
+  descarga el instalador, cierra el programa, lo instala y lo vuelve a abrir.
+  También en **Ayuda → Buscar actualizaciones…**. Con la variable de entorno
+  `PPTO_SIN_ACTUALIZAR` no se consulta nada.
 - **Archivo → Importar → Modelo BIM (IFC o Revit)…**: mediciones de las
   instalaciones de un modelo, de cualquier especialidad (tuberías y sus
   accesorios, conductos, bandejas, cables, difusión de aire, valvulería,
