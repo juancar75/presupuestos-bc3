@@ -7,6 +7,8 @@
 //! - Revisiones bloqueables (p. ej. la ofertada al cliente).
 //! - Toda escritura en una transacción y registrada en `auditoria`.
 
+pub mod bloqueo;
+
 use ppto_core::medicion::{LineaMedicion, Medicion, TipoLinea};
 use ppto_core::presupuesto::OpcionesCi;
 use ppto_core::{Concepto, Decimal, Decimales, LineaDescomposicion, Naturaleza, Presupuesto};
