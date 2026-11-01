@@ -1955,3 +1955,38 @@ fn registrar_pedido_y_control_de_compras() {
     });
     out.textures_delta.clear();
 }
+
+#[test]
+fn coste_real_desde_la_obra() {
+    use obra::{OpObra, PestanaObra};
+    let mut app = Aplicacion::sin_ventana();
+    let ctx = Context::default();
+    let g = ppto_core::coste_real::Gasto {
+        numero: 0,
+        fecha: "01/11/2026".into(),
+        tipo: ppto_core::coste_real::TipoGasto::Material,
+        proveedor: "Almacén".into(),
+        documento: "F-12".into(),
+        concepto: "Tubo".into(),
+        capitulo: Some("C01".into()),
+        horas: None,
+        importe: dec!(500),
+        pedido: None,
+    };
+    app.aplicar(vec![Accion::Obra(OpObra::AnotarGasto(Box::new(g)))]);
+    assert_eq!(app.p.seguimiento.gastos.len(), 1);
+    app.abrir_obra(PestanaObra::CosteReal);
+    for _ in 0..2 {
+        let mut out = ctx.run_ui(RawInput::default(), |ui| {
+            let c = ui.ctx().clone();
+            app.ventana_obra(&c);
+        });
+        out.textures_delta.clear();
+    }
+    let c = app.p.coste_real(app.gg, app.bi).unwrap();
+    assert_eq!(c.total.real.material, dec!(500));
+    app.aplicar(vec![Accion::Obra(OpObra::BorrarGasto(1))]);
+    assert!(app.p.seguimiento.gastos.is_empty());
+    app.deshacer();
+    assert_eq!(app.p.seguimiento.gastos.len(), 1);
+}

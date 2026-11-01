@@ -16,8 +16,10 @@
 
 mod certificacion;
 mod control;
+mod coste_real;
 pub use certificacion::excel_certificacion;
 pub use control::{CabeceraPedido, excel_coste, excel_mano_obra, excel_pedido, excel_pedidos};
+pub use coste_real::excel_coste_real;
 
 use ppto_core::concepto::Naturaleza;
 use ppto_core::presupuesto::LineaValorada;

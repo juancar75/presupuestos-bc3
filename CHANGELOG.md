@@ -6,6 +6,12 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Coste real** (Obra → Coste real): se apuntan los gastos (facturas de
+  material y subcontratas, horas de mano de obra con su €/h, otros) con
+  proveedor, documento, capítulo y, si se quiere, el pedido. Por capítulo y
+  por tipo, previsto frente a real, % gastado frente a % certificado (en rojo
+  si se gasta por delante de lo certificado) y margen real a fecha
+  (certificado − gastado). En Excel con la lista de gastos.
 - **Pedidos registrados** (Obra → Pedidos): desde Informes → Pedido a
   fabricante o subcontrata, «Registrar en la obra» lo guarda con número,
   fecha, referencia, entrega y estado (borrador, enviado, anulado). En

@@ -463,4 +463,32 @@ fn seguimiento_aleatorio(p: &mut Presupuesto, r: &mut impl FnMut(u64) -> u64) {
             p.recibir(n, &l.codigo, l.cantidad / Decimal::TWO).ok();
         }
     }
+    // Gastos reales
+    let caps: Vec<String> = p
+        .concepto(&p.raiz)
+        .map(|c| c.descomposicion.iter().map(|l| l.hijo.clone()).collect())
+        .unwrap_or_default();
+    for (i, t) in crate::coste_real::TipoGasto::TODOS.into_iter().enumerate() {
+        let capitulo = caps
+            .get(i)
+            .filter(|c| {
+                p.conceptos
+                    .get(*c)
+                    .is_some_and(|x| x.naturaleza == Naturaleza::Capitulo)
+            })
+            .cloned();
+        p.anotar_gasto(crate::coste_real::Gasto {
+            numero: 0,
+            fecha: "25/10/2026".into(),
+            tipo: t,
+            proveedor: "Proveedor «A»".into(),
+            documento: format!("F-{}", r(999)),
+            concepto: "Gasto de prueba".into(),
+            capitulo,
+            horas: (t == crate::coste_real::TipoGasto::ManoObra).then(|| Decimal::from(r(40) + 1)),
+            importe: Decimal::new(i64::try_from(r(500_000) + 1).unwrap_or(1), 2),
+            pedido: None,
+        })
+        .ok();
+    }
 }

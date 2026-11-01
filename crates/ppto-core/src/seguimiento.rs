@@ -33,11 +33,17 @@ pub struct Seguimiento {
     /// Pedidos registrados (ver [`crate::compras`]).
     #[serde(default)]
     pub pedidos: Vec<crate::compras::PedidoRegistrado>,
+    /// Gastos reales (ver [`crate::coste_real`]).
+    #[serde(default)]
+    pub gastos: Vec<crate::coste_real::Gasto>,
 }
 
 impl Seguimiento {
     pub fn esta_vacio(&self) -> bool {
-        self.contradictorios.is_empty() && self.certificaciones.is_empty() && self.pedidos.is_empty()
+        self.contradictorios.is_empty()
+            && self.certificaciones.is_empty()
+            && self.pedidos.is_empty()
+            && self.gastos.is_empty()
     }
 }
 

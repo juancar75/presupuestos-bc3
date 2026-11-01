@@ -20,6 +20,7 @@ pub mod codigos;
 pub mod comparar;
 pub mod compras;
 pub mod concepto;
+pub mod coste_real;
 pub mod decimales;
 pub mod descuentos;
 pub mod dificultad;
