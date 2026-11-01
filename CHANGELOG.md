@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.38] - 2026-11-01
+
 ### Añadido
 - **Descuento comercial** (pestaña Resumen): en % o «cerrar en» una cifra
   (calcula el descuento). Los precios de las partidas no cambian: sale como
