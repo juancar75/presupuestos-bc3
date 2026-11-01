@@ -11,6 +11,7 @@ mod comparar;
 mod dificultad;
 mod informes;
 mod legalizacion;
+mod modelo;
 mod obra;
 mod ofertas;
 mod pdf;
@@ -276,6 +277,8 @@ pub struct Aplicacion {
     ventana_informes: Option<informes::VentanaInformes>,
     /// Contradictorios y certificaciones.
     ventana_obra: Option<obra::VentanaObra>,
+    /// Importar un modelo BIM (IFC o Revit).
+    ventana_modelo: Option<modelo::VentanaModelo>,
     /// Si los documentos de las ofertas siguen donde se vincularon.
     docs: ofertas::CacheDocumentos,
     ventana_comparar: Option<comparar::VentanaComparar>,
@@ -444,6 +447,7 @@ impl Aplicacion {
             form_origen: None,
             ventana_informes: None,
             ventana_obra: None,
+            ventana_modelo: None,
             f5: std::cell::RefCell::new(None),
             recuperacion: recuperacion::Recuperacion::default(),
             docs: ofertas::CacheDocumentos::default(),
@@ -1694,6 +1698,16 @@ impl Aplicacion {
             {
                 ui.close();
                 self.dialogo_ciego();
+            }
+            if ui
+                .button("Modelo BIM (IFC o Revit)…")
+                .on_hover_text(
+                    "Mediciones de las instalaciones de un modelo .ifc o .rvt: tuberías, conductos, equipos…",
+                )
+                .clicked()
+            {
+                ui.close();
+                self.dialogo_modelo();
             }
             if ui
                 .button("Traer precios de un BC3…")
@@ -3767,6 +3781,7 @@ impl eframe::App for Aplicacion {
         self.ventana_origen(&ctx, &mut acciones);
         self.ventana_informes(&ctx);
         self.ventana_obra(&ctx);
+        self.ventana_modelo(&ctx);
         self.ventana_comparar(&ctx, &mut acciones);
         self.ventana_legalizacion(&ctx);
         self.ventana_propuestas(&ctx, &mut acciones);
@@ -5358,6 +5373,51 @@ mod pruebas {
         app.deshacer();
         assert_eq!(app.p.concepto("MT.TUBO16").unwrap().precio, precio);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn importar_modelo_bim() {
+        let mut app = Aplicacion::sin_ventana();
+        let ruta = std::path::PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../ppto-modelo/tests/datos/instalacion-sintetica.ifc"
+        ));
+        app.abrir_modelo(ruta);
+        let ctx = Context::default();
+        for _ in 0..200 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let c = ui.ctx().clone();
+                app.ventana_modelo(&c);
+            });
+            out.textures_delta.clear();
+            if app.ventana_modelo.as_ref().is_some_and(|v| v.modelo.is_some()) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let m = match &app.ventana_modelo.as_ref().unwrap().modelo {
+            Some(Ok(m)) => m.clone(),
+            otro => panic!("{otro:?}"),
+        };
+        assert_eq!(m.elementos.len(), 9);
+        // Añadir a la obra de ejemplo: se puede deshacer
+        let pem = app.p.pem().unwrap();
+        let antes = app.p.concepto(&app.p.raiz).unwrap().descomposicion.len();
+        let pm = ppto_modelo::a_presupuesto(&m, app.ventana_modelo.as_ref().unwrap().opciones).unwrap();
+        let hijos: Vec<String> = pm
+            .concepto("OBRA")
+            .unwrap()
+            .descomposicion
+            .iter()
+            .map(|l| l.hijo.clone())
+            .collect();
+        let f = ppto_core::fragmento::copiar(&pm, "OBRA", &hijos).unwrap();
+        let raiz = app.p.raiz.clone();
+        app.aplicar(vec![Accion::PegarFragmento(Box::new(f), raiz)]);
+        assert_eq!(app.p.concepto(&app.p.raiz).unwrap().descomposicion.len(), antes + 3);
+        assert_eq!(app.p.pem().unwrap(), pem, "sin precios");
+        app.deshacer();
+        assert_eq!(app.p.concepto(&app.p.raiz).unwrap().descomposicion.len(), antes);
     }
 
     #[test]

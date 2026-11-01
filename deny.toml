@@ -68,3 +68,6 @@ ignore = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# rvt-rs (Apache-2.0): lectura de .rvt sin Revit; aún no está en crates.io.
+# Fijado a un commit concreto (v0.2.0) en crates/ppto-modelo/Cargo.toml.
+allow-git = ["https://github.com/DrunkOnJava/rvt-rs"]

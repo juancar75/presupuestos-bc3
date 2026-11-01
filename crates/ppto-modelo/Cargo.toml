@@ -1,0 +1,27 @@
+[package]
+name = "ppto-modelo"
+description = "Mediciones de instalaciones desde modelos BIM: IFC y Revit (.rvt) sin Revit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["revit"]
+# Lectura directa de .rvt con rvt-rs (Apache-2.0)
+revit = ["dep:rvt"]
+
+[dependencies]
+ppto-core.workspace = true
+thiserror.workspace = true
+rust_decimal.workspace = true
+rvt = { git = "https://github.com/DrunkOnJava/rvt-rs", rev = "fa4038e7a3971d35d202f06127260ad18666b834", optional = true }
+
+[dev-dependencies]
+rust_decimal_macros.workspace = true
+ppto-bc3.workspace = true
+
+[lints]
+workspace = true
