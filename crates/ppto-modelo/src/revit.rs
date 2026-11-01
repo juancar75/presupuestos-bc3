@@ -91,7 +91,10 @@ pub fn desde_csv(csv: &str) -> Result<Modelo, ErrorModelo> {
     };
     let cl = col("level");
     let dims = [col("width_m"), col("depth_m"), col("height_m")];
+    let pos = [col("x_m"), col("y_m"), col("z_m")];
     let mut m = Modelo::default();
+    // Caja de cada elemento (mismo orden que m.elementos)
+    let mut cajas: Vec<Option<Caja>> = Vec::new();
     let mut sin_medida = 0usize;
     let mut dudosos: Vec<(usize, Decimal, Decimal)> = Vec::new();
     for l in lineas {
@@ -107,11 +110,17 @@ pub fn desde_csv(csv: &str) -> Result<Modelo, ErrorModelo> {
             }
             continue;
         };
-        let mut d: Vec<Decimal> = dims
+        let dx: Vec<Decimal> = dims
             .iter()
             .filter_map(|c| Decimal::from_str(g(*c)).ok())
             .filter(|x| *x > Decimal::ZERO)
             .collect();
+        let px: Vec<Decimal> = pos.iter().filter_map(|c| Decimal::from_str(g(*c)).ok()).collect();
+        cajas.push(match (&dx[..], &px[..]) {
+            ([w, d, h], [x, y, z]) => Some(Caja::nueva([*x, *y, *z], [*w, *d, *h])),
+            _ => None,
+        });
+        let mut d = dx;
         d.sort();
         let (mut longitud, mut medida, mut aproximada) = (None, String::new(), false);
         if clase.lineal() {
@@ -174,11 +183,120 @@ pub fn desde_csv(csv: &str) -> Result<Modelo, ErrorModelo> {
         }
     }
     agrupar_diametros(&mut m.elementos);
+    medir_accesorios(&mut m.elementos, &cajas);
     if sin_medida > 0 {
         m.avisos
             .push(format!("{sin_medida} tramo(s) sin geometría: no tienen longitud."));
     }
     Ok(m)
+}
+
+/// Caja alineada con los ejes (metros).
+#[derive(Debug, Clone, Copy)]
+struct Caja {
+    min: [Decimal; 3],
+    max: [Decimal; 3],
+}
+
+impl Caja {
+    fn nueva(centro: [Decimal; 3], lados: [Decimal; 3]) -> Self {
+        let mut min = centro;
+        let mut max = centro;
+        for i in 0..3 {
+            min[i] -= lados[i] / Decimal::TWO;
+            max[i] += lados[i] / Decimal::TWO;
+        }
+        Self { min, max }
+    }
+
+    /// Se tocan (con una holgura de 3 mm).
+    fn toca(&self, o: &Caja) -> bool {
+        let h = Decimal::new(3, 3);
+        (0..3).all(|i| self.min[i] - h <= o.max[i] && o.min[i] - h <= self.max[i])
+    }
+
+    fn lado_menor(&self) -> Decimal {
+        (0..3).map(|i| self.max[i] - self.min[i]).min().unwrap_or_default()
+    }
+}
+
+/// Medida de los accesorios por los tubos que tocan: un codo o un tapón,
+/// su Ø; una te o una reducción, «Ø40x32» (mayor x menor). Si un accesorio
+/// de un solo diámetro (codo, manguito…) toca tubos de dos, se elige el que
+/// mejor cuadra con su tamaño, comparado con los de su mismo tipo.
+fn medir_accesorios(elementos: &mut [Elemento], cajas: &[Option<Caja>]) {
+    let diam = |e: &Elemento| -> Option<Decimal> {
+        (e.clase == Clase::Tuberia)
+            .then(|| e.medida.strip_prefix('Ø'))
+            .flatten()
+            .and_then(|x| Decimal::from_str(x).ok())
+    };
+    let tubos: Vec<(Caja, Decimal)> = elementos
+        .iter()
+        .zip(cajas)
+        .filter_map(|(e, c)| Some(((*c)?, diam(e)?)))
+        .collect();
+    if tubos.is_empty() {
+        return;
+    }
+    // Diámetros que toca cada accesorio
+    let tocados: Vec<Option<Vec<Decimal>>> = elementos
+        .iter()
+        .zip(cajas)
+        .map(|(e, c)| {
+            let c = (*c)?;
+            (e.clase == Clase::AccesorioTuberia).then(|| {
+                let mut ds: Vec<Decimal> = tubos.iter().filter(|(t, _)| t.toca(&c)).map(|(_, d)| *d).collect();
+                ds.sort();
+                ds.dedup();
+                ds.reverse();
+                ds
+            })
+        })
+        .collect();
+    // Por tipo: cuántos tocan un solo Ø y la proporción tamaño / Ø
+    let mut uno: std::collections::BTreeMap<String, (usize, usize, Vec<Decimal>)> = std::collections::BTreeMap::new();
+    for ((e, c), t) in elementos.iter().zip(cajas).zip(&tocados) {
+        if let (Some(ds), Some(c)) = (t, c)
+            && !ds.is_empty()
+        {
+            let x = uno.entry(e.tipo.clone()).or_default();
+            if ds.len() == 1 {
+                x.0 += 1;
+                x.2.push(c.lado_menor() * Decimal::from(1000) / ds[0]);
+            } else {
+                x.1 += 1;
+            }
+        }
+    }
+    let proporcion: std::collections::BTreeMap<String, Option<Decimal>> = uno
+        .into_iter()
+        .map(|(tipo, (n1, nmas, mut r))| {
+            r.sort();
+            // De un solo diámetro si casi siempre toca uno
+            let solo_uno = n1 >= 3 && n1 * 10 >= (n1 + nmas) * 8;
+            (tipo, solo_uno.then(|| r.get(r.len() / 2).copied()).flatten())
+        })
+        .collect();
+    for ((e, c), t) in elementos.iter_mut().zip(cajas).zip(tocados) {
+        let (Some(ds), Some(c)) = (t, c) else { continue };
+        e.medida = match ds.len() {
+            0 => continue,
+            1 => format!("Ø{}", ds[0]),
+            _ => match proporcion.get(&e.tipo).copied().flatten() {
+                Some(r) => {
+                    let tam = c.lado_menor() * Decimal::from(1000);
+                    let d = ds
+                        .iter()
+                        .min_by_key(|d| (tam - **d * r).abs())
+                        .copied()
+                        .unwrap_or(ds[0]);
+                    format!("Ø{d}")
+                }
+                None => format!("Ø{}x{}", ds[0], ds[ds.len() - 1]),
+            },
+        };
+    }
 }
 
 /// La geometría da diámetros con ruido (Ø37, Ø39 junto a 400 tramos de
@@ -231,6 +349,68 @@ fn agrupar_diametros(elementos: &mut [Elemento]) {
 mod pruebas {
     use super::*;
     use rust_decimal_macros::dec;
+
+    #[test]
+    fn diametro_de_los_accesorios_por_los_tubos_que_tocan() {
+        // Tubo Ø32 de x=0 a 1, codo en x=1, tubo Ø32 de y=0 a 1 en x=1;
+        // reducción en x=3 entre Ø40 y Ø32; tapón suelto
+        let cab = "revit_element_id,ifc_type,predefined_type,name,level,level_elevation_m,material,x_m,y_m,z_m,rotation_deg,width_m,depth_m,height_m\n";
+        let mut csv = cab.to_owned();
+        let mut fila = |id: u32, t: &str, n: &str, c: [&str; 3], d: [&str; 3]| {
+            csv += &format!(
+                "{id},{t},,{n},,,,{},{},{},,{},{},{}\n",
+                c[0], c[1], c[2], d[0], d[1], d[2]
+            );
+        };
+        fila(
+            1,
+            "IFCPIPESEGMENT",
+            "Pipe-1",
+            ["0.5", "0", "0"],
+            ["1", "0.032", "0.032"],
+        );
+        fila(
+            2,
+            "IFCPIPEFITTING",
+            "Codo:UT:2",
+            ["1.02", "0", "0"],
+            ["0.045", "0.045", "0.045"],
+        );
+        fila(
+            3,
+            "IFCPIPESEGMENT",
+            "Pipe-3",
+            ["1.02", "0.52", "0"],
+            ["0.032", "1", "0.032"],
+        );
+        fila(4, "IFCPIPESEGMENT", "Pipe-4", ["2.5", "0", "0"], ["1", "0.04", "0.04"]);
+        fila(
+            5,
+            "IFCPIPEFITTING",
+            "Reduccion:UT:5",
+            ["3.03", "0", "0"],
+            ["0.06", "0.05", "0.05"],
+        );
+        fila(
+            6,
+            "IFCPIPESEGMENT",
+            "Pipe-6",
+            ["3.56", "0", "0"],
+            ["1", "0.032", "0.032"],
+        );
+        fila(
+            7,
+            "IFCPIPEFITTING",
+            "Tapon:UT:7",
+            ["9", "9", "9"],
+            ["0.04", "0.04", "0.04"],
+        );
+        let m = desde_csv(&csv).unwrap();
+        let medida = |t: &str| m.elementos.iter().find(|e| e.tipo == t).unwrap().medida.clone();
+        assert_eq!(medida("Codo:UT"), "Ø32");
+        assert_eq!(medida("Reduccion:UT"), "Ø40x32");
+        assert_eq!(medida("Tapon:UT"), "", "no toca ningún tubo");
+    }
 
     #[test]
     fn listado_de_rvt() {
