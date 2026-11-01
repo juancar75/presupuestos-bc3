@@ -2,6 +2,7 @@
 //! Ventana principal: árbol de capítulos, partida (descompuesto y mediciones),
 //! recursos, subcontratación y resumen.
 
+mod actualizar;
 mod alta;
 mod asistente;
 mod bases;
@@ -279,6 +280,8 @@ pub struct Aplicacion {
     ventana_obra: Option<obra::VentanaObra>,
     /// Importar un modelo BIM (IFC o Revit).
     ventana_modelo: Option<modelo::VentanaModelo>,
+    /// Aviso de versión nueva.
+    actualizacion: actualizar::Actualizacion,
     /// Si los documentos de las ofertas siguen donde se vincularon.
     docs: ofertas::CacheDocumentos,
     ventana_comparar: Option<comparar::VentanaComparar>,
@@ -377,6 +380,7 @@ impl Aplicacion {
         app.enlace = propuestas::Enlace::en_disco();
         app.asistente = asistente::PanelAsistente::en_disco();
         app.recuperacion = recuperacion::Recuperacion::en_disco();
+        app.actualizacion = actualizar::Actualizacion::al_arrancar();
         if let Some(r) = tarifas::ruta_tarifas() {
             app.tarifas = ppto_tarifas::Biblioteca::cargar(&r);
         }
@@ -448,6 +452,7 @@ impl Aplicacion {
             ventana_informes: None,
             ventana_obra: None,
             ventana_modelo: None,
+            actualizacion: Default::default(),
             f5: std::cell::RefCell::new(None),
             recuperacion: recuperacion::Recuperacion::default(),
             docs: ofertas::CacheDocumentos::default(),
@@ -1519,8 +1524,14 @@ impl Aplicacion {
                     ui.close();
                     self.ver_acerca = true;
                 }
+                if ui.button("Buscar actualizaciones…").clicked() {
+                    ui.close();
+                    self.actualizacion.buscar(true);
+                    self.actualizacion.ventana = true;
+                }
                 ui.hyperlink_to("Novedades", "https://github.com/juancar75/presupuestos-bc3/releases");
             });
+            self.boton_actualizar(ui);
             ui.separator();
             // Uso diario
             let des = self.historial.deshacer.last().map(|(_, q)| q.clone());
@@ -3782,6 +3793,7 @@ impl eframe::App for Aplicacion {
         self.ventana_informes(&ctx);
         self.ventana_obra(&ctx);
         self.ventana_modelo(&ctx);
+        self.ventana_actualizar(&ctx);
         self.ventana_comparar(&ctx, &mut acciones);
         self.ventana_legalizacion(&ctx);
         self.ventana_propuestas(&ctx, &mut acciones);
@@ -3798,7 +3810,7 @@ impl eframe::App for Aplicacion {
 
 /// Lo que se arrastra en el árbol: una línea (`hijo`) de un capítulo (`origen`).
 /// Versión del programa (la de Cargo.toml).
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub(super) const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Memoria temporal: rectángulo del campo «Título» del menú del capítulo.
 const CAMPO_TITULO: &str = "campo_titulo_capitulo";
@@ -5373,6 +5385,30 @@ mod pruebas {
         app.deshacer();
         assert_eq!(app.p.concepto("MT.TUBO16").unwrap().precio, precio);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn aviso_de_version_nueva() {
+        let mut app = Aplicacion::sin_ventana();
+        app.actualizacion.estado = actualizar::Estado::Disponible(ppto_actualizar::Version {
+            numero: "9.9.9".into(),
+            notas: "Novedades".into(),
+            pagina: "https://example.invalid".into(),
+            zip: Some("https://example.invalid/x.zip".into()),
+            tamano: 70 * 1024 * 1024,
+        });
+        app.actualizacion.ventana = true;
+        let ctx = Context::default();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let c = ui.ctx().clone();
+                app.boton_actualizar(ui);
+                app.ventana_actualizar(&c);
+            });
+            out.textures_delta.clear();
+        }
+        assert!(app.actualizacion.ventana);
+        assert!(matches!(app.actualizacion.estado, actualizar::Estado::Disponible(_)));
     }
 
     #[test]

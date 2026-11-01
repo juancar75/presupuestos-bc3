@@ -25,6 +25,7 @@ ppto-asistente.workspace = true
 ppto-biblioteca.workspace = true
 ppto-legalizacion.workspace = true
 ppto-modelo.workspace = true
+ppto-actualizar.workspace = true
 serde.workspace = true
 serde_json = "1.0"
 rust_decimal.workspace = true
