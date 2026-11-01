@@ -226,11 +226,13 @@ fn hoja_resumen(
     capitulos(h, p, v, &p.raiz, 0, &mut fila, f)?;
     fila += 1;
 
-    let r = venta::resumen(
+    let desc = p.seguimiento.descuento.as_ref().filter(|d| !d.es_nulo());
+    let r = venta::resumen_con_descuento(
         v.pem,
         o.gastos_generales,
         o.beneficio_industrial,
         o.iva,
+        desc,
         p.decimales.importe,
     );
     let mut filas: Vec<(String, Decimal, bool)> = Vec::new();
@@ -253,6 +255,10 @@ fn hoja_resumen(
         r.beneficio_industrial,
         false,
     ));
+    if let Some(d) = desc {
+        filas.push(("Suma (sin IVA)".into(), r.bruto, false));
+        filas.push((d.etiqueta(), -r.descuento, false));
+    }
     filas.push(("Presupuesto base (sin IVA)".into(), r.base, true));
     filas.push((format!("{} % IVA", fmt_pct(o.iva)), r.iva, false));
     filas.push(("TOTAL".into(), r.total, true));

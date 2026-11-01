@@ -133,29 +133,57 @@ pub fn excel_certificacion(
         h.write_string_with_format(fila, c, t, &f.cabecera)?;
     }
     fila += 1;
-    let mut lineas = Vec::new();
+    let mut lineas: Vec<(String, _, _, _)> = Vec::new();
+    let hay_descuento = !s.origen.descuento.is_zero() || !s.anterior.descuento.is_zero();
+    let etiqueta = p
+        .seguimiento
+        .descuento
+        .as_ref()
+        .map_or("Descuento comercial".to_owned(), |d| d.etiqueta());
     if precios_venta {
-        lineas.push(("Importe certificado", s.anterior.base, s.actual.base, s.origen.base));
-    } else {
-        lineas.push(("Ejecución material", s.anterior.pem, s.actual.pem, s.origen.pem));
         lineas.push((
-            "Gastos generales",
+            "Importe certificado".into(),
+            s.anterior.bruto,
+            s.actual.bruto,
+            s.origen.bruto,
+        ));
+        if hay_descuento {
+            lineas.push((
+                etiqueta,
+                -s.anterior.descuento,
+                -s.actual.descuento,
+                -s.origen.descuento,
+            ));
+            lineas.push(("Base imponible".into(), s.anterior.base, s.actual.base, s.origen.base));
+        }
+    } else {
+        lineas.push(("Ejecución material".into(), s.anterior.pem, s.actual.pem, s.origen.pem));
+        lineas.push((
+            "Gastos generales".into(),
             s.anterior.gastos_generales,
             s.actual.gastos_generales,
             s.origen.gastos_generales,
         ));
         lineas.push((
-            "Beneficio industrial",
+            "Beneficio industrial".into(),
             s.anterior.beneficio_industrial,
             s.actual.beneficio_industrial,
             s.origen.beneficio_industrial,
         ));
-        lineas.push(("Base imponible", s.anterior.base, s.actual.base, s.origen.base));
+        if hay_descuento {
+            lineas.push((
+                etiqueta,
+                -s.anterior.descuento,
+                -s.actual.descuento,
+                -s.origen.descuento,
+            ));
+        }
+        lineas.push(("Base imponible".into(), s.anterior.base, s.actual.base, s.origen.base));
     }
-    lineas.push(("IVA", s.anterior.iva, s.actual.iva, s.origen.iva));
-    lineas.push(("Total con IVA", s.anterior.total, s.actual.total, s.origen.total));
+    lineas.push(("IVA".into(), s.anterior.iva, s.actual.iva, s.origen.iva));
+    lineas.push(("Total con IVA".into(), s.anterior.total, s.actual.total, s.origen.total));
     for (t, a, m, o) in lineas {
-        h.write_string(fila, 1, t)?;
+        h.write_string(fila, 1, &t)?;
         for (c, v) in [(9, a), (10, m), (11, o)] {
             h.write_number_with_format(fila, c, n(v), &f.num2)?;
         }

@@ -1990,3 +1990,57 @@ fn coste_real_desde_la_obra() {
     app.deshacer();
     assert_eq!(app.p.seguimiento.gastos.len(), 1);
 }
+
+#[test]
+fn descuento_comercial_y_contratar() {
+    use obra::OpObra;
+    let dir = std::env::temp_dir().join(format!("gui-contrato-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut app = Aplicacion::sin_ventana();
+    app.fichero = Some(dir.join("obra.sqlite"));
+    let (venta, _) = app.p.venta_y_descuento(app.gg, app.bi).unwrap();
+    let d = ppto_core::venta::DescuentoComercial::cerrar_en(venta, ppto_core::redondear(venta - dec!(100), 0)).unwrap();
+    app.aplicar(vec![Accion::Obra(OpObra::Descuento(Some(d)))]);
+    let (v2, desc) = app.p.venta_y_descuento(app.gg, app.bi).unwrap();
+    assert_eq!(v2, venta, "los precios no cambian");
+    assert!(desc > dec!(99) && desc < dec!(101));
+    // Se pinta el resumen y la ventana de contratar
+    let ctx = Context::default();
+    app.ver_contratar = true;
+    app.pestana = Pestana::Resumen;
+    for _ in 0..2 {
+        let mut out = ctx.run_ui(RawInput::default(), |ui| app.pantalla(ui));
+        out.textures_delta.clear();
+    }
+    // Contratar: bloquea ventas
+    app.aplicar(vec![Accion::Obra(OpObra::Contratar(
+        "01/11/2026".into(),
+        app.gg,
+        app.bi,
+    ))]);
+    let k = app.p.seguimiento.contrato.clone().unwrap();
+    assert_eq!(k.importe, venta - desc);
+    assert!(
+        app.p
+            .conceptos
+            .values()
+            .filter(|c| c.naturaleza == Naturaleza::Partida)
+            .all(|c| c.venta_fija.is_some())
+    );
+    app.guardar(false);
+    app.bloquear_revision_actual();
+    assert!(app.revisiones.last().unwrap().bloqueada);
+    // PDF de la oferta con la línea de descuento
+    let o = app.opciones_pdf_obra();
+    let datos = ppto_pdf::datos(&app.p, &o, None).unwrap();
+    assert!(
+        datos["descuento"]["concepto"]
+            .as_str()
+            .unwrap()
+            .starts_with("Descuento comercial")
+    );
+    app.aplicar(vec![Accion::Obra(OpObra::AnularContrato)]);
+    assert!(app.p.conceptos.values().all(|c| c.venta_fija.is_none()));
+    let _ = std::fs::remove_dir_all(&dir);
+}

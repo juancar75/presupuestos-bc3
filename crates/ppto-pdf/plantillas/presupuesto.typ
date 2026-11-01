@@ -162,6 +162,9 @@
     d.recargos.map(r => (r.concepto, r.importe)).flatten()
     (table.hline(stroke: 0.4pt + gris),)
   },
+  ..if d.at("descuento", default: none) != none {
+    ([Suma], [#d.descuento.suma €], [#d.descuento.concepto], [#d.descuento.importe €], table.hline(stroke: 0.4pt + gris))
+  },
   [*#d.etiqueta_base*], [*#d.base €*],
   ..if d.iva != none { ([#d.iva.concepto], [#d.iva.importe]) },
   table.hline(stroke: 1pt + acento),

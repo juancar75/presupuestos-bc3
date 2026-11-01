@@ -36,6 +36,23 @@ pub struct Seguimiento {
     /// Gastos reales (ver [`crate::coste_real`]).
     #[serde(default)]
     pub gastos: Vec<crate::coste_real::Gasto>,
+    /// Descuento comercial de la oferta (cierre).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descuento: Option<crate::venta::DescuentoComercial>,
+    /// La obra está contratada (ver [`Presupuesto::contratar`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contrato: Option<Contrato>,
+}
+
+/// Datos de la contratación.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Contrato {
+    pub fecha: String,
+    /// Total sin IVA contratado (después del descuento).
+    pub importe: Decimal,
+    /// Partidas cuya venta se bloqueó al contratar (para poder deshacerlo).
+    #[serde(default)]
+    pub bloqueadas: Vec<String>,
 }
 
 impl Seguimiento {
@@ -44,6 +61,8 @@ impl Seguimiento {
             && self.certificaciones.is_empty()
             && self.pedidos.is_empty()
             && self.gastos.is_empty()
+            && self.descuento.is_none()
+            && self.contrato.is_none()
     }
 }
 
@@ -728,13 +747,25 @@ impl Presupuesto {
             Precios::Venta { .. } => (Decimal::ZERO, Decimal::ZERO),
         };
         let d = self.decimales.importe;
-        let anterior = crate::venta::resumen(r.total.anterior, gg, bi, iva, d);
-        let origen = crate::venta::resumen(r.total.origen, gg, bi, iva, d);
+        // El descuento comercial se aplica en el mismo % a lo certificado
+        let desc =
+            self.seguimiento
+                .descuento
+                .as_ref()
+                .filter(|x| !x.es_nulo())
+                .map(|x| crate::venta::DescuentoComercial {
+                    importe_fijo: None,
+                    ..x.clone()
+                });
+        let anterior = crate::venta::resumen_con_descuento(r.total.anterior, gg, bi, iva, desc.as_ref(), d);
+        let origen = crate::venta::resumen_con_descuento(r.total.origen, gg, bi, iva, desc.as_ref(), d);
         // El mes es la diferencia, para que anterior + mes = origen al céntimo
         let actual = crate::venta::ResumenPresupuesto {
             pem: origen.pem - anterior.pem,
             gastos_generales: origen.gastos_generales - anterior.gastos_generales,
             beneficio_industrial: origen.beneficio_industrial - anterior.beneficio_industrial,
+            bruto: origen.bruto - anterior.bruto,
+            descuento: origen.descuento - anterior.descuento,
             base: origen.base - anterior.base,
             iva: origen.iva - anterior.iva,
             total: origen.total - anterior.total,
@@ -747,6 +778,72 @@ impl Presupuesto {
             origen,
             retencion: ret,
             a_cobrar,
+        }
+    }
+}
+
+impl Presupuesto {
+    /// Total sin IVA a precio de venta (antes del descuento) y descuento.
+    pub fn venta_y_descuento(&self, gg: Decimal, bi: Decimal) -> Result<(Decimal, Decimal), ErrorMotor> {
+        let venta = crate::pedidos::coste_obra(self, gg, bi)?.venta;
+        let desc = self
+            .seguimiento
+            .descuento
+            .as_ref()
+            .map_or(Decimal::ZERO, |d| d.importe(venta, self.decimales.importe));
+        Ok((venta, desc))
+    }
+
+    /// Marca la obra como contratada: bloquea la venta de cada partida al
+    /// precio de hoy (las que no la tuvieran ya bloqueada), para que cambiar
+    /// costes o tarifas mueva el margen pero no lo que se cobra.
+    pub fn contratar(&mut self, fecha: &str, gg: Decimal, bi: Decimal) -> Result<Contrato, ErrorMotor> {
+        if self.seguimiento.contrato.is_some() {
+            return Err(error("la obra ya está contratada"));
+        }
+        let v = self.valorar()?;
+        let d = self.decimales.importe;
+        let mut ventas: std::collections::BTreeMap<String, Decimal> = std::collections::BTreeMap::new();
+        for (cap, lineas) in &v.lineas {
+            if self.concepto(cap)?.naturaleza != Naturaleza::Capitulo {
+                continue;
+            }
+            for l in lineas {
+                let c = self.concepto(&l.hijo)?;
+                if matches!(c.naturaleza, Naturaleza::Capitulo | Naturaleza::Porcentaje) || c.venta_fija.is_some() {
+                    continue;
+                }
+                ventas.insert(
+                    l.hijo.clone(),
+                    crate::venta::venta_concepto(l.precio, c, gg, bi, d).venta,
+                );
+            }
+        }
+        let (venta, desc) = self.venta_y_descuento(gg, bi)?;
+        let bloqueadas: Vec<String> = ventas.keys().cloned().collect();
+        for (codigo, pv) in ventas {
+            if let Some(c) = self.conceptos.get_mut(&codigo) {
+                c.venta_fija = Some(pv);
+            }
+        }
+        let k = Contrato {
+            fecha: fecha.to_owned(),
+            importe: venta - desc,
+            bloqueadas,
+        };
+        self.seguimiento.contrato = Some(k.clone());
+        Ok(k)
+    }
+
+    /// Quita la marca de contrato y desbloquea las ventas que se bloquearon al
+    /// contratar.
+    pub fn anular_contrato(&mut self) {
+        if let Some(k) = self.seguimiento.contrato.take() {
+            for codigo in k.bloqueadas {
+                if let Some(c) = self.conceptos.get_mut(&codigo) {
+                    c.venta_fija = None;
+                }
+            }
         }
     }
 }
@@ -964,6 +1061,40 @@ mod pruebas {
         p.cerrar_certificacion(1, dec!(10), dec!(10)).unwrap();
         p.fijar_margen("B", None).unwrap();
         assert_eq!(p.relacion_valorada(1, v).unwrap().total.origen, dec!(36));
+    }
+
+    #[test]
+    fn contratar_bloquea_la_venta() {
+        let mut p = obra();
+        p.fijar_margen("B", Some(dec!(50))).unwrap();
+        p.seguimiento.descuento = Some(crate::venta::DescuentoComercial::porcentaje(dec!(10)));
+        let (venta, desc) = p.venta_y_descuento(dec!(10), dec!(10)).unwrap();
+        // A: 12 ud × 6 = 72; B: 4 × 30 = 120
+        assert_eq!((venta, desc), (dec!(192), dec!(19.20)));
+        let k = p.contratar("01/11/2026", dec!(10), dec!(10)).unwrap();
+        assert_eq!(k.importe, dec!(172.80));
+        assert_eq!(k.bloqueadas, vec!["A".to_owned(), "B".to_owned()]);
+        assert_eq!(p.concepto("B").unwrap().venta_fija, Some(dec!(30)));
+        assert!(p.contratar("x", dec!(0), dec!(0)).is_err());
+        // Sube el coste: la venta no cambia
+        p.fijar_precio("A", dec!(9)).unwrap();
+        assert_eq!(p.venta_y_descuento(dec!(10), dec!(10)).unwrap().0, dec!(192));
+        // Certificación: el descuento se aplica en el mismo %
+        let v = Precios::Venta {
+            gg: dec!(10),
+            bi: dec!(10),
+        };
+        p.nueva_certificacion("1").unwrap();
+        p.certificar_completa(1, "C1", "B").unwrap();
+        let r = p.relacion_valorada(1, v).unwrap();
+        let s = p.resumen_certificacion(&r, v, dec!(21), Decimal::ZERO);
+        assert_eq!(
+            (s.actual.bruto, s.actual.descuento, s.actual.base),
+            (dec!(120), dec!(12), dec!(108))
+        );
+        p.anular_contrato();
+        assert_eq!(p.concepto("B").unwrap().venta_fija, None);
+        assert!(p.seguimiento.contrato.is_none());
     }
 
     #[test]

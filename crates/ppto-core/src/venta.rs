@@ -67,23 +67,99 @@ pub struct ResumenPresupuesto {
     pub pem: Decimal,
     pub gastos_generales: Decimal,
     pub beneficio_industrial: Decimal,
-    /// PEM + GG + BI (presupuesto base de licitación sin IVA).
+    /// PEM + GG + BI, antes del descuento comercial.
+    pub bruto: Decimal,
+    /// Descuento comercial (importe positivo; cero si no hay).
+    pub descuento: Decimal,
+    /// Base imponible: bruto − descuento.
     pub base: Decimal,
     pub iva: Decimal,
     pub total: Decimal,
 }
 
+/// Descuento comercial sobre el total sin IVA (el «cierre» de la oferta).
+/// Los precios de las partidas no cambian: sale como una línea aparte del
+/// resumen y se aplica en el mismo % a cada certificación.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct DescuentoComercial {
+    /// En puntos (5 = 5 %).
+    pub porcentaje: Decimal,
+    /// Importe fijo (al cerrar a una cifra); si no, se calcula con el %.
+    #[serde(default)]
+    pub importe_fijo: Option<Decimal>,
+    /// Texto de la línea («Descuento comercial» si está vacío).
+    #[serde(default)]
+    pub concepto: String,
+}
+
+impl DescuentoComercial {
+    pub fn porcentaje(p: Decimal) -> Self {
+        Self {
+            porcentaje: p,
+            ..Self::default()
+        }
+    }
+
+    /// Descuento para que `bruto` quede en `objetivo` (sin IVA).
+    pub fn cerrar_en(bruto: Decimal, objetivo: Decimal) -> Option<Self> {
+        if bruto <= Decimal::ZERO || objetivo <= Decimal::ZERO || objetivo > bruto {
+            return None;
+        }
+        let importe = bruto - objetivo;
+        Some(Self {
+            porcentaje: redondear(importe / bruto * Decimal::ONE_HUNDRED, 4),
+            importe_fijo: Some(importe),
+            concepto: String::new(),
+        })
+    }
+
+    pub fn importe(&self, bruto: Decimal, decimales: u32) -> Decimal {
+        self.importe_fijo
+            .unwrap_or_else(|| redondear(bruto * pct(self.porcentaje), decimales))
+    }
+
+    /// «Descuento comercial (5 %)».
+    pub fn etiqueta(&self) -> String {
+        let c = if self.concepto.trim().is_empty() {
+            "Descuento comercial"
+        } else {
+            self.concepto.trim()
+        };
+        format!("{c} ({} %)", crate::formato::num(self.porcentaje.normalize(), 2))
+    }
+
+    pub fn es_nulo(&self) -> bool {
+        self.porcentaje.is_zero() && self.importe_fijo.is_none_or(|i| i.is_zero())
+    }
+}
+
 /// Cada componente se redondea a `decimales` y el total es la suma de los
 /// componentes redondeados (lo que se imprime cuadra).
 pub fn resumen(pem: Decimal, gg_pct: Decimal, bi_pct: Decimal, iva_pct: Decimal, decimales: u32) -> ResumenPresupuesto {
+    resumen_con_descuento(pem, gg_pct, bi_pct, iva_pct, None, decimales)
+}
+
+/// Como [`resumen`], con un descuento comercial sobre el total sin IVA.
+pub fn resumen_con_descuento(
+    pem: Decimal,
+    gg_pct: Decimal,
+    bi_pct: Decimal,
+    iva_pct: Decimal,
+    descuento: Option<&DescuentoComercial>,
+    decimales: u32,
+) -> ResumenPresupuesto {
     let gg = redondear(pem * pct(gg_pct), decimales);
     let bi = redondear(pem * pct(bi_pct), decimales);
-    let base = pem + gg + bi;
+    let bruto = pem + gg + bi;
+    let descuento = descuento.map_or(Decimal::ZERO, |d| d.importe(bruto, decimales));
+    let base = bruto - descuento;
     let iva = redondear(base * pct(iva_pct), decimales);
     ResumenPresupuesto {
         pem,
         gastos_generales: gg,
         beneficio_industrial: bi,
+        bruto,
+        descuento,
         base,
         iva,
         total: base + iva,
@@ -241,5 +317,37 @@ mod tests {
         assert_eq!(r.base, dec!(8336.13));
         assert_eq!(r.iva, dec!(1750.59)); // 1750,5873
         assert_eq!(r.total, dec!(10086.72));
+    }
+}
+
+#[cfg(test)]
+mod pruebas_descuento {
+    use super::*;
+
+    #[test]
+    fn descuento_comercial() {
+        let r = resumen_con_descuento(
+            dec!(1000),
+            dec!(13),
+            dec!(6),
+            dec!(21),
+            Some(&DescuentoComercial::porcentaje(dec!(5))),
+            2,
+        );
+        assert_eq!((r.bruto, r.descuento, r.base), (dec!(1190), dec!(59.50), dec!(1130.50)));
+        assert_eq!(r.iva, dec!(237.41));
+        assert_eq!(r.total, r.base + r.iva);
+        // Sin descuento, igual que antes
+        let s = resumen(dec!(1000), dec!(13), dec!(6), dec!(21), 2);
+        assert_eq!((s.bruto, s.descuento, s.base), (dec!(1190), dec!(0), dec!(1190)));
+        // Cerrar a una cifra
+        let d = DescuentoComercial::cerrar_en(dec!(1190), dec!(1100)).unwrap();
+        assert_eq!(d.importe_fijo, Some(dec!(90)));
+        assert_eq!(d.porcentaje, dec!(7.5630));
+        let r = resumen_con_descuento(dec!(1000), dec!(13), dec!(6), dec!(21), Some(&d), 2);
+        assert_eq!(r.base, dec!(1100));
+        assert_eq!(d.etiqueta(), "Descuento comercial (7,56 %)");
+        assert!(DescuentoComercial::cerrar_en(dec!(100), dec!(120)).is_none());
+        assert!(DescuentoComercial::default().es_nulo());
     }
 }

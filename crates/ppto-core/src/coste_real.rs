@@ -266,6 +266,14 @@ impl Presupuesto {
             };
             filas[i].real.sumar(g.tipo, g.importe);
         }
+        // Descuento comercial: la venta y lo certificado, netos
+        if let Some(d) = self.seguimiento.descuento.as_ref().filter(|d| !d.es_nulo()) {
+            let pct = d.porcentaje / Decimal::ONE_HUNDRED;
+            for f in &mut filas {
+                f.venta -= redondear(f.venta * pct, 2);
+                f.certificado -= redondear(f.certificado * pct, 2);
+            }
+        }
         let mut total = FilaCosteReal {
             capitulo: String::new(),
             resumen: "Total obra".into(),
