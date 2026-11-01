@@ -3497,7 +3497,7 @@ checksum = "4a6394b9e965e73d0a289ee54f589087e2c676aedf60885baf52c76b771e4958"
 
 [[package]]
 name = "ppto-actualizar"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "serde_json",
  "ureq",
@@ -3506,7 +3506,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-asistente"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "base64 0.23.1",
  "ppto-core",
@@ -3520,7 +3520,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-bc3"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "encoding_rs",
  "ppto-core",
@@ -3530,7 +3530,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-biblioteca"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "ppto-core",
  "ppto-propuestas",
@@ -3542,7 +3542,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-ciego"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "calamine",
  "ppto-bc3",
@@ -3559,7 +3559,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-cli"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "ppto-bc3",
  "ppto-ciego",
@@ -3575,7 +3575,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-core"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
@@ -3586,7 +3586,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-db"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "ppto-core",
  "rusqlite",
@@ -3598,7 +3598,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-gui"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "eframe",
  "egui_extras",
@@ -3624,7 +3624,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-informes"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "calamine",
  "ppto-core",
@@ -3635,7 +3635,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-legalizacion"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "ppto-core",
  "ppto-propuestas",
@@ -3647,7 +3647,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-mcp"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "calamine",
  "pdf-extract",
@@ -3665,7 +3665,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-modelo"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "ppto-bc3",
  "ppto-core",
@@ -3677,7 +3677,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-pdf"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "ppto-core",
  "rust_decimal",
@@ -3694,7 +3694,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-propuestas"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "ppto-core",
  "rust_decimal",
@@ -3705,7 +3705,7 @@ dependencies = [
 
 [[package]]
 name = "ppto-tarifas"
-version = "0.1.0-alpha.37"
+version = "0.1.0-alpha.38"
 dependencies = [
  "calamine",
  "ppto-core",
