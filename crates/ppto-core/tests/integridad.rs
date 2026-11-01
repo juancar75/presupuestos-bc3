@@ -193,3 +193,16 @@ fn control_de_compras_coherente() {
     }
     assert!(con_pedidos > 20, "{con_pedidos}");
 }
+
+/// Coste real: los totales son la suma de los capítulos y de los gastos.
+#[test]
+fn coste_real_cuadra() {
+    for s in 0..200 {
+        let p = aleatorio(s, true);
+        let c = p.coste_real(dec!(13), dec!(6)).unwrap();
+        let gastos: Decimal = p.seguimiento.gastos.iter().map(|g| g.importe).sum();
+        assert_eq!(c.total.real.total(), gastos, "semilla {s}");
+        let prev: Decimal = c.capitulos.iter().map(|f| f.previsto.total()).sum();
+        assert_eq!(c.total.previsto.total(), prev, "semilla {s}");
+    }
+}

@@ -15,6 +15,7 @@ use crate::celdas::Edicion;
 use eframe::egui::{self, Color32, RichText, Ui};
 use ppto_core::Decimal;
 use ppto_core::compras::{ControlRecurso, EstadoPedido};
+use ppto_core::coste_real::{CosteReal, Gasto, TipoGasto};
 use ppto_core::formato::{cant, eur, num};
 use ppto_core::seguimiento::{
     Contradictorio, EstadoContradictorio, FilaRelacion, Precios, Relacion, ResumenCertificacion, ResumenContrato,
@@ -57,6 +58,9 @@ pub(super) enum OpObra {
     BorrarPedido(u32),
     /// Fecha, referencia, entrega y nota.
     DatosPedido(u32, [String; 4]),
+    AnotarGasto(Box<Gasto>),
+    CambiarGasto(Box<Gasto>),
+    BorrarGasto(u32),
 }
 
 impl OpObra {
@@ -81,6 +85,9 @@ impl OpObra {
             Self::RecibirTodo(n) => (format!("recibir todo el pedido {n}"), None),
             Self::BorrarPedido(n) => (format!("borrar el pedido {n}"), None),
             Self::DatosPedido(n, _) => (format!("datos del pedido {n}"), Some(format!("dped|{n}"))),
+            Self::AnotarGasto(g) => (format!("gasto {} €", eur(g.importe)), None),
+            Self::CambiarGasto(g) => (format!("gasto nº {}", g.numero), None),
+            Self::BorrarGasto(n) => (format!("borrar el gasto nº {n}"), None),
         }
     }
 
@@ -170,6 +177,18 @@ impl OpObra {
                 p.fijar_datos_pedido(n, &f, &r, &e, &nota)?;
                 None
             }
+            Self::AnotarGasto(g) => {
+                let n = p.anotar_gasto(*g)?;
+                Some(format!("Gasto nº {n} anotado."))
+            }
+            Self::CambiarGasto(g) => {
+                p.cambiar_gasto(*g)?;
+                None
+            }
+            Self::BorrarGasto(n) => {
+                p.borrar_gasto(n);
+                None
+            }
         })
     }
 }
@@ -180,6 +199,7 @@ pub(super) enum PestanaObra {
     Certificaciones,
     Pedidos,
     Compras,
+    CosteReal,
 }
 
 pub(super) struct VentanaObra {
@@ -201,6 +221,13 @@ pub(super) struct VentanaObra {
     /// Control de compras: solo lo pendiente o con exceso.
     solo_pendiente: bool,
     compras: Option<Result<Vec<ControlRecurso>, String>>,
+    coste: Option<Result<CosteReal, String>>,
+    /// Gasto que se está escribiendo (número 0 = nuevo).
+    gasto: Gasto,
+    /// Textos del formulario: horas, €/h, importe.
+    gasto_horas: String,
+    gasto_tarifa: String,
+    gasto_importe: String,
     edicion: Edicion,
     /// Hay que recalcular la relación.
     pub sucia: bool,
@@ -208,6 +235,21 @@ pub(super) struct VentanaObra {
     contrato: Option<ResumenContrato>,
     mensaje: Option<(String, bool)>,
     ultimo: Option<PathBuf>,
+}
+
+fn gasto_vacio() -> Gasto {
+    Gasto {
+        numero: 0,
+        fecha: fecha_hoy(),
+        tipo: TipoGasto::Material,
+        proveedor: String::new(),
+        documento: String::new(),
+        concepto: String::new(),
+        capitulo: None,
+        horas: None,
+        importe: Decimal::ZERO,
+        pedido: None,
+    }
 }
 
 fn fecha_hoy() -> String {
@@ -236,6 +278,11 @@ impl VentanaObra {
             pedido: None,
             solo_pendiente: true,
             compras: None,
+            coste: None,
+            gasto: gasto_vacio(),
+            gasto_horas: String::new(),
+            gasto_tarifa: String::new(),
+            gasto_importe: String::new(),
             edicion: Edicion::default(),
             sucia: true,
             relacion: None,
@@ -334,6 +381,7 @@ impl Aplicacion {
         if v.sucia {
             v.contrato = self.p.resumen_contrato().ok();
             v.compras = Some(self.p.control_compras().map_err(|e| e.to_string()));
+            v.coste = Some(self.p.coste_real(self.gg, self.bi).map_err(|e| e.to_string()));
             v.relacion = v.numero.map(|n| {
                 self.p
                     .relacion_valorada(n, self.precios_cert(v.venta))
@@ -355,6 +403,7 @@ impl Aplicacion {
                     ui.selectable_value(&mut v.pestana, PestanaObra::Certificaciones, "Certificaciones");
                     ui.selectable_value(&mut v.pestana, PestanaObra::Pedidos, "Pedidos");
                     ui.selectable_value(&mut v.pestana, PestanaObra::Compras, "Control de compras");
+                    ui.selectable_value(&mut v.pestana, PestanaObra::CosteReal, "Coste real");
                 });
                 if let Some((m, error)) = v.mensaje.clone() {
                     ui.horizontal(|ui| {
@@ -373,6 +422,7 @@ impl Aplicacion {
                     PestanaObra::Certificaciones => self.vista_certificaciones(ui, &mut v, &mut ops),
                     PestanaObra::Pedidos => self.vista_pedidos(ui, &mut v, &mut ops),
                     PestanaObra::Compras => self.vista_compras(ui, &mut v),
+                    PestanaObra::CosteReal => self.vista_coste_real(ui, &mut v, &mut ops),
                 }
             });
         if !ops.is_empty() {
@@ -1203,4 +1253,341 @@ impl Aplicacion {
                 });
         });
     }
+}
+
+impl Aplicacion {
+    // ------------------------------------------------------------ coste real
+
+    fn vista_coste_real(&self, ui: &mut Ui, v: &mut VentanaObra, ops: &mut Vec<OpObra>) {
+        let c = match &v.coste {
+            Some(Ok(c)) => c.clone(),
+            Some(Err(e)) => {
+                ui.label(RichText::new(e).color(ROJO));
+                return;
+            }
+            None => return,
+        };
+        let t = &c.total;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                RichText::new(format!(
+                    "Gastado {} € de {} € previstos",
+                    eur(t.real.total()),
+                    eur(t.previsto.total())
+                ))
+                .strong(),
+            );
+            if let Some(g) = t.gastado_pct() {
+                ui.label(format!("({} %)", num(g, 1)));
+            }
+            ui.separator();
+            ui.label(format!(
+                "Certificado {} € de {} € ({} %)",
+                eur(t.certificado),
+                eur(t.venta),
+                t.certificado_pct().map(|x| num(x, 1)).unwrap_or_default()
+            ));
+            ui.separator();
+            let m = t.margen_real();
+            ui.label(
+                RichText::new(format!("Margen real a fecha {} €", eur(m)))
+                    .strong()
+                    .color(if m.is_sign_negative() { ROJO } else { VERDE }),
+            )
+            .on_hover_text(format!(
+                "Certificado − gastado. Margen previsto de la obra: {} €",
+                eur(t.margen_previsto())
+            ));
+            if !c.horas_reales.is_zero() {
+                ui.separator();
+                ui.label(format!("{} h de mano de obra apuntadas", num(c.horas_reales, 1)));
+            }
+            if ui.button("Excel…").clicked() {
+                let b =
+                    ppto_informes::excel_coste_real(&self.p, &c, &self.p.seguimiento.gastos).map_err(|e| e.to_string());
+                v.guardar(&format!("Coste real - {}", self.p.nombre), "xlsx", b);
+            }
+        });
+        if !c.indirectos_previstos.is_zero() {
+            ui.label(
+                RichText::new(format!(
+                    "Previsto = coste directo. Los costes indirectos previstos ({} €) no se reparten por tipo.",
+                    eur(c.indirectos_previstos)
+                ))
+                .small()
+                .weak(),
+            );
+        }
+        ui.separator();
+        egui::CollapsingHeader::new(
+            RichText::new(if v.gasto.numero == 0 {
+                "Anotar gasto".to_owned()
+            } else {
+                format!("Cambiar el gasto nº {}", v.gasto.numero)
+            })
+            .strong(),
+        )
+        .id_salt("form_gasto")
+        .default_open(true)
+        .show(ui, |ui| self.form_gasto(ui, v, ops));
+        ui.separator();
+        egui::ScrollArea::vertical()
+            .id_salt("coste_real")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                egui::Grid::new("tabla_coste_real")
+                    .striped(true)
+                    .num_columns(14)
+                    .show(ui, |ui| {
+                        for h in [
+                            "Capítulo",
+                            "Resumen",
+                            "Material",
+                            "",
+                            "Mano de obra",
+                            "",
+                            "Subcontrata",
+                            "",
+                            "Otros",
+                            "",
+                            "Total",
+                            "",
+                            "% gastado",
+                            "% certificado",
+                        ] {
+                            ui.label(RichText::new(h).strong());
+                        }
+                        ui.end_row();
+                        for h in [
+                            "", "", "previsto", "real", "previsto", "real", "previsto", "real", "previsto", "real",
+                            "previsto", "real", "", "",
+                        ] {
+                            ui.label(RichText::new(h).small().weak());
+                        }
+                        ui.end_row();
+                        let fila = |ui: &mut Ui, f: &ppto_core::coste_real::FilaCosteReal, fuerte: bool| {
+                            let txt = |s: String| {
+                                if fuerte {
+                                    RichText::new(s).strong()
+                                } else {
+                                    RichText::new(s)
+                                }
+                            };
+                            ui.label(txt(f.capitulo.clone()));
+                            ui.label(txt(corto(&f.resumen, 36)));
+                            for t in TipoGasto::TODOS {
+                                let (pv, re) = (f.previsto.de(t), f.real.de(t));
+                                ui.label(RichText::new(eur(pv)).weak());
+                                let r = txt(eur(re));
+                                ui.label(if re > pv && !pv.is_zero() { r.color(ROJO) } else { r });
+                            }
+                            ui.label(RichText::new(eur(f.previsto.total())).weak());
+                            ui.label(txt(eur(f.real.total())));
+                            let g =
+                                RichText::new(f.gastado_pct().map(|x| format!("{} %", num(x, 1))).unwrap_or_default());
+                            ui.label(if f.alerta() { g.color(ROJO).strong() } else { g })
+                                .on_hover_text(if f.alerta() {
+                                    "Se ha gastado más de lo que se ha certificado"
+                                } else {
+                                    ""
+                                });
+                            ui.label(
+                                f.certificado_pct()
+                                    .map(|x| format!("{} %", num(x, 1)))
+                                    .unwrap_or_default(),
+                            );
+                            ui.end_row();
+                        };
+                        for f in &c.capitulos {
+                            fila(ui, f, false);
+                        }
+                        fila(ui, &c.total, true);
+                    });
+                ui.add_space(8.0);
+                ui.label(RichText::new("Gastos apuntados").strong());
+                let mut gastos = self.p.seguimiento.gastos.clone();
+                gastos.reverse();
+                egui::Grid::new("gastos").striped(true).num_columns(9).show(ui, |ui| {
+                    for h in [
+                        "Nº",
+                        "Fecha",
+                        "Tipo",
+                        "Proveedor",
+                        "Documento",
+                        "Concepto",
+                        "Capítulo",
+                        "Importe €",
+                        "",
+                    ] {
+                        ui.label(RichText::new(h).strong());
+                    }
+                    ui.end_row();
+                    for g in &gastos {
+                        ui.label(g.numero.to_string());
+                        ui.label(&g.fecha);
+                        ui.label(g.tipo.nombre());
+                        ui.label(corto(&g.proveedor, 24));
+                        ui.label(&g.documento);
+                        ui.label(corto(&g.concepto, 30)).on_hover_text(&g.concepto);
+                        ui.label(g.capitulo.clone().unwrap_or_else(|| "obra".into()));
+                        ui.label(eur(g.importe));
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Cambiar").clicked() {
+                                v.gasto = g.clone();
+                                v.gasto_horas = g.horas.map(|h| num(h, 2)).unwrap_or_default();
+                                v.gasto_importe = num(g.importe, 2);
+                            }
+                            if ui.small_button("Borrar").clicked() {
+                                ops.push(OpObra::BorrarGasto(g.numero));
+                            }
+                        });
+                        ui.end_row();
+                    }
+                });
+            });
+    }
+
+    fn form_gasto(&self, ui: &mut Ui, v: &mut VentanaObra, ops: &mut Vec<OpObra>) {
+        let leer = |t: &str| ppto_core::formato::leer(t);
+        let capitulos: Vec<(String, String)> = self
+            .p
+            .concepto(&self.p.raiz)
+            .map(|r| {
+                r.descomposicion
+                    .iter()
+                    .filter_map(|l| self.p.conceptos.get(&l.hijo))
+                    .filter(|c| c.naturaleza == ppto_core::Naturaleza::Capitulo)
+                    .map(|c| (c.codigo.clone(), c.resumen.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        egui::Grid::new("gasto_form").num_columns(4).show(ui, |ui| {
+            ui.label("Fecha");
+            ui.add(egui::TextEdit::singleline(&mut v.gasto.fecha).desired_width(90.0));
+            ui.label("Tipo");
+            egui::ComboBox::from_id_salt("gasto_tipo")
+                .selected_text(v.gasto.tipo.nombre())
+                .show_ui(ui, |ui| {
+                    for t in TipoGasto::TODOS {
+                        ui.selectable_value(&mut v.gasto.tipo, t, t.nombre());
+                    }
+                });
+            ui.end_row();
+            ui.label("Proveedor");
+            ui.add(
+                egui::TextEdit::singleline(&mut v.gasto.proveedor)
+                    .hint_text("o subcontrata, operario…")
+                    .desired_width(220.0),
+            );
+            ui.label("Documento");
+            ui.add(
+                egui::TextEdit::singleline(&mut v.gasto.documento)
+                    .hint_text("nº de factura, parte…")
+                    .desired_width(160.0),
+            );
+            ui.end_row();
+            ui.label("Concepto");
+            ui.add(egui::TextEdit::singleline(&mut v.gasto.concepto).desired_width(220.0));
+            ui.label("Capítulo");
+            let sel = v
+                .gasto
+                .capitulo
+                .as_ref()
+                .and_then(|c| capitulos.iter().find(|x| x.0 == *c))
+                .map_or("Toda la obra".to_owned(), |x| corto(&format!("{} {}", x.0, x.1), 40));
+            egui::ComboBox::from_id_salt("gasto_capitulo")
+                .selected_text(sel)
+                .width(220.0)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut v.gasto.capitulo, None, "Toda la obra");
+                    for (c, r) in &capitulos {
+                        ui.selectable_value(&mut v.gasto.capitulo, Some(c.clone()), corto(&format!("{c} {r}"), 50));
+                    }
+                });
+            ui.end_row();
+            if v.gasto.tipo == TipoGasto::ManoObra {
+                ui.label("Horas");
+                ui.add(egui::TextEdit::singleline(&mut v.gasto_horas).desired_width(70.0));
+                ui.label("€/h");
+                let r = ui.add(egui::TextEdit::singleline(&mut v.gasto_tarifa).desired_width(70.0));
+                if (r.changed() || ui.ctx().input(|i| i.key_pressed(egui::Key::Enter)))
+                    && let (Some(h), Some(t)) = (leer(&v.gasto_horas), leer(&v.gasto_tarifa))
+                {
+                    v.gasto_importe = num(redondear2(h * t), 2);
+                }
+                ui.end_row();
+            }
+            if !self.p.seguimiento.pedidos.is_empty() {
+                ui.label("Pedido");
+                let t = v.gasto.pedido.map_or("ninguno".to_owned(), |n| format!("nº {n}"));
+                let antes = v.gasto.pedido;
+                egui::ComboBox::from_id_salt("gasto_pedido")
+                    .selected_text(t)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut v.gasto.pedido, None, "ninguno");
+                        for p in &self.p.seguimiento.pedidos {
+                            ui.selectable_value(
+                                &mut v.gasto.pedido,
+                                Some(p.numero),
+                                format!("nº {} · {}", p.numero, p.nombre()),
+                            );
+                        }
+                    });
+                if v.gasto.pedido != antes
+                    && let Some(p) = v.gasto.pedido.and_then(|n| self.p.pedido_registrado(n))
+                {
+                    v.gasto.proveedor = p.proveedor.clone();
+                    v.gasto.tipo = if p.material {
+                        TipoGasto::Material
+                    } else {
+                        TipoGasto::Subcontrata
+                    };
+                    if v.gasto_importe.trim().is_empty() {
+                        v.gasto_importe = num(p.total(), 2);
+                    }
+                }
+                ui.end_row();
+            }
+            ui.label(RichText::new("Importe € (sin IVA)").strong());
+            ui.add(egui::TextEdit::singleline(&mut v.gasto_importe).desired_width(100.0));
+            ui.end_row();
+        });
+        let importe = leer(&v.gasto_importe);
+        ui.horizontal(|ui| {
+            let ok = importe.is_some_and(|i| !i.is_zero());
+            let t = if v.gasto.numero == 0 {
+                "Anotar"
+            } else {
+                "Guardar cambios"
+            };
+            if ui
+                .add_enabled(ok, egui::Button::new(RichText::new(t).strong()))
+                .clicked()
+                && let Some(i) = importe
+            {
+                let mut g = v.gasto.clone();
+                g.importe = i;
+                g.horas = (g.tipo == TipoGasto::ManoObra).then(|| leer(&v.gasto_horas)).flatten();
+                ops.push(if g.numero == 0 {
+                    OpObra::AnotarGasto(Box::new(g))
+                } else {
+                    OpObra::CambiarGasto(Box::new(g))
+                });
+                let fecha = v.gasto.fecha.clone();
+                v.gasto = gasto_vacio();
+                v.gasto.fecha = fecha;
+                v.gasto_horas.clear();
+                v.gasto_importe.clear();
+            }
+            if v.gasto.numero != 0 && ui.button("Cancelar").clicked() {
+                v.gasto = gasto_vacio();
+                v.gasto_horas.clear();
+                v.gasto_importe.clear();
+            }
+        });
+    }
+}
+
+fn redondear2(x: Decimal) -> Decimal {
+    ppto_core::redondear(x, 2)
 }
