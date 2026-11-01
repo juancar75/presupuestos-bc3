@@ -75,3 +75,25 @@ fn errores_claros() {
     let (ok, _) = ppto(&["tarifa", "/no/existe.xlsx"]);
     assert!(!ok);
 }
+
+#[test]
+fn modelo_ifc_a_bc3() {
+    let dir = std::env::temp_dir().join(format!("ppto-cli-modelo-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bc3 = dir.join("modelo.bc3");
+    let ifc = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../ppto-modelo/tests/datos/instalacion-sintetica.ifc"
+    );
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_ppto"))
+        .args(["modelo", ifc, "--por-sistema", "--por-planta", "--bc3"])
+        .arg(&bc3)
+        .output()
+        .unwrap();
+    let txt = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{txt}");
+    assert!(txt.contains("9 elementos de instalaciones"), "{txt}");
+    assert!(txt.contains("Tubería PP-R Ø32"), "{txt}");
+    assert!(bc3.is_file());
+    let _ = std::fs::remove_dir_all(&dir);
+}

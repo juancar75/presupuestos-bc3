@@ -16,6 +16,9 @@
 //!                             le pone los precios de un BC3 y devuelve el mismo
 //!                             Excel con los precios (o lo exporta a BC3 para
 //!                             valorarlo en Presto).
+//!   ppto modelo <obra.ifc|obra.rvt> [--bc3 <salida.bc3>] [--por-sistema] [--por-planta]
+//!                             Mediciones de las instalaciones de un modelo BIM
+//!                             (capítulos por clase, partidas por tipo y medida).
 //!   ppto tarifa <tarifa.xlsx> [--proveedor <nombre>] [--vigencia <año>]
 //!                             Lee la tarifa de una subcontrata y lista los
 //!                             recursos con su unidad (marca las deducidas).
@@ -78,6 +81,13 @@ fn main() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Some("modelo") if args.len() >= 2 => match modelo(&args[1], &args) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("Error: {e}");
                 ExitCode::FAILURE
             }
         },
@@ -440,5 +450,40 @@ fn descompuesto(p: &Presupuesto, codigo: &str) -> Result<(), ppto_core::ErrorMot
         );
     }
     println!("  Precio{:>36}\n", eur(p.precio(codigo)?));
+    Ok(())
+}
+
+/// Mediciones de un modelo BIM (IFC o Revit).
+fn modelo(ruta: &str, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let m = ppto_modelo::leer(std::path::Path::new(ruta))?;
+    println!("{}: {} elementos de instalaciones", m.nombre, m.elementos.len());
+    for (c, n, l) in m.por_clase() {
+        if c.lineal() {
+            println!("  {:<28} {n:>6}  {} m", c.capitulo(), num(l, 2));
+        } else {
+            println!("  {:<28} {n:>6}", c.capitulo());
+        }
+    }
+    for a in &m.avisos {
+        println!("  Aviso: {a}");
+    }
+    let o = ppto_modelo::Opciones {
+        por_sistema: args.iter().any(|a| a == "--por-sistema"),
+        por_planta: args.iter().any(|a| a == "--por-planta"),
+    };
+    let p = ppto_modelo::a_presupuesto(&m, o)?;
+    let cant = p.cantidades_partidas()?;
+    for c in p.conceptos.values().filter(|c| c.naturaleza == Naturaleza::Partida) {
+        println!(
+            "  {:<12} {:<3} {:>10}  {}",
+            c.codigo,
+            c.unidad,
+            num(cant.get(&c.codigo).copied().unwrap_or_default(), 2),
+            c.resumen
+        );
+    }
+    if let Some(b) = args.iter().position(|a| a == "--bc3").and_then(|i| args.get(i + 1)) {
+        exportar_bc3(&p, &ppto_bc3::OpcionesExportacion::default(), b)?;
+    }
     Ok(())
 }

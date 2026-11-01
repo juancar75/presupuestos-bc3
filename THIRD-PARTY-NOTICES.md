@@ -44,3 +44,12 @@ incluido como librería. A través de `typst-assets` se incrustan las fuentes:
 
 Se distribuyen sin modificar y los PDF generados solo incluyen el subconjunto
 de glifos usado, como permiten esas licencias. `roman-numerals-rs` (0BSD).
+
+## Lectura de Revit (`ppto-modelo`)
+
+Los ficheros `.rvt` se leen con [rvt-rs](https://github.com/DrunkOnJava/rvt-rs)
+(Apache-2.0, © 2026 Griffin Long), lector de ingeniería limpia del formato.
+Su aviso: «"Autodesk" and "Revit" are registered trademarks of Autodesk, Inc.
+This project is not affiliated with, endorsed by, or sponsored by Autodesk.»
+presupuestos-bc3 tampoco está afiliado a Autodesk. Se usa una versión fijada
+(v0.2.0) desde su repositorio, porque aún no está publicada en crates.io.

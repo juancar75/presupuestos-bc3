@@ -5,6 +5,23 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Archivo → Importar → Modelo BIM (IFC o Revit)…**: mediciones de las
+  instalaciones de un modelo, de cualquier especialidad (tuberías y sus
+  accesorios, conductos, bandejas, cables, difusión de aire, valvulería,
+  equipos, sanitarios, PCI, control, electricidad, iluminación). Un capítulo
+  por clase (o por sistema y clase), una partida por tipo y medida (Ø o
+  sección), en metros o unidades, con una línea de medición por planta y
+  sistema. Sale sin precios, para valorar como un ciego. **Crear obra** o
+  **Añadir a esta obra** (se puede deshacer).
+  - **IFC** (2x3, 4 y 4.3): tipos, plantas (también de elementos dentro de
+    espacios), sistemas, cantidades base y propiedades de longitud y tamaño,
+    también las que Revit exporta en español; unidades en mm, cm o m.
+  - **Revit `.rvt` sin Revit**, con rvt-rs (Apache-2.0): clase, familia y
+    tipo; longitud y diámetro sacados de la geometría (sin sistemas). Fiable
+    en Revit 2023–2025.
+- `ppto modelo <obra.ifc|obra.rvt> [--bc3 salida.bc3] [--por-sistema] [--por-planta]`.
+
 ## [0.1.0-alpha.36] - 2026-10-31
 
 ### Añadido

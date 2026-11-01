@@ -19,6 +19,7 @@ ppto-bc3.workspace = true
 ppto-informes.workspace = true
 ppto-pdf.workspace = true
 ppto-ciego.workspace = true
+ppto-modelo.workspace = true
 ppto-tarifas.workspace = true
 rust_decimal.workspace = true
 rust_decimal_macros.workspace = true
