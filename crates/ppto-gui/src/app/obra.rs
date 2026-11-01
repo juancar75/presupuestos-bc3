@@ -14,6 +14,7 @@ use super::{Accion, Aplicacion, corto};
 use crate::celdas::Edicion;
 use eframe::egui::{self, Color32, RichText, Ui};
 use ppto_core::Decimal;
+use ppto_core::compras::{ControlRecurso, EstadoPedido};
 use ppto_core::formato::{cant, eur, num};
 use ppto_core::seguimiento::{
     Contradictorio, EstadoContradictorio, FilaRelacion, Precios, Relacion, ResumenCertificacion, ResumenContrato,
@@ -44,6 +45,18 @@ pub(super) enum OpObra {
     Cerrar(u32, Decimal, Decimal),
     Reabrir(u32),
     Borrar(u32),
+    RegistrarPedido {
+        pedido: Box<ppto_core::pedidos::Pedido>,
+        fecha: String,
+        referencia: String,
+    },
+    EstadoPedido(u32, EstadoPedido),
+    CantidadPedido(u32, String, Decimal),
+    Recibido(u32, String, Decimal),
+    RecibirTodo(u32),
+    BorrarPedido(u32),
+    /// Fecha, referencia, entrega y nota.
+    DatosPedido(u32, [String; 4]),
 }
 
 impl OpObra {
@@ -61,6 +74,13 @@ impl OpObra {
             Self::Cerrar(n, ..) => (format!("cerrar la certificación {n}"), None),
             Self::Reabrir(n) => (format!("reabrir la certificación {n}"), None),
             Self::Borrar(n) => (format!("borrar la certificación {n}"), None),
+            Self::RegistrarPedido { pedido, .. } => (format!("registrar pedido a {}", pedido.nombre()), None),
+            Self::EstadoPedido(n, e) => (format!("pedido {n}: {}", e.nombre().to_lowercase()), None),
+            Self::CantidadPedido(n, c, _) => (format!("cantidad de {c} en el pedido {n}"), None),
+            Self::Recibido(n, c, _) => (format!("recibido {c} del pedido {n}"), None),
+            Self::RecibirTodo(n) => (format!("recibir todo el pedido {n}"), None),
+            Self::BorrarPedido(n) => (format!("borrar el pedido {n}"), None),
+            Self::DatosPedido(n, _) => (format!("datos del pedido {n}"), Some(format!("dped|{n}"))),
         }
     }
 
@@ -115,6 +135,41 @@ impl OpObra {
                 p.borrar_certificacion(n)?;
                 Some(format!("Certificación nº {n} borrada."))
             }
+            Self::RegistrarPedido {
+                pedido,
+                fecha,
+                referencia,
+            } => Some(match p.registrar_pedido(&pedido, &fecha, &referencia) {
+                Some(n) => format!(
+                    "Pedido nº {n} a {} registrado en la obra (borrador): Obra → Pedidos.",
+                    pedido.nombre()
+                ),
+                None => format!("Todo lo de {} ya está pedido.", pedido.nombre()),
+            }),
+            Self::EstadoPedido(n, e) => {
+                p.fijar_estado_pedido(n, e)?;
+                None
+            }
+            Self::CantidadPedido(n, c, v) => {
+                p.fijar_cantidad_pedido(n, &c, v)?;
+                None
+            }
+            Self::Recibido(n, c, v) => {
+                p.recibir(n, &c, v)?;
+                None
+            }
+            Self::RecibirTodo(n) => {
+                p.recibir_todo(n)?;
+                None
+            }
+            Self::BorrarPedido(n) => {
+                p.borrar_pedido(n)?;
+                None
+            }
+            Self::DatosPedido(n, [f, r, e, nota]) => {
+                p.fijar_datos_pedido(n, &f, &r, &e, &nota)?;
+                None
+            }
         })
     }
 }
@@ -123,6 +178,8 @@ impl OpObra {
 pub(super) enum PestanaObra {
     Contradictorios,
     Certificaciones,
+    Pedidos,
+    Compras,
 }
 
 pub(super) struct VentanaObra {
@@ -139,6 +196,11 @@ pub(super) struct VentanaObra {
     /// A precios de venta (instaladora).
     pub venta: bool,
     nueva_fecha: String,
+    /// Pedido registrado a la vista.
+    pub pedido: Option<u32>,
+    /// Control de compras: solo lo pendiente o con exceso.
+    solo_pendiente: bool,
+    compras: Option<Result<Vec<ControlRecurso>, String>>,
     edicion: Edicion,
     /// Hay que recalcular la relación.
     pub sucia: bool,
@@ -171,6 +233,9 @@ impl VentanaObra {
             filtro: String::new(),
             venta,
             nueva_fecha: fecha_hoy(),
+            pedido: None,
+            solo_pendiente: true,
+            compras: None,
             edicion: Edicion::default(),
             sucia: true,
             relacion: None,
@@ -268,6 +333,7 @@ impl Aplicacion {
         }
         if v.sucia {
             v.contrato = self.p.resumen_contrato().ok();
+            v.compras = Some(self.p.control_compras().map_err(|e| e.to_string()));
             v.relacion = v.numero.map(|n| {
                 self.p
                     .relacion_valorada(n, self.precios_cert(v.venta))
@@ -287,6 +353,8 @@ impl Aplicacion {
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut v.pestana, PestanaObra::Contradictorios, "Contradictorios");
                     ui.selectable_value(&mut v.pestana, PestanaObra::Certificaciones, "Certificaciones");
+                    ui.selectable_value(&mut v.pestana, PestanaObra::Pedidos, "Pedidos");
+                    ui.selectable_value(&mut v.pestana, PestanaObra::Compras, "Control de compras");
                 });
                 if let Some((m, error)) = v.mensaje.clone() {
                     ui.horizontal(|ui| {
@@ -303,6 +371,8 @@ impl Aplicacion {
                 match v.pestana {
                     PestanaObra::Contradictorios => self.vista_contradictorios(ui, &mut v, &mut ops, &mut otras),
                     PestanaObra::Certificaciones => self.vista_certificaciones(ui, &mut v, &mut ops),
+                    PestanaObra::Pedidos => self.vista_pedidos(ui, &mut v, &mut ops),
+                    PestanaObra::Compras => self.vista_compras(ui, &mut v),
                 }
             });
         if !ops.is_empty() {
@@ -829,6 +899,306 @@ impl Aplicacion {
                                 ui.end_row();
                             }
                         }
+                    }
+                });
+        });
+    }
+}
+
+impl Aplicacion {
+    // ------------------------------------------------------------ pedidos
+
+    fn vista_pedidos(&self, ui: &mut Ui, v: &mut VentanaObra, ops: &mut Vec<OpObra>) {
+        let pedidos = &self.p.seguimiento.pedidos;
+        if pedidos.is_empty() {
+            ui.label("No hay pedidos registrados.");
+            ui.label(
+                RichText::new(
+                    "Informes → Pedido a fabricante (o a subcontrata) → «Registrar en la obra»: queda aquí con su estado y lo recibido. \
+                     Cada pedido nuevo al mismo proveedor propone solo lo que falta por pedir.",
+                )
+                .weak(),
+            );
+            return;
+        }
+        if v.pedido.is_none_or(|n| !pedidos.iter().any(|p| p.numero == n)) {
+            v.pedido = pedidos.last().map(|p| p.numero);
+        }
+        egui::Panel::left("obra_pedidos")
+            .resizable(true)
+            .default_size(260.0)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for p in pedidos.iter().rev() {
+                        let color = match p.situacion() {
+                            "Recibido" => VERDE,
+                            "Borrador" => NARANJA,
+                            "Anulado" => ui.visuals().weak_text_color(),
+                            _ => ui.visuals().text_color(),
+                        };
+                        let t = RichText::new(format!(
+                            "nº {} · {}\n{} · {} € · {}",
+                            p.numero,
+                            p.nombre(),
+                            p.fecha,
+                            eur(p.total()),
+                            p.situacion()
+                        ))
+                        .color(color);
+                        if ui.selectable_label(v.pedido == Some(p.numero), t).clicked() {
+                            v.pedido = Some(p.numero);
+                        }
+                    }
+                });
+            });
+        let Some(p) = v.pedido.and_then(|n| self.p.pedido_registrado(n)).cloned() else {
+            return;
+        };
+        let n = p.numero;
+        ui.horizontal(|ui| {
+            ui.heading(format!("Pedido nº {n} · {}", p.nombre()));
+            ui.label(RichText::new(format!("{} € · {}", eur(p.total()), p.situacion())).strong());
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Estado");
+            let mut e = p.estado;
+            egui::ComboBox::from_id_salt(("estado_pedido", n))
+                .selected_text(e.nombre())
+                .width(100.0)
+                .show_ui(ui, |ui| {
+                    for x in EstadoPedido::TODOS {
+                        ui.selectable_value(&mut e, x, x.nombre());
+                    }
+                });
+            if e != p.estado {
+                ops.push(OpObra::EstadoPedido(n, e));
+            }
+            let mut datos = [p.fecha.clone(), p.referencia.clone(), p.entrega.clone(), p.nota.clone()];
+            let mut cambio = false;
+            for (i, (t, ancho)) in [("Fecha", 80.0), ("Ref.", 110.0), ("Entrega", 80.0), ("Nota", 200.0)]
+                .into_iter()
+                .enumerate()
+            {
+                ui.label(t);
+                if let Some(x) = v.edicion.texto(ui, &format!("ped_{n}_{i}"), &datos[i], ancho) {
+                    datos[i] = x;
+                    cambio = true;
+                }
+            }
+            if cambio {
+                ops.push(OpObra::DatosPedido(n, datos));
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .button("PDF…")
+                .on_hover_text("Pedido para enviar al proveedor")
+                .clicked()
+            {
+                let perfil = ruta_perfiles()
+                    .map(|r| ppto_pdf::Perfiles::cargar(&r))
+                    .unwrap_or_default()
+                    .activo()
+                    .clone();
+                let o = ppto_pdf::DatosPedido {
+                    empresa: perfil.empresa,
+                    empresa_datos: perfil.empresa_datos,
+                    logo: perfil.logo.filter(|l| l.is_file()),
+                    fecha: p.fecha.clone(),
+                    referencia: if p.referencia.is_empty() {
+                        format!("Pedido nº {n}")
+                    } else {
+                        format!("{} · pedido nº {n}", p.referencia)
+                    },
+                    proveedor: Vec::new(),
+                    condiciones: [p.entrega.trim(), p.nota.trim()]
+                        .iter()
+                        .filter(|x| !x.is_empty())
+                        .enumerate()
+                        .map(|(i, x)| {
+                            if i == 0 && !p.entrega.trim().is_empty() {
+                                format!("Entrega: {x}")
+                            } else {
+                                (*x).to_owned()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(". "),
+                };
+                let b = ppto_pdf::pdf_pedido(&self.p, &p.como_pedido(), &o).map_err(|e| e.to_string());
+                v.guardar(&format!("Pedido {n} {} - {}", p.nombre(), self.p.nombre), "pdf", b);
+            }
+            if ui.button("Excel…").clicked() {
+                let cab = ppto_informes::CabeceraPedido {
+                    fecha: p.fecha.clone(),
+                    proveedor: Vec::new(),
+                    condiciones: p.nota.clone(),
+                };
+                let b = ppto_informes::excel_pedido(&self.p, &p.como_pedido(), &cab).map_err(|e| e.to_string());
+                v.guardar(&format!("Pedido {n} {} - {}", p.nombre(), self.p.nombre), "xlsx", b);
+            }
+            if p.estado == EstadoPedido::Enviado && ui.button("Recibido todo").clicked() {
+                ops.push(OpObra::RecibirTodo(n));
+            }
+            if p.estado == EstadoPedido::Borrador
+                && ui
+                    .button("Borrar")
+                    .on_hover_text("Solo en borrador; si ya se envió, anúlelo")
+                    .clicked()
+            {
+                ops.push(OpObra::BorrarPedido(n));
+                v.pedido = None;
+            }
+        });
+        ui.label(
+            RichText::new(match p.estado {
+                EstadoPedido::Borrador => "Borrador: ajuste las cantidades (0 quita la línea) y pase a «Enviado».",
+                EstadoPedido::Enviado => "Enviado: anote lo recibido de cada línea.",
+                EstadoPedido::Anulado => "Anulado: no cuenta en el control de compras.",
+            })
+            .small()
+            .weak(),
+        );
+        ui.separator();
+        let dm = self.p.decimales.medicion;
+        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+            egui::Grid::new(("lineas_pedido", n))
+                .striped(true)
+                .num_columns(7)
+                .show(ui, |ui| {
+                    for t in [
+                        "Código",
+                        "Descripción",
+                        "Ud",
+                        "Cantidad",
+                        "Precio €",
+                        "Importe €",
+                        "Recibido",
+                    ] {
+                        ui.label(RichText::new(t).strong());
+                    }
+                    ui.end_row();
+                    for l in &p.lineas {
+                        ui.label(&l.codigo);
+                        ui.label(corto(&l.resumen, 50)).on_hover_text(&l.resumen);
+                        ui.label(&l.unidad);
+                        if p.estado == EstadoPedido::Borrador {
+                            if let Some(x) =
+                                v.edicion
+                                    .decimal(ui, &format!("pedc_{n}_{}", l.codigo), l.cantidad, dm, 70.0)
+                            {
+                                ops.push(OpObra::CantidadPedido(n, l.codigo.clone(), x));
+                            }
+                        } else {
+                            ui.label(cant(l.cantidad, dm));
+                        }
+                        ui.label(eur(l.precio));
+                        ui.label(eur(l.importe()));
+                        if p.estado == EstadoPedido::Enviado {
+                            if let Some(x) =
+                                v.edicion
+                                    .decimal(ui, &format!("pedr_{n}_{}", l.codigo), l.recibido, dm, 70.0)
+                            {
+                                ops.push(OpObra::Recibido(n, l.codigo.clone(), x));
+                            }
+                        } else {
+                            ui.label(cant(l.recibido, dm));
+                        }
+                        ui.end_row();
+                    }
+                });
+        });
+    }
+
+    // ------------------------------------------------------------ control de compras
+
+    fn vista_compras(&self, ui: &mut Ui, v: &mut VentanaObra) {
+        let lista = match &v.compras {
+            Some(Ok(l)) => l.clone(),
+            Some(Err(e)) => {
+                ui.label(RichText::new(e).color(ROJO));
+                return;
+            }
+            None => return,
+        };
+        let excesos = lista.iter().filter(|r| r.exceso()).count();
+        let por_pedir = lista.iter().filter(|r| !r.por_pedir().is_zero()).count();
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("{} recursos · {por_pedir} con algo por pedir", lista.len()));
+            if excesos > 0 {
+                ui.label(RichText::new(format!("· {excesos} pedidos por encima del presupuesto")).color(ROJO));
+            }
+            ui.separator();
+            ui.checkbox(&mut v.solo_pendiente, "Solo lo pendiente o con exceso");
+            ui.add(
+                egui::TextEdit::singleline(&mut v.filtro)
+                    .hint_text("Buscar…")
+                    .desired_width(140.0),
+            );
+        });
+        ui.label(
+            RichText::new(
+                "Certificado: lo que hace falta para lo certificado a origen en la última certificación. Material, maquinaria, otros y subcontratas.",
+            )
+            .small()
+            .weak(),
+        );
+        ui.separator();
+        let filtro = v.filtro.to_lowercase();
+        let dm = self.p.decimales.medicion;
+        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+            egui::Grid::new("control_compras")
+                .striped(true)
+                .num_columns(10)
+                .show(ui, |ui| {
+                    for t in [
+                        "Código",
+                        "Descripción",
+                        "Proveedor",
+                        "Ud",
+                        "Presupuesto",
+                        "Certificado",
+                        "Pedido",
+                        "Recibido",
+                        "Por pedir",
+                        "Por recibir",
+                    ] {
+                        ui.label(RichText::new(t).strong());
+                    }
+                    ui.end_row();
+                    for r in &lista {
+                        if v.solo_pendiente && r.por_pedir().is_zero() && r.por_recibir().is_zero() && !r.exceso() {
+                            continue;
+                        }
+                        if !filtro.is_empty()
+                            && !r.codigo.to_lowercase().contains(&filtro)
+                            && !r.resumen.to_lowercase().contains(&filtro)
+                            && !r.proveedor.to_lowercase().contains(&filtro)
+                        {
+                            continue;
+                        }
+                        ui.label(&r.codigo);
+                        ui.label(corto(&r.resumen, 44)).on_hover_text(&r.resumen);
+                        ui.label(corto(&r.proveedor, 20));
+                        ui.label(&r.unidad);
+                        ui.label(cant(r.presupuestado, dm));
+                        ui.label(cant(r.certificado, dm));
+                        let t = RichText::new(cant(r.pedido, dm));
+                        ui.label(if r.exceso() { t.color(ROJO).strong() } else { t })
+                            .on_hover_text(if r.exceso() {
+                                "Pedido por encima del presupuesto"
+                            } else {
+                                ""
+                            });
+                        ui.label(cant(r.recibido, dm));
+                        let pp = r.por_pedir();
+                        ui.label(if pp.is_zero() {
+                            RichText::new("")
+                        } else {
+                            RichText::new(cant(pp, dm)).color(NARANJA)
+                        });
+                        ui.label(cant(r.por_recibir(), dm));
+                        ui.end_row();
                     }
                 });
         });

@@ -453,4 +453,14 @@ fn seguimiento_aleatorio(p: &mut Presupuesto, r: &mut impl FnMut(u64) -> u64) {
             break;
         }
     }
+    // Pedidos registrados: uno enviado y en parte recibido
+    if let Ok(pedidos) = crate::pedidos::pedidos(p)
+        && let Some(x) = pedidos.first()
+        && let Some(n) = p.registrar_pedido(x, "20/10/2026", "OBRA")
+    {
+        p.fijar_estado_pedido(n, crate::compras::EstadoPedido::Enviado).ok();
+        if let Some(l) = p.pedido_registrado(n).and_then(|x| x.lineas.first()).cloned() {
+            p.recibir(n, &l.codigo, l.cantidad / Decimal::TWO).ok();
+        }
+    }
 }

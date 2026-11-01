@@ -1904,3 +1904,54 @@ fn se_pinta_toda_la_ventana_en_cada_vista() {
         }
     }
 }
+
+#[test]
+fn registrar_pedido_y_control_de_compras() {
+    use obra::{OpObra, PestanaObra};
+    let mut app = Aplicacion::sin_ventana();
+    let ctx = Context::default();
+    // Desde Informes: «Registrar en la obra»
+    app.abrir_informe(informes::TipoInforme::PedidoFabricante);
+    let x = ppto_core::pedidos::pedidos(&app.p)
+        .unwrap()
+        .into_iter()
+        .find(|x| x.tipo == ppto_core::pedidos::TipoPedido::Material)
+        .unwrap();
+    app.registrar
+        .borrow_mut()
+        .replace((x.clone(), "01/11/2026".into(), "OBRA".into()));
+    let mut out = ctx.run_ui(RawInput::default(), |ui| {
+        let c = ui.ctx().clone();
+        app.ventana_informes(&c);
+    });
+    out.textures_delta.clear();
+    assert_eq!(app.p.seguimiento.pedidos.len(), 1);
+    let codigo = app.p.seguimiento.pedidos[0].lineas[0].codigo.clone();
+    // Obra → Pedidos y Control de compras
+    for t in [PestanaObra::Pedidos, PestanaObra::Compras] {
+        app.abrir_obra(t);
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let c = ui.ctx().clone();
+                app.ventana_obra(&c);
+            });
+            out.textures_delta.clear();
+        }
+    }
+    app.aplicar(vec![
+        Accion::Obra(OpObra::EstadoPedido(1, ppto_core::compras::EstadoPedido::Enviado)),
+        Accion::Obra(OpObra::Recibido(1, codigo.clone(), dec!(1))),
+    ]);
+    assert_eq!(app.p.seguimiento.pedidos[0].situacion(), "Recibido en parte");
+    let c = app.p.control_compras().unwrap();
+    assert_eq!(c.iter().find(|r| r.codigo == codigo).unwrap().recibido, dec!(1));
+    // Se deshace
+    app.deshacer();
+    assert_eq!(app.p.seguimiento.pedidos[0].situacion(), "Enviado");
+    app.abrir_obra(PestanaObra::Pedidos);
+    let mut out = ctx.run_ui(RawInput::default(), |ui| {
+        let c = ui.ctx().clone();
+        app.ventana_obra(&c);
+    });
+    out.textures_delta.clear();
+}

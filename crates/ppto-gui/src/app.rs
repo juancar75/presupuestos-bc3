@@ -284,6 +284,8 @@ pub struct Aplicacion {
     ventana_informes: Option<informes::VentanaInformes>,
     /// Contradictorios y certificaciones.
     ventana_obra: Option<obra::VentanaObra>,
+    /// Pedido de Informes por registrar en la obra (se pide desde `&self`).
+    registrar: std::cell::RefCell<Option<(ppto_core::pedidos::Pedido, String, String)>>,
     /// Importar un modelo BIM (IFC o Revit).
     ventana_modelo: Option<modelo::VentanaModelo>,
     /// Aviso de versión nueva.
@@ -461,6 +463,7 @@ impl Aplicacion {
             form_origen: None,
             ventana_informes: None,
             ventana_obra: None,
+            registrar: Default::default(),
             ventana_modelo: None,
             actualizacion: Default::default(),
             aviso_abierta: None,

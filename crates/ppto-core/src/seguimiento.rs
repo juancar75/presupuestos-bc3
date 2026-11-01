@@ -30,11 +30,14 @@ pub struct Seguimiento {
     /// En orden: la 1ª, la 2ª…
     #[serde(default)]
     pub certificaciones: Vec<Certificacion>,
+    /// Pedidos registrados (ver [`crate::compras`]).
+    #[serde(default)]
+    pub pedidos: Vec<crate::compras::PedidoRegistrado>,
 }
 
 impl Seguimiento {
     pub fn esta_vacio(&self) -> bool {
-        self.contradictorios.is_empty() && self.certificaciones.is_empty()
+        self.contradictorios.is_empty() && self.certificaciones.is_empty() && self.pedidos.is_empty()
     }
 }
 
