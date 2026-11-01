@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.37] - 2026-11-01
+
 ### Añadido
 - **Archivo → Importar → Modelo BIM (IFC o Revit)…**: mediciones de las
   instalaciones de un modelo, de cualquier especialidad (tuberías y sus
