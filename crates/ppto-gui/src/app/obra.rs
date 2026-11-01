@@ -58,6 +58,11 @@ pub(super) enum OpObra {
     BorrarPedido(u32),
     /// Fecha, referencia, entrega y nota.
     DatosPedido(u32, [String; 4]),
+    /// Descuento comercial (None = quitarlo).
+    Descuento(Option<ppto_core::venta::DescuentoComercial>),
+    /// Contratar con GG y BI de la obra.
+    Contratar(String, Decimal, Decimal),
+    AnularContrato,
     AnotarGasto(Box<Gasto>),
     CambiarGasto(Box<Gasto>),
     BorrarGasto(u32),
@@ -85,6 +90,9 @@ impl OpObra {
             Self::RecibirTodo(n) => (format!("recibir todo el pedido {n}"), None),
             Self::BorrarPedido(n) => (format!("borrar el pedido {n}"), None),
             Self::DatosPedido(n, _) => (format!("datos del pedido {n}"), Some(format!("dped|{n}"))),
+            Self::Descuento(_) => ("descuento comercial".into(), Some("descuento".into())),
+            Self::Contratar(..) => ("contratar la obra".into(), None),
+            Self::AnularContrato => ("anular el contrato".into(), None),
             Self::AnotarGasto(g) => (format!("gasto {} €", eur(g.importe)), None),
             Self::CambiarGasto(g) => (format!("gasto nº {}", g.numero), None),
             Self::BorrarGasto(n) => (format!("borrar el gasto nº {n}"), None),
@@ -176,6 +184,22 @@ impl OpObra {
             Self::DatosPedido(n, [f, r, e, nota]) => {
                 p.fijar_datos_pedido(n, &f, &r, &e, &nota)?;
                 None
+            }
+            Self::Descuento(d) => {
+                p.seguimiento.descuento = d.filter(|d| !d.es_nulo());
+                None
+            }
+            Self::Contratar(fecha, gg, bi) => {
+                let k = p.contratar(&fecha, gg, bi)?;
+                Some(format!(
+                    "Obra contratada por {} € sin IVA: la venta de {} partidas queda bloqueada.",
+                    eur(k.importe),
+                    k.bloqueadas.len()
+                ))
+            }
+            Self::AnularContrato => {
+                p.anular_contrato();
+                Some("Contrato anulado: las ventas vuelven a calcularse con los márgenes.".into())
             }
             Self::AnotarGasto(g) => {
                 let n = p.anotar_gasto(*g)?;
@@ -338,6 +362,20 @@ impl Aplicacion {
     }
 
     pub(super) fn menu_obra(&mut self, ui: &mut Ui) {
+        let t = if self.p.seguimiento.contrato.is_some() {
+            "Contrato 🔒…"
+        } else {
+            "Contratar…"
+        };
+        if ui
+            .button(t)
+            .on_hover_text("Bloquea los precios de venta de la obra vendida y guarda la revisión del contrato")
+            .clicked()
+        {
+            ui.close();
+            self.ver_contratar = true;
+        }
+        ui.separator();
         if ui
             .button("Contradictorios…")
             .on_hover_text("Unidades o precios no previstos, para que los apruebe el cliente")
@@ -1590,4 +1628,111 @@ impl Aplicacion {
 
 fn redondear2(x: Decimal) -> Decimal {
     ppto_core::redondear(x, 2)
+}
+
+impl Aplicacion {
+    // ------------------------------------------------------------ contrato
+
+    /// Obra → Contratar…: bloquea las ventas, guarda y bloquea la revisión.
+    pub(super) fn ventana_contratar(&mut self, ctx: &egui::Context) {
+        if !self.ver_contratar {
+            return;
+        }
+        let mut abierta = true;
+        let mut contratar = false;
+        let mut anular = false;
+        let (venta, desc) = self.p.venta_y_descuento(self.gg, self.bi).unwrap_or_default();
+        egui::Window::new("Contratar la obra")
+            .open(&mut abierta)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| match self.p.seguimiento.contrato.clone() {
+                Some(k) => {
+                    ui.label(RichText::new(format!("Contratada el {} por {} € sin IVA.", k.fecha, eur(k.importe))).strong());
+                    ui.label(format!("{} partidas tienen la venta bloqueada al precio del contrato.", k.bloqueadas.len()));
+                    ui.add_space(6.0);
+                    if ui
+                        .button("Anular el contrato")
+                        .on_hover_text("Quita la marca y desbloquea las ventas que se bloquearon al contratar")
+                        .clicked()
+                    {
+                        anular = true;
+                    }
+                }
+                None => {
+                    egui::Grid::new("contratar").num_columns(2).show(ui, |ui| {
+                        ui.label("Venta (sin IVA)");
+                        ui.label(format!("{} €", eur(venta)));
+                        ui.end_row();
+                        if !desc.is_zero() {
+                            let d = self.p.seguimiento.descuento.clone().unwrap_or_default();
+                            ui.label(d.etiqueta());
+                            ui.label(format!("−{} €", eur(desc)));
+                            ui.end_row();
+                        }
+                        ui.label(RichText::new("Importe del contrato").strong());
+                        ui.label(RichText::new(format!("{} €", eur(venta - desc))).strong());
+                        ui.end_row();
+                        ui.label("Fecha");
+                        ui.add(egui::TextEdit::singleline(&mut self.fecha_contrato).desired_width(90.0));
+                        ui.end_row();
+                    });
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(
+                            "Al contratar: la venta de cada partida queda bloqueada al precio de hoy (si cambian costes o tarifas, \
+                             cambia el margen, no lo que se cobra), se guarda una revisión y queda bloqueada como referencia del contrato. \
+                             El descuento comercial se aplica en el mismo % a cada certificación.",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                    ui.add_space(4.0);
+                    if desc.is_zero() {
+                        ui.label(RichText::new("Sin descuento comercial (se pone en la pestaña Resumen).").small().weak());
+                    }
+                    if ui.button(RichText::new("Contratar y guardar").strong()).clicked() {
+                        contratar = true;
+                    }
+                }
+            });
+        if contratar {
+            self.aplicar(vec![Accion::Obra(OpObra::Contratar(
+                self.fecha_contrato.trim().to_owned(),
+                self.gg,
+                self.bi,
+            ))]);
+            if self.p.seguimiento.contrato.is_some() {
+                self.guardar(false);
+                self.bloquear_revision_actual();
+                abierta = false;
+            }
+        }
+        if anular {
+            self.aplicar(vec![Accion::Obra(OpObra::AnularContrato)]);
+        }
+        self.ver_contratar = abierta;
+    }
+
+    /// Bloquea la revisión en pantalla (referencia del contrato).
+    pub(super) fn bloquear_revision_actual(&mut self) {
+        let (Some(f), Some(rev), false) = (self.fichero.clone(), self.revision_actual, self.cambios) else {
+            return;
+        };
+        let usuario = ppto_db::bloqueo::Ocupante::yo().usuario;
+        let r = ppto_db::Almacen::abrir(&f).and_then(|mut a| {
+            a.bloquear_revision(rev, &usuario)?;
+            a.listar_revisiones()
+        });
+        match r {
+            Ok(revs) => {
+                self.revisiones = revs;
+                let etiqueta = self.etiqueta_actual();
+                self.info(format!(
+                    "Contrato guardado como revisión {etiqueta} 🔒 (no se puede cambiar)."
+                ));
+            }
+            Err(e) => self.error(format!("No se pudo bloquear la revisión: {e}")),
+        }
+    }
 }

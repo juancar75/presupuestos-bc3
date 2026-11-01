@@ -276,7 +276,8 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
     } else {
         (Decimal::ZERO, Decimal::ZERO)
     };
-    let r = venta::resumen(v.pem, gg, bi, o.iva, dec.importe);
+    let desc = p.seguimiento.descuento.as_ref().filter(|d| !d.es_nulo());
+    let r = venta::resumen_con_descuento(v.pem, gg, bi, o.iva, desc, dec.importe);
     let mut recargos = Vec::new();
     if !gg.is_zero() {
         recargos.push(json!({
@@ -326,6 +327,11 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
         "recargos": recargos,
         "etiqueta_base": etiqueta_base,
         "base": eur(r.base),
+        "descuento": desc.map(|d| json!({
+            "suma": eur(r.bruto),
+            "concepto": d.etiqueta(),
+            "importe": eur(-r.descuento),
+        })),
         "iva": iva,
         "total": eur(r.total),
         "total_letra": en_letra(r.total),

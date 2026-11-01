@@ -489,7 +489,9 @@ impl Aplicacion {
             ))
             .strong(),
         );
-        let r = venta::resumen(pem, self.gg, self.bi, self.iva, 2);
+        let desc = self.p.seguimiento.descuento.clone();
+        let r = venta::resumen_con_descuento(pem, self.gg, self.bi, self.iva, desc.as_ref(), 2);
+        self.editor_descuento(ui, acciones);
         ui.add_space(6.0);
         egui::Grid::new("resumen")
             .striped(true)
@@ -508,11 +510,22 @@ impl Aplicacion {
                         r.beneficio_industrial,
                         false,
                     ),
+                    ("Suma".into(), r.bruto, false),
+                    (
+                        desc.as_ref()
+                            .map_or_else(|| "Descuento comercial".to_owned(), |d| d.etiqueta()),
+                        -r.descuento,
+                        false,
+                    ),
                     ("Presupuesto base".into(), r.base, true),
                     (format!("{} % IVA", num(self.iva, 2)), r.iva, false),
                     ("TOTAL".into(), r.total, true),
                 ];
-                for (t, v, fuerte) in filas {
+                for (i, (t, v, fuerte)) in filas.into_iter().enumerate() {
+                    // Suma y descuento, solo si hay descuento
+                    if (i == 3 || i == 4) && r.descuento.is_zero() {
+                        continue;
+                    }
                     let (a, b) = (RichText::new(t), RichText::new(format!("{} €", eur(v))));
                     if fuerte {
                         ui.label(a.strong());
@@ -529,5 +542,73 @@ impl Aplicacion {
         egui::CollapsingHeader::new(RichText::new("Coste y venta partida a partida").strong())
             .default_open(true)
             .show(ui, |ui| self.tabla_coste_venta(ui));
+    }
+}
+
+impl Aplicacion {
+    /// Descuento comercial de la oferta: % o cerrar a una cifra.
+    fn editor_descuento(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+        use super::obra::OpObra;
+        use ppto_core::venta::DescuentoComercial;
+        let actual = self.p.seguimiento.descuento.clone();
+        let (venta, _) = self.p.venta_y_descuento(self.gg, self.bi).unwrap_or_default();
+        ui.add_space(6.0);
+        ui.label(RichText::new("Descuento comercial (cierre de la oferta)").strong());
+        ui.horizontal_wrapped(|ui| {
+            ui.label("%");
+            let pct = actual.as_ref().map(|d| d.porcentaje);
+            if let Some(n) = self.edicion.opcional(ui, "descuento|pct", pct, 2, 60.0) {
+                acciones.push(Accion::Obra(OpObra::Descuento(n.map(|p| DescuentoComercial {
+                    concepto: actual.as_ref().map(|d| d.concepto.clone()).unwrap_or_default(),
+                    ..DescuentoComercial::porcentaje(p)
+                }))));
+            }
+            ui.separator();
+            ui.label("o cerrar en");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.cerrar_en)
+                    .hint_text("€ sin IVA")
+                    .desired_width(90.0),
+            );
+            let objetivo = ppto_core::formato::leer(&self.cerrar_en);
+            if ui
+                .add_enabled(objetivo.is_some(), egui::Button::new("Cerrar"))
+                .on_hover_text(format!(
+                    "Calcula el descuento para que la oferta (venta {} € sin IVA) quede en esa cifra",
+                    eur(venta)
+                ))
+                .clicked()
+            {
+                match objetivo.and_then(|o| DescuentoComercial::cerrar_en(venta, o)) {
+                    Some(mut d) => {
+                        d.concepto = actual.as_ref().map(|d| d.concepto.clone()).unwrap_or_default();
+                        acciones.push(Accion::Obra(OpObra::Descuento(Some(d))));
+                        self.cerrar_en.clear();
+                    }
+                    None => self.error(format!("La cifra debe estar entre 0 y la venta ({} €).", eur(venta))),
+                }
+            }
+            if actual.is_some() {
+                ui.separator();
+                ui.label("Texto");
+                let c = actual.as_ref().map(|d| d.concepto.clone()).unwrap_or_default();
+                if let Some(t) = self.edicion.texto(ui, "descuento|concepto", &c, 160.0)
+                    && let Some(mut d) = actual.clone()
+                {
+                    d.concepto = t;
+                    acciones.push(Accion::Obra(OpObra::Descuento(Some(d))));
+                }
+                if ui.button("Quitar").clicked() {
+                    acciones.push(Accion::Obra(OpObra::Descuento(None)));
+                }
+            }
+        });
+        ui.label(
+            RichText::new(
+                "Los precios de las partidas no cambian: sale como una línea en la oferta (PDF y Excel) y se aplica en el mismo % a cada certificación.",
+            )
+            .small()
+            .weak(),
+        );
     }
 }

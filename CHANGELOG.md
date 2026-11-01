@@ -6,6 +6,15 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Descuento comercial** (pestaña Resumen): en % o «cerrar en» una cifra
+  (calcula el descuento). Los precios de las partidas no cambian: sale como
+  una línea («Suma», «Descuento comercial», «Presupuesto base») en la oferta
+  PDF, el Excel y el resumen, y se aplica en el mismo % a cada certificación.
+  El coste real compara con la venta y lo certificado netos de descuento.
+- **Obra → Contratar…**: bloquea la venta de todas las partidas al precio
+  vendido (si cambian costes o tarifas, cambia el margen, no lo que se
+  cobra), guarda una revisión y la bloquea 🔒 como referencia del contrato.
+  «Anular el contrato» lo deshace.
 - **Coste real** (Obra → Coste real): se apuntan los gastos (facturas de
   material y subcontratas, horas de mano de obra con su €/h, otros) con
   proveedor, documento, capítulo y, si se quiere, el pedido. Por capítulo y

@@ -249,3 +249,19 @@ fn pedido_a_fabricante_y_a_subcontrata_en_pdf() {
         assert!(b.starts_with(b"%PDF"), "{}", x.nombre());
     }
 }
+
+#[test]
+fn oferta_con_descuento_comercial() {
+    let mut p = suelo_radiante();
+    p.seguimiento.descuento = Some(ppto_core::venta::DescuentoComercial::porcentaje(dec!(5)));
+    let d = datos(&p, &opciones(), None).unwrap();
+    // PEM 7.005,15 + GG + BI = 8.336,13; 5 % = 416,81
+    assert_eq!(d["descuento"]["suma"], "8.336,13");
+    assert_eq!(d["descuento"]["importe"], "-416,81");
+    assert_eq!(d["base"], "7.919,32");
+    let b = pdf(&p, &opciones()).unwrap();
+    assert!(b.starts_with(b"%PDF"));
+    if let Ok(dir) = std::env::var("PPTO_PDF_PRUEBA") {
+        std::fs::write(format!("{dir}/oferta-descuento.pdf"), &b).unwrap();
+    }
+}

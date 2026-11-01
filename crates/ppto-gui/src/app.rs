@@ -290,6 +290,11 @@ pub struct Aplicacion {
     ventana_modelo: Option<modelo::VentanaModelo>,
     /// Aviso de versión nueva.
     actualizacion: actualizar::Actualizacion,
+    /// Ventana Obra → Contratar.
+    ver_contratar: bool,
+    fecha_contrato: String,
+    /// Resumen: «cerrar en» (texto del importe objetivo).
+    cerrar_en: String,
     /// Aviso «obra abierta» propio y momento del último latido.
     aviso_abierta: Option<(ppto_db::bloqueo::Aviso, f64)>,
     /// Obra que otro tiene abierta: preguntar antes de abrirla.
@@ -466,6 +471,9 @@ impl Aplicacion {
             registrar: Default::default(),
             ventana_modelo: None,
             actualizacion: Default::default(),
+            ver_contratar: false,
+            fecha_contrato: ppto_pdf::fecha_hoy(),
+            cerrar_en: String::new(),
             aviso_abierta: None,
             confirmar_abrir: None,
             f5: std::cell::RefCell::new(None),
@@ -787,6 +795,7 @@ impl Aplicacion {
         self.ventana_obra(&ctx);
         self.ventana_modelo(&ctx);
         self.ventana_actualizar(&ctx);
+        self.ventana_contratar(&ctx);
         self.aviso_obra_abierta(&ctx);
         self.ventana_confirmar_abrir(&ctx);
         self.ventana_comparar(&ctx, &mut acciones);

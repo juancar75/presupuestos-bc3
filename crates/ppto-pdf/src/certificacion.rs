@@ -104,14 +104,42 @@ pub fn pdf_certificacion(
     let pct = |x: Decimal| num(x, 2);
     let mut resumen = Vec::new();
     let fila = |c: String, a: Decimal, m: Decimal, g: Decimal, fuerte: bool| json!({ "concepto": c, "anterior": eur(a), "actual": eur(m), "origen": eur(g), "fuerte": fuerte });
+    let descuento = |resumen: &mut Vec<serde_json::Value>| {
+        if !s.origen.descuento.is_zero() || !s.anterior.descuento.is_zero() {
+            let etiqueta = p
+                .seguimiento
+                .descuento
+                .as_ref()
+                .map_or("Descuento comercial".to_owned(), |d| d.etiqueta());
+            resumen.push(fila(
+                etiqueta,
+                -s.anterior.descuento,
+                -s.actual.descuento,
+                -s.origen.descuento,
+                false,
+            ));
+            true
+        } else {
+            false
+        }
+    };
     if o.precios_venta {
         resumen.push(fila(
             "Importe certificado".into(),
-            s.anterior.base,
-            s.actual.base,
-            s.origen.base,
+            s.anterior.bruto,
+            s.actual.bruto,
+            s.origen.bruto,
             true,
         ));
+        if descuento(&mut resumen) {
+            resumen.push(fila(
+                "Base imponible".into(),
+                s.anterior.base,
+                s.actual.base,
+                s.origen.base,
+                true,
+            ));
+        }
     } else {
         resumen.push(fila(
             "Ejecución material".into(),
@@ -134,6 +162,7 @@ pub fn pdf_certificacion(
             s.origen.beneficio_industrial,
             false,
         ));
+        descuento(&mut resumen);
         resumen.push(fila(
             "Base imponible".into(),
             s.anterior.base,
