@@ -5,6 +5,18 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Aviso de obra abierta en otro sitio**: al abrir una obra que otra persona
+  (u otra ventana) tiene abierta, el programa dice quién, en qué equipo y
+  desde cuándo, y pregunta antes de abrirla. Se usa un pequeño fichero
+  `<obra>.abierta` junto a la obra, que se renueva cada minuto y se quita al
+  cerrarla; uno de un programa cerrado de golpe se ignora a los 5 minutos.
+
+### Cambiado
+- La pantalla principal se ha dividido en módulos (árbol, ficha de partida,
+  pestañas, menús, archivo, acciones) y sus pruebas van aparte. Nueva prueba
+  que pinta la ventana entera en todas las vistas con presupuestos grandes.
+
 ## [0.1.0-alpha.37] - 2026-11-01
 
 ### Añadido
