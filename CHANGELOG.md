@@ -6,6 +6,15 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Pedidos registrados** (Obra → Pedidos): desde Informes → Pedido a
+  fabricante o subcontrata, «Registrar en la obra» lo guarda con número,
+  fecha, referencia, entrega y estado (borrador, enviado, anulado). En
+  borrador se ajustan las cantidades; enviado, se anota lo recibido de cada
+  línea («Recibido todo»). PDF y Excel del pedido registrado. Un pedido nuevo
+  al mismo proveedor propone solo lo que falta por pedir.
+- **Control de compras** (Obra → Control de compras): por recurso,
+  presupuestado, necesario para lo certificado, pedido, recibido, por pedir y
+  por recibir; en rojo lo pedido por encima del presupuesto.
 - **Aviso de obra abierta en otro sitio**: al abrir una obra que otra persona
   (u otra ventana) tiene abierta, el programa dice quién, en qué equipo y
   desde cuándo, y pregunta antes de abrirla. Se usa un pequeño fichero

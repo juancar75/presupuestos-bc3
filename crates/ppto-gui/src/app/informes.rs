@@ -282,6 +282,15 @@ impl Aplicacion {
                     TipoInforme::Coste => self.informe_coste(ui, &mut v),
                 }
             });
+        let pendiente = self.registrar.borrow_mut().take();
+        if let Some((x, fecha, referencia)) = pendiente {
+            self.aplicar(vec![super::Accion::Obra(super::obra::OpObra::RegistrarPedido {
+                pedido: Box::new(x),
+                fecha,
+                referencia,
+            })]);
+            v.calcular(&self.p, self.gg, self.bi);
+        }
         if abierta {
             self.ventana_informes = Some(v);
         }
@@ -411,6 +420,14 @@ impl Aplicacion {
             if ui.button("Excel…").clicked() {
                 let b = ppto_informes::excel_pedido(&self.p, &x, &v.cabecera(&x)).map_err(|e| e.to_string());
                 v.guardar(&format!("Pedido {} - {}", x.nombre(), self.p.nombre), "xlsx", b);
+            }
+            ui.separator();
+            if ui
+                .button("Registrar en la obra")
+                .on_hover_text("Lo guarda como pedido de la obra (Obra → Pedidos) para seguir su estado y lo recibido. Solo lo que falte por pedir.")
+                .clicked()
+            {
+                self.registrar.borrow_mut().replace((x.clone(), v.fecha.clone(), v.referencia.clone()));
             }
             ui.separator();
             if ui

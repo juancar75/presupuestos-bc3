@@ -175,3 +175,21 @@ fn certificaciones_cuadran() {
     }
     assert!(probadas > 50, "{probadas}");
 }
+
+/// Control de compras: sin errores y coherente con la explosión.
+#[test]
+fn control_de_compras_coherente() {
+    let mut con_pedidos = 0;
+    for s in 0..200 {
+        let p = aleatorio(s, true);
+        let c = p.control_compras().unwrap();
+        let ya = p.ya_pedido();
+        for r in &c {
+            assert_eq!(r.pedido, ya.get(&r.codigo).copied().unwrap_or_default(), "semilla {s}");
+            assert!(r.recibido <= r.pedido, "semilla {s}");
+            assert!(r.por_pedir() >= Decimal::ZERO && r.por_recibir() >= Decimal::ZERO);
+        }
+        con_pedidos += usize::from(!p.seguimiento.pedidos.is_empty());
+    }
+    assert!(con_pedidos > 20, "{con_pedidos}");
+}

@@ -18,6 +18,7 @@
 
 pub mod codigos;
 pub mod comparar;
+pub mod compras;
 pub mod concepto;
 pub mod decimales;
 pub mod descuentos;
