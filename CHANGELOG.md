@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.39] - 2026-11-01
+
 ### Mejorado
 - **Revit (.rvt): diámetro de los accesorios.** Codos, tes, reducciones,
   tapones e injertos salen por diámetro («Ø32», «Ø40x32»), según los tubos
