@@ -5,7 +5,16 @@ use super::*;
 
 /// Ancho aproximado de las columnas fijas del descompuesto (código, ud,
 /// tipo, cantidad, precio, importe y botones) más los espacios.
-const ANCHO_FIJO_DESCOMPUESTO: f32 = 640.0;
+const ANCHO_FIJO_DESCOMPUESTO: f32 = 720.0;
+
+/// Tipos a los que se puede cambiar un recurso.
+const TIPOS_RECURSO: [Naturaleza; 5] = [
+    Naturaleza::ManoObra,
+    Naturaleza::Material,
+    Naturaleza::Maquinaria,
+    Naturaleza::Subcontrata,
+    Naturaleza::Otros,
+];
 
 impl Aplicacion {
     pub(super) fn pestana_partida(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
@@ -215,10 +224,31 @@ impl Aplicacion {
                                 }
                                 None => campo_resumen(ui, acciones),
                             }
-                            ui.label(
-                                RichText::new(nombre_naturaleza(h.naturaleza))
-                                    .color(color_naturaleza(h.naturaleza, ui.visuals().dark_mode)),
-                            );
+                            let oscuro = ui.visuals().dark_mode;
+                            if h.naturaleza.es_basico() {
+                                // El tipo se puede corregir después de crear el recurso
+                                let mut n = h.naturaleza;
+                                egui::ComboBox::from_id_salt(("tipo", &l.hijo))
+                                    .selected_text(
+                                        RichText::new(nombre_naturaleza(n)).color(color_naturaleza(n, oscuro)),
+                                    )
+                                    .width(110.0)
+                                    .show_ui(ui, |ui| {
+                                        for x in TIPOS_RECURSO {
+                                            ui.selectable_value(&mut n, x, nombre_naturaleza(x));
+                                        }
+                                    })
+                                    .response
+                                    .on_hover_text("Tipo del recurso. Si está en otras partidas, cambia en todas.");
+                                if n != h.naturaleza {
+                                    acciones.push(Accion::Naturaleza(h.codigo.clone(), n));
+                                }
+                            } else {
+                                ui.label(
+                                    RichText::new(nombre_naturaleza(h.naturaleza))
+                                        .color(color_naturaleza(h.naturaleza, oscuro)),
+                                );
+                            }
                             if let Some(v) = self.edicion.decimal(
                                 ui,
                                 &format!("r|{hijo}|{}", l.hijo),
@@ -255,6 +285,13 @@ impl Aplicacion {
                                         l.hijo.clone(),
                                     ));
                                 }
+                                if ui
+                                    .small_button("📋")
+                                    .on_hover_text("Copiar la línea para pegarla en otra partida")
+                                    .clicked()
+                                {
+                                    acciones.push(Accion::CopiarLinea(hijo.clone(), l.hijo.clone()));
+                                }
                                 if ui.small_button("^").on_hover_text("Subir").clicked() {
                                     acciones.push(Accion::Mover(hijo.clone(), l.hijo.clone(), true));
                                 }
@@ -288,9 +325,12 @@ impl Aplicacion {
                         );
                         ui.end_row();
                     });
-                if ui.button("+ Añadir línea…").clicked() {
-                    acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
-                }
+                ui.horizontal(|ui| {
+                    if ui.button("+ Añadir línea…").clicked() {
+                        acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
+                    }
+                    self.boton_pegar_linea(ui, &hijo, acciones);
+                });
             } else if c.naturaleza == Naturaleza::Partida {
                 ui.horizontal(|ui| {
                     ui.label("Precio directo (sin descomponer):");
@@ -303,9 +343,12 @@ impl Aplicacion {
                     ui.label(RichText::new(format!("€/{}", c.unidad)).weak());
                 });
                 ui.label(RichText::new("O descompóngala:").weak());
-                if ui.button("+ Añadir línea…").clicked() {
-                    acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
-                }
+                ui.horizontal(|ui| {
+                    if ui.button("+ Añadir línea…").clicked() {
+                        acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
+                    }
+                    self.boton_pegar_linea(ui, &hijo, acciones);
+                });
             } else {
                 ui.label(RichText::new("Recurso básico sin descomposición.").weak());
             }
@@ -363,6 +406,23 @@ impl Aplicacion {
                 ui.label(RichText::new(a.to_string()).color(Color32::from_rgb(220, 150, 40)));
             }
         });
+    }
+
+    /// «Pegar …» la línea copiada con 📋 en otra partida.
+    fn boton_pegar_linea(&self, ui: &mut Ui, destino: &str, acciones: &mut Vec<Accion>) {
+        if let Some((origen, h)) = &self.linea_copiada
+            && origen != destino
+            && self.p.conceptos.contains_key(origen)
+            && let Some(c) = self.p.conceptos.get(h)
+            && ui
+                .button(format!("Pegar {h} {}", corto(&c.resumen, 40)))
+                .on_hover_text(format!(
+                    "Añade {h} a esta partida con la cantidad que tenía en {origen}"
+                ))
+                .clicked()
+        {
+            acciones.push(Accion::Copiar(origen.clone(), h.clone(), destino.to_owned()));
+        }
     }
 
     pub(super) fn hoja_medicion(

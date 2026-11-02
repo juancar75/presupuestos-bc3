@@ -163,6 +163,13 @@ impl Aplicacion {
                     self.navegar(d, false);
                     continue;
                 }
+                Accion::CopiarLinea(p, h) => {
+                    self.info(format!(
+                        "{h} copiada (con su cantidad). Abra otra partida y pulse «Pegar {h}» bajo el descompuesto."
+                    ));
+                    self.linea_copiada = Some((p, h));
+                    continue;
+                }
                 Accion::CapituloActivo(c) => {
                     self.capitulo_activo = Some(c);
                     continue;
@@ -210,6 +217,20 @@ impl Aplicacion {
                     self.p.trasladar_linea(&padre, &hijo, &padre, Some(&antes))
                 }
                 Accion::Unidad(c, u) => self.p.fijar_unidad(&c, &u),
+                Accion::Naturaleza(c, n) => self.p.fijar_naturaleza(&c, n).map(|()| {
+                    let usos = self
+                        .p
+                        .conceptos
+                        .values()
+                        .filter(|x| x.descomposicion.iter().any(|l| l.hijo == c))
+                        .count();
+                    if usos > 1 {
+                        self.info(format!(
+                            "{c} es ahora {}: cambia en las {usos} partidas donde está.",
+                            nombre_naturaleza(n).to_lowercase()
+                        ));
+                    }
+                }),
                 Accion::NuevoCapitulo { padre, codigo, resumen } => {
                     self.p.nuevo_capitulo(&padre, &codigo, &resumen).map(|()| {
                         let t = if padre == self.p.raiz {
@@ -285,9 +306,16 @@ impl Aplicacion {
                         }
                     }),
                 Accion::Copiar(origen, hijo, destino) => self.p.copiar_linea(&origen, &hijo, &destino).map(|()| {
-                    self.info(format!(
-                        "{hijo} copiada en {destino}. Es la misma partida: un cambio de precio afecta a las dos; la cantidad es de cada capítulo."
-                    ));
+                    let es_partida = self.p.conceptos.get(&hijo).is_some_and(|c| c.naturaleza == Naturaleza::Partida);
+                    self.info(if es_partida {
+                        format!(
+                            "{hijo} copiada en {destino}. Es la misma partida: un cambio de precio afecta a las dos; la cantidad es de cada capítulo."
+                        )
+                    } else {
+                        format!(
+                            "{hijo} pegada en {destino}. Es el mismo recurso: un cambio de precio afecta a las dos partidas; la cantidad es de cada una."
+                        )
+                    });
                 }),
                 Accion::CopiarDeBase {
                     origen,
