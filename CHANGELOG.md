@@ -5,6 +5,16 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.41] - 2026-11-02
+
+### Añadido
+- **Cambiar el tipo de un recurso** desde el descompuesto (desplegable en la
+  columna Tipo: mano de obra, material, maquinaria, subcontrata, otros).
+  Cambia en todas las partidas donde está el recurso y se avisa de cuántas.
+- **Copiar una línea del descompuesto a otra partida**: botón 📋 en la línea
+  y «Pegar …» junto a «+ Añadir línea…» en la partida de destino, con la
+  misma cantidad.
+
 ## [0.1.0-alpha.40] - 2026-11-02
 
 ### Mejorado
