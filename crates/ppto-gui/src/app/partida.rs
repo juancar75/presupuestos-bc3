@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// Ancho aproximado de las columnas fijas del descompuesto (código, ud,
+/// tipo, cantidad, precio, importe y botones) más los espacios.
+const ANCHO_FIJO_DESCOMPUESTO: f32 = 640.0;
+
 impl Aplicacion {
     pub(super) fn pestana_partida(&mut self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
         let Some((padre, hijo)) = self.sel.clone() else {
@@ -85,8 +89,10 @@ impl Aplicacion {
                 acciones.push(Accion::Unidad(c.codigo.clone(), unidad));
             }
             let mut resumen = c.resumen.clone();
+            // Hasta el borde de la ventana
+            let ancho = (ui.available_width() - 8.0).clamp(240.0, 1400.0);
             if ui
-                .add(egui::TextEdit::singleline(&mut resumen).desired_width(480.0))
+                .add(egui::TextEdit::singleline(&mut resumen).desired_width(ancho))
                 .changed()
             {
                 acciones.push(Accion::Resumen(c.codigo.clone(), resumen));
@@ -127,6 +133,9 @@ impl Aplicacion {
             ui.add_space(6.0);
             ui.label(RichText::new("Precio descompuesto").strong());
             if let Some(lineas) = self.calc.lineas.get(&hijo).cloned() {
+                // La columna Resumen se lleva el ancho que sobra de la ventana
+                let ancho_resumen = (ui.available_width() - ANCHO_FIJO_DESCOMPUESTO).clamp(160.0, 1000.0);
+                let letras = (ancho_resumen / 7.0) as usize;
                 egui::Grid::new("descompuesto")
                     .striped(true)
                     .num_columns(8)
@@ -156,10 +165,9 @@ impl Aplicacion {
                                 if editable {
                                     let mut r = h.resumen.clone();
                                     if ui
-                                        .add(
-                                            egui::TextEdit::singleline(&mut r)
-                                                .desired_width(260.0)
-                                                .hint_text("escriba el resumen…"),
+                                        .add_sized(
+                                            [ancho_resumen, 20.0],
+                                            egui::TextEdit::singleline(&mut r).hint_text("escriba el resumen…"),
                                         )
                                         .on_hover_text(&h.resumen)
                                         .changed()
@@ -167,7 +175,11 @@ impl Aplicacion {
                                         acciones.push(Accion::Resumen(h.codigo.clone(), r));
                                     }
                                 } else {
-                                    ui.label(corto(&h.resumen, 46)).on_hover_text(&h.resumen);
+                                    ui.add_sized(
+                                        [ancho_resumen, 20.0],
+                                        egui::Label::new(corto(&h.resumen, letras)).truncate(),
+                                    )
+                                    .on_hover_text(&h.resumen);
                                 }
                             };
                             if editable {
@@ -368,6 +380,8 @@ impl Aplicacion {
         let mut nueva = m.clone();
         let mut cambio = false;
         let mut quitar = None;
+        // El comentario se lleva el ancho que sobra de la ventana
+        let ancho_comentario = (ui.available_width() - 640.0).clamp(160.0, 700.0);
         egui::Grid::new("medicion").striped(true).num_columns(8).show(ui, |ui| {
             for t in [
                 "Comentario",
@@ -385,7 +399,7 @@ impl Aplicacion {
             for (i, l) in nueva.lineas.iter_mut().enumerate() {
                 let mut com = l.comentario.clone();
                 if ui
-                    .add_sized([200.0, 20.0], egui::TextEdit::singleline(&mut com))
+                    .add_sized([ancho_comentario, 20.0], egui::TextEdit::singleline(&mut com))
                     .lost_focus()
                     && com != l.comentario
                 {
