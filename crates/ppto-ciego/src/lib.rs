@@ -643,7 +643,7 @@ pub fn valorar(original: &[u8], ciego: &Ciego, p: &Presupuesto) -> Result<Valora
     let mut escritas = 0;
     for i in 0..zip.len() {
         let mut f = zip.by_index(i).map_err(|e| ErrorCiego::Escritura(e.to_string()))?;
-        let nombre = f.name().to_owned();
+        let nombre = f.name().map_err(|e| ErrorCiego::Escritura(e.to_string()))?.into_owned();
         let opciones = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         let mut contenido = Vec::new();
         f.read_to_end(&mut contenido)

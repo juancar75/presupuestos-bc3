@@ -12,8 +12,8 @@ authors.workspace = true
 ppto-core.workspace = true
 rust_decimal.workspace = true
 thiserror.workspace = true
-calamine = "0.36"
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
+calamine = "0.38"
+zip = { version = "9.2", default-features = false, features = ["deflate"] }
 quick-xml = "0.41"
 
 [dev-dependencies]
@@ -21,8 +21,8 @@ ppto-bc3.workspace = true
 ppto-pdf.workspace = true
 serde_json = "1.0"
 rust_decimal_macros.workspace = true
-rust_xlsxwriter = "0.99"
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
+rust_xlsxwriter = "0.102"
+zip = { version = "9.2", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true

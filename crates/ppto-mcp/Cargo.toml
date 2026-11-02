@@ -26,7 +26,7 @@ ppto-biblioteca.workspace = true
 rust_decimal.workspace = true
 serde_json = "1.0"
 pdf-extract = "0.12.1"
-calamine = "0.36"
+calamine = "0.38"
 
 [dev-dependencies]
 rust_decimal_macros.workspace = true
