@@ -5,6 +5,17 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.40] - 2026-11-02
+
+### Mejorado
+- **Columnas que se ajustan a la ventana** en la ficha de la partida: el
+  resumen, la columna Resumen del descompuesto y el comentario de la medición
+  ocupan el ancho libre; los textos largos se recortan con «…» y se ven
+  enteros al pasar el ratón.
+
+### Seguridad
+- `zip` 9.2 (RUSTSEC-2026-0429), con `calamine` 0.38 y `rust_xlsxwriter` 0.102.
+
 ## [0.1.0-alpha.39] - 2026-11-01
 
 ### Mejorado
