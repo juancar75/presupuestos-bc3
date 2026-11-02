@@ -368,6 +368,21 @@ impl Presupuesto {
         Ok(())
     }
 
+    /// Cambia el tipo de un recurso básico (mano de obra, material,
+    /// maquinaria, subcontrata u otros). Es el mismo recurso en todas las
+    /// partidas donde está, así que cambia en todas.
+    pub fn fijar_naturaleza(&mut self, codigo: &str, naturaleza: Naturaleza) -> Result<(), ErrorMotor> {
+        let c = self.concepto_mut(codigo)?;
+        if !c.naturaleza.es_basico() || !naturaleza.es_basico() {
+            return Err(ErrorMotor::ValorInvalido(
+                "solo se cambia el tipo de los recursos (mano de obra, material, maquinaria, subcontrata u otros)"
+                    .into(),
+            ));
+        }
+        c.naturaleza = naturaleza;
+        Ok(())
+    }
+
     /// Primer código libre de la forma `prefijo` + número (p. ej. «C03», «P0012»).
     pub fn codigo_libre(&self, prefijo: &str, cifras: usize) -> String {
         (1..)

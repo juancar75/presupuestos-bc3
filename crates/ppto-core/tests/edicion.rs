@@ -523,3 +523,24 @@ fn estado_de_valoracion_para_el_arbol() {
     p.fijar_precio("P.VACIA", dec!(10)).unwrap();
     assert!(estados(&p)["C9"].incompleta());
 }
+
+#[test]
+fn cambiar_el_tipo_de_un_recurso_y_pegar_la_linea_en_otra_partida() {
+    // P1 = 2 h × 30,00 (R1, mano de obra) = 60,00; P2 vacía.
+    let mut p = Presupuesto::new("Tipo", "OBRA", "Obra");
+    p.nuevo_capitulo("OBRA", "C01", "Ventilación").unwrap();
+    p.nueva_partida("C01", "P1", "u", "Recuperador 1").unwrap();
+    p.nueva_partida("C01", "P2", "u", "Recuperador 2").unwrap();
+    p.nuevo_recurso("R1", "u", "Emboquillado", Naturaleza::ManoObra, dec!(30))
+        .unwrap();
+    p.anadir_linea("P1", "R1", dec!(2)).unwrap();
+    // Era subcontrata, no mano de obra
+    p.fijar_naturaleza("R1", Naturaleza::Subcontrata).unwrap();
+    assert_eq!(p.conceptos["R1"].naturaleza, Naturaleza::Subcontrata);
+    // Una partida no pasa a ser recurso, ni un recurso a porcentaje
+    assert!(p.fijar_naturaleza("P1", Naturaleza::Material).is_err());
+    assert!(p.fijar_naturaleza("R1", Naturaleza::Porcentaje).is_err());
+    // Copiar la línea a la otra partida: misma cantidad, 2 × 30,00 = 60,00
+    p.copiar_linea("P1", "R1", "P2").unwrap();
+    assert_eq!(p.lineas_valoradas("P2").unwrap()[0].importe, dec!(60.00));
+}

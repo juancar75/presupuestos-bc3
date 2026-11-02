@@ -73,6 +73,11 @@ enum Accion {
     Texto(String, String),
     OpcionesCi(ppto_core::presupuesto::OpcionesCi),
     Unidad(String, String),
+    /// Tipo de un recurso básico.
+    Naturaleza(String, Naturaleza),
+    /// Copiar una línea del descompuesto (partida, recurso) para pegarla en
+    /// otra partida.
+    CopiarLinea(String, String),
     NuevoCapitulo {
         padre: String,
         codigo: String,
@@ -263,6 +268,8 @@ pub struct Aplicacion {
     desplazar_arbol: bool,
     /// Partida cortada o copiada: (capítulo, partida, `true` = cortar).
     portapapeles: Option<(String, String, bool)>,
+    /// Línea del descompuesto copiada: (partida, recurso).
+    linea_copiada: Option<(String, String)>,
     /// Texto para el portapapeles del sistema (se copia al final del fotograma).
     copiar_al_sistema: Option<String>,
     /// Capítulo donde pega Ctrl+V (el último elegido en el árbol).
@@ -354,6 +361,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::Resumen(c, _) => (format!("resumen de {c}"), Some(format!("resumen|{c}"))),
         Accion::Texto(c, _) => (format!("texto de {c}"), Some(format!("texto|{c}"))),
         Accion::Unidad(c, _) => (format!("unidad de {c}"), Some(format!("unidad|{c}"))),
+        Accion::Naturaleza(c, _) => (format!("tipo de {c}"), None),
         Accion::Ci(_) => ("costes indirectos".into(), None),
         Accion::OpcionesCi(_) => ("opciones de costes indirectos".into(), None),
         Accion::NuevoCapitulo { codigo, .. } => (format!("nuevo capítulo {codigo}"), None),
@@ -457,6 +465,7 @@ impl Aplicacion {
             enfocar_buscar: false,
             desplazar_arbol: false,
             portapapeles: None,
+            linea_copiada: None,
             copiar_al_sistema: None,
             capitulo_activo: None,
             historial: Historial::default(),
