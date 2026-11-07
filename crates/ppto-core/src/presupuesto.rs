@@ -41,6 +41,10 @@ pub struct Presupuesto {
     /// aplica a los recursos con [`crate::concepto::PrecioTarifa`].
     #[serde(default)]
     pub descuentos: BTreeMap<String, Decimal>,
+    /// Escalones de los descuentos encadenados («40+8» → `[40, 8]`), solo de
+    /// los que tienen más de uno. En `descuentos` va su equivalente (44,8).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub descuentos_encadenados: BTreeMap<String, Vec<Decimal>>,
     /// Contradictorios y certificaciones.
     #[serde(default, skip_serializing_if = "crate::seguimiento::Seguimiento::esta_vacio")]
     pub seguimiento: crate::seguimiento::Seguimiento,
@@ -118,6 +122,7 @@ impl Presupuesto {
             costes_indirectos: Decimal::ZERO,
             opciones_ci: OpcionesCi::default(),
             descuentos: BTreeMap::new(),
+            descuentos_encadenados: BTreeMap::new(),
             seguimiento: Default::default(),
         }
     }

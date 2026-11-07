@@ -388,7 +388,7 @@ fn herramientas() -> Value {
         },
         {
             "name": "fijar_descuento_biblioteca",
-            "description": "Guarda en la biblioteca el descuento del instalador de un fabricante (o «FAB/GRUPO») y/o la subida estimada sobre su última tarifa mientras no llegue la nueva. Solo con datos que dé el usuario.",
+            "description": "Guarda en la biblioteca el descuento del instalador de un fabricante (o «FAB/GRUPO») y/o la subida estimada sobre su última tarifa mientras no llegue la nueva. El porcentaje puede ser simple (45) o encadenado como texto, hasta tres escalones (\"40+8\", \"50+10+5\"). Solo con datos que dé el usuario.",
             "inputSchema": { "type": "object", "properties": {
                 "fabricante": { "type": "string" }, "porcentaje": num, "subida_estimada": num
             }, "required": ["fabricante"] }
@@ -571,6 +571,19 @@ pub(crate) fn dec_campo(a: &Value, campo: &str) -> Result<Option<Decimal>, Strin
         None | Some(Value::Null) => Ok(None),
         Some(v) => decimal(v)
             .map(Some)
+            .ok_or_else(|| format!("«{campo}» no es un número válido")),
+    }
+}
+
+/// Descuento simple (45 o "45") o encadenado ("40+8", hasta tres escalones).
+pub(crate) fn cadena_campo(a: &Value, campo: &str) -> Result<Option<Vec<Decimal>>, String> {
+    match a.get(campo) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => ppto_core::descuentos::leer_cadena(s)
+            .map(Some)
+            .map_err(|e| format!("«{campo}»: {e}")),
+        Some(v) => decimal(v)
+            .map(|d| Some(vec![d]))
             .ok_or_else(|| format!("«{campo}» no es un número válido")),
     }
 }
@@ -1387,14 +1400,18 @@ fn leer_descuentos(a: &Value) -> Result<std::collections::BTreeMap<String, Decim
         Some(Value::Array(v)) => {
             for d in v {
                 let f = texto(d, "fabricante")?;
-                let pct = dec_campo(d, "porcentaje")?.ok_or_else(|| format!("descuento de {f} sin porcentaje"))?;
+                let pct = cadena_campo(d, "porcentaje")?
+                    .map(|c| ppto_core::descuentos::equivalente(&c))
+                    .ok_or_else(|| format!("descuento de {f} sin porcentaje"))?;
                 let (fa, gr) = ppto_core::descuentos::partes(f);
                 m.insert(ppto_core::descuentos::clave(&fa, gr.as_deref()), pct);
             }
         }
         Some(Value::Object(o)) => {
             for (f, v) in o {
-                let pct = decimal(v).ok_or_else(|| format!("descuento de {f} no válido"))?;
+                let pct = cadena_campo(&json!({ "p": v }), "p")?
+                    .map(|c| ppto_core::descuentos::equivalente(&c))
+                    .ok_or_else(|| format!("descuento de {f} no válido"))?;
                 let (fa, gr) = ppto_core::descuentos::partes(f);
                 m.insert(ppto_core::descuentos::clave(&fa, gr.as_deref()), pct);
             }

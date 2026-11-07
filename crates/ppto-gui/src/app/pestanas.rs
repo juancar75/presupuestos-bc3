@@ -111,11 +111,11 @@ impl Aplicacion {
                                         acciones.push(Accion::GrupoTarifa(r.codigo.clone(), g));
                                     }
                                     ui.label(
-                                        RichText::new(format!(
-                                            "− {} % ({})",
-                                            num(self.p.descuento_tarifa(&t), 2),
-                                            self.p.clave_aplicada(&t)
-                                        ))
+                                        RichText::new({
+                                            let k = self.p.clave_aplicada(&t);
+                                            let d = self.p.texto_descuento(&k).replace('.', ",");
+                                            format!("− {} % ({k})", if d.is_empty() { "0".into() } else { d })
+                                        })
                                         .weak(),
                                     )
                                     .on_hover_text(

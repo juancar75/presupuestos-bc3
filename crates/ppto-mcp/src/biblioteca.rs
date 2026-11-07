@@ -114,12 +114,13 @@ pub(crate) fn estado_biblioteca(estado: &Estado) -> Result<String, String> {
         });
         let dtos = f
             .descuentos
-            .iter()
-            .map(|(g, p)| {
+            .keys()
+            .map(|g| {
+                let d = f.texto_descuento(g).replace('.', ",");
                 if g.is_empty() {
-                    format!("{} %", num(*p, 2))
+                    format!("{d} %")
                 } else {
-                    format!("{g} {} %", num(*p, 2))
+                    format!("{g} {d} %")
                 }
             })
             .collect::<Vec<_>>()
@@ -227,14 +228,14 @@ pub(crate) fn registrar_oferta(estado: &Estado, a: &Value) -> Result<String, Str
 
 pub(crate) fn fijar_descuento(estado: &Estado, a: &Value) -> Result<String, String> {
     let fab = texto(a, "fabricante")?.to_owned();
-    let pct = dec_campo(a, "porcentaje")?;
+    let pct = crate::cadena_campo(a, "porcentaje")?;
     let subida = dec_campo(a, "subida_estimada")?;
     if pct.is_none() && subida.is_none() {
         return Err("indique porcentaje y/o subida_estimada".into());
     }
     Biblioteca::modificar(&ruta(estado)?, |b| {
         if let Some(p) = pct {
-            b.fijar_descuento(&fab, Some(p));
+            b.fijar_descuento_encadenado(&fab, Some(&p));
         }
         if subida.is_some() {
             let (f, _) = ppto_core::descuentos::partes(&fab);

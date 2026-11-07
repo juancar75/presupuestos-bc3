@@ -254,14 +254,14 @@ impl Aplicacion {
                     ui.add(egui::TextEdit::singleline(&mut v.subida).desired_width(50.0));
                     if ui.button("Guardar").clicked() {
                         let fab = v.dto_fab.trim().to_owned();
-                        let pct: Option<Decimal> = leer(&v.dto_pct);
+                        let pct = ppto_core::descuentos::leer_cadena(&v.dto_pct).ok();
                         let sub: Option<Decimal> = leer(&v.subida);
                         if fab.is_empty() || (pct.is_none() && sub.is_none()) {
                             v.mensaje = Some(("Indique el fabricante y el descuento o la subida.".into(), true));
                         } else if v
                             .modificar(|b| {
                                 if pct.is_some() {
-                                    b.fijar_descuento(&fab, pct);
+                                    b.fijar_descuento_encadenado(&fab, pct.as_deref());
                                 }
                                 if sub.is_some() {
                                     let (f, _) = ppto_core::descuentos::partes(&fab);

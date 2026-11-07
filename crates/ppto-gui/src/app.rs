@@ -132,8 +132,9 @@ enum Accion {
     /// Volver a aplicar las propuestas ya aceptadas cuyas partidas están
     /// sin precio (p. ej. tras abrir de nuevo el Excel ciego).
     ReaplicarAceptadas,
-    /// Descuento de un fabricante (puntos).
-    Descuento(String, Decimal),
+    /// Descuento de un fabricante (puntos; encadenado si hay más de un
+    /// escalón: `[40, 8]` = 40+8 %).
+    Descuento(String, Vec<Decimal>),
     /// Margen propio de una partida (% sobre su precio; `None` = el general).
     Margen(String, Option<Decimal>),
     /// Precio de venta bloqueado de una partida (`None` = desbloquear).

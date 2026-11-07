@@ -227,6 +227,50 @@ fn descuentos_visibles_en_el_descompuesto() {
     assert!((visible - neto).abs() <= dec!(0.01), "{visible} frente a {neto}");
 }
 
+/// Un descuento encadenado («40+8») sale en el BC3 con su equivalente en la
+/// línea (−44,8 %) y la cadena en el resumen; al volver a leerlo se recupera
+/// la cadena.
+#[test]
+fn descuento_encadenado_visible_ida_y_vuelta() {
+    use ppto_core::LineaDescomposicion;
+    let mut p = Presupuesto::new("dto", "OBRA", "Obra");
+    p.insertar(Concepto::basico(
+        "M.VAL",
+        "ud",
+        "Válvula",
+        Naturaleza::Material,
+        dec!(0),
+    ))
+    .unwrap();
+    p.insertar(Concepto::partida(
+        "P1",
+        "ud",
+        "Válvula instalada",
+        vec![LineaDescomposicion::new("M.VAL", dec!(1))],
+    ))
+    .unwrap();
+    p.nuevo_capitulo("OBRA", "C1", "Valvulería").unwrap();
+    p.anadir_linea("C1", "P1", dec!(3)).unwrap();
+    p.fijar_tarifa("M.VAL", "FABA", dec!(20)).unwrap();
+    p.fijar_descuento_texto("FABA", "40+8").unwrap();
+    let neto = p.precio("P1").unwrap();
+    assert_eq!(neto, dec!(11.04));
+
+    let o = OpcionesExportacion {
+        descuentos_visibles: true,
+        ..Default::default()
+    };
+    let ex = exportar(&p, &o).unwrap();
+    let texto = String::from_utf8_lossy(&ex.bytes);
+    assert!(texto.contains("Descuento FABA 40+8 %"), "{texto}");
+    assert!(texto.contains("M.VAL%\\1\\-0.448\\"), "{texto}");
+
+    let q = importar(&ex.bytes).unwrap().presupuesto;
+    assert_eq!(q.descuentos.get("FABA"), Some(&dec!(44.8)));
+    assert_eq!(q.texto_descuento("FABA"), "40+8");
+    assert!((q.precio("P1").unwrap() - neto).abs() <= dec!(0.01));
+}
+
 /// Para un Presto antiguo que corta los códigos: ningún código pasa del
 /// límite, los que empezaban igual siguen siendo distintos (también un
 /// recurso y su línea de descuento) y la obra vale lo mismo.

@@ -177,17 +177,29 @@ impl Aplicacion {
             .striped(true)
             .num_columns(5)
             .show(ui, |ui| {
-                for t in ["Fabricante", "Grupo", "Descuento %", "Recursos", ""] {
+                for t in ["Fabricante", "Grupo", "Descuento % (40+8)", "Recursos", ""] {
                     ui.label(RichText::new(t).weak());
                 }
                 ui.end_row();
                 for f in &fabs {
                     ui.label(&f.fabricante);
                     ui.label(f.grupo.as_deref().unwrap_or("(general)"));
-                    if let Some(v) = self
-                        .edicion
-                        .decimal(ui, &format!("dto|{}", f.nombre), f.descuento, 2, 70.0)
-                    {
+                    let actual = if f.cadena.is_empty() {
+                        "0".to_owned()
+                    } else {
+                        ppto_core::descuentos::texto_cadena(&f.cadena).replace('.', ",")
+                    };
+                    let edicion = &mut self.edicion;
+                    let r = ui
+                        .horizontal(|ui| {
+                            let r = edicion.texto(ui, &format!("dto|{}", f.nombre), &actual, 80.0);
+                            if f.cadena.len() > 1 {
+                                r_equivalente(ui, f.descuento);
+                            }
+                            r
+                        })
+                        .inner;
+                    if let Some(v) = r.and_then(|t| ppto_core::descuentos::leer_cadena(&t).ok()) {
                         acciones.push(Accion::Descuento(f.nombre.clone(), v));
                     }
                     ui.label(f.recursos.to_string());
@@ -220,9 +232,10 @@ impl Aplicacion {
             ui.add(
                 egui::TextEdit::singleline(&mut self.dificultad.nuevo_dto)
                     .desired_width(50.0)
-                    .hint_text("%"),
-            );
-            let v = leer(&self.dificultad.nuevo_dto);
+                    .hint_text("40+8"),
+            )
+            .on_hover_text("Descuento simple (45) o encadenado, hasta tres (40+8, 50+10+5)");
+            let v = ppto_core::descuentos::leer_cadena(&self.dificultad.nuevo_dto).ok();
             if ui
                 .add_enabled(
                     v.is_some() && !self.dificultad.nuevo_fab.trim().is_empty(),
@@ -245,4 +258,10 @@ impl Aplicacion {
             .weak(),
         );
     }
+}
+
+/// Equivalente de un descuento encadenado, junto a la celda.
+fn r_equivalente(ui: &mut Ui, d: Decimal) {
+    ui.label(RichText::new(format!("= {} %", num(d, d.scale()))).weak().small())
+        .on_hover_text("Descuento único equivalente con el que se calcula el neto");
 }

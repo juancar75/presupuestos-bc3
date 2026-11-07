@@ -857,6 +857,7 @@ impl Lector {
             costes_indirectos: self.porcentajes.costes_indirectos.unwrap_or_default(),
             opciones_ci: OpcionesCi::default(),
             descuentos: Default::default(),
+            descuentos_encadenados: Default::default(),
             seguimiento: Default::default(),
         };
 
