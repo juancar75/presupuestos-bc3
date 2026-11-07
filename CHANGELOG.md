@@ -14,6 +14,11 @@ versionado [semántico](https://semver.org/lang/es/).
 - **Bases de precios por especialidad**: cada base se marca como general o de
   una especialidad; en una obra de esa especialidad solo se ofrecen sus bases
   y las generales (se puede ver todas) y se abre la suya de entrada.
+- **Datos del edificio** (Obra → Datos del edificio…, y paso 3 de «Nuevo…»):
+  bloques, viviendas, plantas, plazas y superficie de garaje, sectores,
+  rampas, escaleras, vestíbulos, trasteros, cuartos… con los campos que pide
+  cada especialidad. Se guardan con la obra; son la base de las reglas de
+  medición.
 
 ### Añadido
 - **Descuentos encadenados** de fabricante, hasta tres escalones («40+8»,
