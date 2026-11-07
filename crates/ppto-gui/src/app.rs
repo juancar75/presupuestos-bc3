@@ -17,6 +17,7 @@ mod informes;
 mod legalizacion;
 mod menus;
 mod modelo;
+mod nuevo;
 mod obra;
 mod ofertas;
 mod partida;
@@ -282,6 +283,10 @@ pub struct Aplicacion {
     ventana_tarifas: Option<tarifas::VentanaTarifas>,
     ventana_biblioteca: Option<biblioteca::VentanaBiblioteca>,
     ventana_bases: Option<bases::VentanaBases>,
+    /// Ventana «Nuevo presupuesto» (qué se presupuesta y de dónde se parte).
+    asistente_nuevo: Option<nuevo::AsistenteNuevo>,
+    /// Especialidad de la obra (orienta plantillas y bases de precios).
+    especialidad: Option<ppto_core::especialidad::Especialidad>,
     /// Formulario «Origen del precio» de un recurso.
     form_origen: Option<ofertas::FormOrigen>,
     /// Dónde abre renglón F5 (lo que está bajo el ratón en este fotograma).
@@ -475,6 +480,8 @@ impl Aplicacion {
             ventana_tarifas: None,
             ventana_biblioteca: None,
             ventana_bases: None,
+            asistente_nuevo: None,
+            especialidad: None,
             form_origen: None,
             ventana_informes: None,
             ventana_obra: None,
@@ -713,7 +720,7 @@ impl Aplicacion {
             self.pestana = p;
         }
         if nuevo {
-            self.nuevo_presupuesto();
+            self.pedir_nuevo();
         }
         if abrir {
             self.dialogo_abrir();
@@ -800,6 +807,7 @@ impl Aplicacion {
         self.ventana_tarifas(&ctx);
         self.ventana_biblioteca(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
+        self.ventana_nuevo(&ctx);
         self.ventana_origen(&ctx, &mut acciones);
         self.ventana_informes(&ctx);
         self.ventana_obra(&ctx);

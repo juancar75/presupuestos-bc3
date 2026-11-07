@@ -9,9 +9,10 @@
 
 use super::{Accion, Aplicacion, nombre_naturaleza};
 use eframe::egui::{self, RichText};
+use ppto_core::especialidad::Especialidad;
 use ppto_core::formato::eur;
 use ppto_core::{Decimal, Naturaleza, Presupuesto};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -45,6 +46,13 @@ pub(super) struct VentanaBases {
     pub filtro: Option<Naturaleza>,
     pub marcados: BTreeSet<String>,
     mensaje: Option<(String, bool)>,
+    /// Especialidad de cada base (nombre del fichero → clave); las que no
+    /// están son generales. Se guarda en `especialidades.json` de la carpeta.
+    pub especialidades: BTreeMap<String, String>,
+    /// Especialidad de la obra abierta.
+    pub obra: Option<Especialidad>,
+    /// Mostrar solo las bases de la especialidad de la obra (y las generales).
+    pub solo_especialidad: bool,
 }
 
 /// Minúsculas y sin tildes, para buscar sin distinguir.
@@ -91,11 +99,23 @@ fn nombre_de(r: &Path) -> String {
 }
 
 impl VentanaBases {
-    pub fn abrir() -> Self {
-        Self::en(super::pdf::carpeta_config().map(|c| c.join("bases")))
+    pub fn abrir(obra: Option<Especialidad>) -> Self {
+        Self::en_para(super::pdf::carpeta_config().map(|c| c.join("bases")), obra)
     }
 
+    #[cfg(test)]
     pub fn en(carpeta: Option<PathBuf>) -> Self {
+        Self::en_para(carpeta, None)
+    }
+
+    /// Abre la carpeta de bases para una obra de una especialidad: elige la
+    /// primera base de esa especialidad (o, si no hay, la primera general).
+    pub fn en_para(carpeta: Option<PathBuf>, obra: Option<Especialidad>) -> Self {
+        let especialidades = carpeta
+            .as_ref()
+            .and_then(|c| std::fs::read_to_string(c.join("especialidades.json")).ok())
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
         let mut v = Self {
             carpeta,
             ficheros: Vec::new(),
@@ -105,12 +125,62 @@ impl VentanaBases {
             filtro: None,
             marcados: BTreeSet::new(),
             mensaje: None,
+            especialidades,
+            obra,
+            solo_especialidad: obra.is_some(),
         };
         v.releer_carpeta();
-        if let Some(f) = v.ficheros.first().cloned() {
+        let primera = v
+            .ficheros_visibles()
+            .into_iter()
+            .min_by_key(|f| v.especialidad_de(f).is_none())
+            .cloned();
+        if let Some(f) = primera {
             v.elegir(f);
         }
         v
+    }
+
+    /// Especialidad de una base (`None` = general).
+    pub fn especialidad_de(&self, f: &Path) -> Option<Especialidad> {
+        self.especialidades
+            .get(&nombre_de(f))
+            .and_then(|k| Especialidad::leer(k))
+    }
+
+    /// Bases que se ofrecen: todas, o solo las de la especialidad de la
+    /// obra y las generales.
+    pub fn ficheros_visibles(&self) -> Vec<&PathBuf> {
+        self.ficheros
+            .iter()
+            .filter(|f| match (self.solo_especialidad, self.obra) {
+                (true, Some(e)) => self.especialidad_de(f).is_none_or(|x| x == e),
+                _ => true,
+            })
+            .collect()
+    }
+
+    /// Asigna una especialidad a una base (`None` = general) y lo guarda.
+    pub fn fijar_especialidad(&mut self, f: &Path, e: Option<Especialidad>) {
+        let n = nombre_de(f);
+        match e {
+            Some(e) => self.especialidades.insert(n, e.clave().into()),
+            None => self.especialidades.remove(&n),
+        };
+        self.guardar_especialidades();
+    }
+
+    fn guardar_especialidades(&mut self) {
+        let Some(c) = &self.carpeta else { return };
+        let r = std::fs::create_dir_all(c).and_then(|()| {
+            std::fs::write(
+                c.join("especialidades.json"),
+                serde_json::to_string_pretty(&self.especialidades).unwrap_or_default(),
+            )
+        });
+        if let Err(e) = r {
+            self.mensaje = Some((format!("No se pudo guardar la especialidad de la base: {e}"), true));
+        }
     }
 
     fn releer_carpeta(&mut self) {
@@ -169,6 +239,9 @@ impl VentanaBases {
     fn quitar(&mut self) {
         if let Some(r) = self.elegido.take() {
             let _ = std::fs::remove_file(&r);
+            if self.especialidades.remove(&nombre_de(&r)).is_some() {
+                self.guardar_especialidades();
+            }
             self.base = None;
             self.marcados.clear();
             self.releer_carpeta();
@@ -193,6 +266,10 @@ impl Aplicacion {
         let Some(mut v) = self.ventana_bases.take() else {
             return;
         };
+        if v.obra != self.especialidad {
+            v.obra = self.especialidad;
+            v.solo_especialidad = v.obra.is_some();
+        }
         // Partida elegida en el árbol (para «añadir a la partida»)
         let partida = self.sel.as_ref().map(|(_, h)| h.clone()).filter(|h| {
             self.p
@@ -207,18 +284,26 @@ impl Aplicacion {
             .default_height(620.0)
             .resizable(true)
             .show(ctx, |ui| {
+                if let Some(e) = v.obra {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(format!("Obra de {}", e.nombre())).strong());
+                        ui.checkbox(&mut v.solo_especialidad, "solo sus bases y las generales");
+                    });
+                }
                 ui.horizontal(|ui| {
                     ui.label("Base:");
                     let actual = v.elegido.as_deref().map(nombre_de).unwrap_or_else(|| "(ninguna)".into());
                     let mut cambiar = None;
+                    let visibles: Vec<PathBuf> = v.ficheros_visibles().into_iter().cloned().collect();
                     egui::ComboBox::from_id_salt("base_elegida")
                         .selected_text(actual)
                         .show_ui(ui, |ui| {
-                            for f in &v.ficheros {
-                                if ui
-                                    .selectable_label(v.elegido.as_ref() == Some(f), nombre_de(f))
-                                    .clicked()
-                                {
+                            for f in &visibles {
+                                let etiqueta = match v.especialidad_de(f) {
+                                    Some(e) => format!("{} · {}", nombre_de(f), e.nombre()),
+                                    None => nombre_de(f),
+                                };
+                                if ui.selectable_label(v.elegido.as_ref() == Some(f), etiqueta).clicked() {
                                     cambiar = Some(f.clone());
                                 }
                             }
@@ -238,6 +323,30 @@ impl Aplicacion {
                         v.quitar();
                     }
                 });
+                if let Some(f) = v.elegido.clone() {
+                    ui.horizontal(|ui| {
+                        ui.label("Especialidad de esta base:");
+                        let actual = v.especialidad_de(&f);
+                        let mut nueva = None;
+                        egui::ComboBox::from_id_salt("especialidad_base")
+                            .selected_text(actual.map_or("General (todas)", |e| e.nombre()))
+                            .show_ui(ui, |ui| {
+                                if ui.selectable_label(actual.is_none(), "General (todas)").clicked() {
+                                    nueva = Some(None);
+                                }
+                                for e in Especialidad::TODAS {
+                                    if ui.selectable_label(actual == Some(e), e.nombre()).clicked() {
+                                        nueva = Some(Some(e));
+                                    }
+                                }
+                            })
+                            .response
+                            .on_hover_text("Con qué obras se ofrece esta base; las generales salen en todas");
+                        if let Some(n) = nueva {
+                            v.fijar_especialidad(&f, n);
+                        }
+                    });
+                }
                 if let Some((m, error)) = &v.mensaje {
                     let t = RichText::new(m).small();
                     ui.label(if *error { t.color(egui::Color32::from_rgb(220, 90, 80)) } else { t.weak() });

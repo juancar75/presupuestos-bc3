@@ -2044,3 +2044,95 @@ fn descuento_comercial_y_contratar() {
     assert!(app.p.conceptos.values().all(|c| c.venta_fija.is_none()));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Pinta las ventanas «Nuevo presupuesto» y «Bases de precios».
+fn pintar_ventanas(app: &mut Aplicacion) {
+    let ctx = Context::default();
+    for _ in 0..2 {
+        let mut acc = Vec::new();
+        let mut out = ctx.run_ui(RawInput::default(), |ui| {
+            let c = ui.ctx().clone();
+            app.ventana_nuevo(&c);
+            app.ventana_bases(&c, &mut acc);
+        });
+        out.textures_delta.clear();
+    }
+}
+
+/// «Nuevo…» pregunta qué se presupuesta: elegir la especialidad y «desde
+/// cero» crea la obra con su plantilla y la deja orientada a esa especialidad,
+/// que se guarda con la obra y se recupera al abrirla.
+#[test]
+fn nuevo_por_especialidad() {
+    use ppto_core::especialidad::Especialidad;
+    let mut app = Aplicacion::sin_ventana();
+    app.pedir_nuevo();
+    pintar_ventanas(&mut app); // primer paso: lista de especialidades
+    assert!(app.asistente_nuevo.is_some());
+    app.asistente_nuevo = Some(nuevo::AsistenteNuevo {
+        especialidad: Some(Especialidad::VentilacionGaraje),
+    });
+    pintar_ventanas(&mut app); // segundo paso: ¿de dónde partes?
+    assert!(app.asistente_nuevo.is_some(), "sigue abierta hasta elegir");
+    app.empezar(nuevo::Inicio::Plantilla(Especialidad::VentilacionGaraje));
+    assert_eq!(app.especialidad, Some(Especialidad::VentilacionGaraje));
+    assert!(
+        app.p.conceptos.contains_key("P01.01"),
+        "ventilador F400 de la plantilla"
+    );
+    let d = app.datos_obra();
+    assert_eq!(d.get("especialidad").map(String::as_str), Some("ventilacion_garaje"));
+    // Sin plantilla: obra vacía, pero con su especialidad
+    app.empezar(nuevo::Inicio::Plantilla(Especialidad::Fontaneria));
+    assert_eq!(app.especialidad, Some(Especialidad::Fontaneria));
+    // En blanco: sin especialidad
+    app.empezar(nuevo::Inicio::EnBlanco);
+    assert_eq!(app.especialidad, None);
+    // Se recupera de los datos de la obra
+    app.aplicar_datos_obra(&d);
+    assert_eq!(app.especialidad, Some(Especialidad::VentilacionGaraje));
+    // Abrir un BC3 o un ciego empieza sin especialidad hasta que se elija
+    app.cargar_presupuesto(ppto_core::ejemplos::suelo_radiante());
+    assert_eq!(app.especialidad, None);
+}
+
+/// Las bases de precios se asignan a una especialidad; en una obra de esa
+/// especialidad solo se ofrecen las suyas y las generales.
+#[test]
+fn bases_por_especialidad() {
+    use ppto_core::especialidad::Especialidad;
+    let dir = std::env::temp_dir().join(format!("ppto-bases-esp-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let carpeta = dir.join("bases");
+    std::fs::create_dir_all(&carpeta).unwrap();
+    let bc3 = "~V|SOFT|FIEBDC-3/2002|BASE|\r\n~C|BASE##||Base|0|010126|0|\r\n~C|MO1|h|Oficial|30|010126|1|\r\n~D|BASE##|MO1\\1\\1\\|\r\n";
+    for n in ["general.bc3", "garaje.bc3", "pci.bc3"] {
+        std::fs::write(carpeta.join(n), bc3).unwrap();
+    }
+    let mut v = bases::VentanaBases::en(Some(carpeta.clone()));
+    assert_eq!(v.ficheros_visibles().len(), 3);
+    v.fijar_especialidad(&carpeta.join("garaje.bc3"), Some(Especialidad::VentilacionGaraje));
+    v.fijar_especialidad(&carpeta.join("pci.bc3"), Some(Especialidad::Pci));
+    // Obra de garaje: su base (elegida de entrada) y la general, no la de PCI
+    let v = bases::VentanaBases::en_para(Some(carpeta.clone()), Some(Especialidad::VentilacionGaraje));
+    let nombres: Vec<String> = v
+        .ficheros_visibles()
+        .iter()
+        .map(|f| f.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(nombres, ["garaje.bc3", "general.bc3"]);
+    assert_eq!(v.elegido.as_deref(), Some(carpeta.join("garaje.bc3").as_path()));
+    // Sin especialidad, todas
+    let mut v = bases::VentanaBases::en_para(Some(carpeta.clone()), None);
+    assert_eq!(v.ficheros_visibles().len(), 3);
+    // La ventana se dibuja con la obra de PCI
+    v.obra = Some(Especialidad::Pci);
+    v.solo_especialidad = true;
+    assert_eq!(v.ficheros_visibles().len(), 2);
+    let mut app = Aplicacion::sin_ventana();
+    app.especialidad = Some(Especialidad::Pci);
+    app.ventana_bases = Some(v);
+    pintar_ventanas(&mut app);
+    assert!(app.ventana_bases.is_some());
+    let _ = std::fs::remove_dir_all(&dir);
+}
