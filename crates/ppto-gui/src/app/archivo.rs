@@ -41,6 +41,7 @@ impl Aplicacion {
             Ok(p) => {
                 self.nuevo_presupuesto();
                 self.p = p;
+                self.especialidad = Some(ppto_core::especialidad::Especialidad::de_plantilla(t));
                 self.recalcular();
                 self.info(format!(
                     "Plantilla «{}» cargada: capítulos, observaciones, exclusiones y legalización. Las partidas están sin precio.",
@@ -53,6 +54,7 @@ impl Aplicacion {
 
     pub(super) fn nuevo_presupuesto(&mut self) {
         self.ciego = None;
+        self.especialidad = None;
         self.historial.limpiar();
         self.p = Presupuesto::new("Presupuesto nuevo", "OBRA", "Presupuesto nuevo");
         self.fichero = None;
@@ -187,6 +189,7 @@ impl Aplicacion {
 
     pub(super) fn importar_bc3(&mut self, ruta: PathBuf) {
         self.ciego = None;
+        self.especialidad = None;
         self.historial.limpiar();
         match ppto_bc3::importar_fichero(&ruta) {
             Ok(imp) => {
@@ -300,6 +303,9 @@ impl Aplicacion {
         if let Some(c) = &self.ciego {
             d.insert("ciego".into(), c.ruta.display().to_string());
         }
+        if let Some(e) = self.especialidad {
+            d.insert("especialidad".into(), e.clave().into());
+        }
         d
     }
 
@@ -317,6 +323,9 @@ impl Aplicacion {
             self.iva = v;
         }
         self.retencion = dec("retencion").unwrap_or_default();
+        self.especialidad = d
+            .get("especialidad")
+            .and_then(|e| ppto_core::especialidad::Especialidad::leer(e));
         self.ciego = None;
         if let Some(r) = d.get("ciego").map(PathBuf::from) {
             match ppto_ciego::leer(&r) {

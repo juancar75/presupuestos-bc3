@@ -6,6 +6,16 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **«Nuevo…» pregunta qué vas a presupuestar**: ventilación de garaje y zonas
+  comunes, PCI, climatización, ventilación de viviendas, fontanería o
+  electricidad, y de dónde partes (ciego del cliente en Excel, BC3 o desde
+  cero con la plantilla de la especialidad). «Presupuesto en blanco» sigue
+  como antes. La especialidad se guarda con la obra.
+- **Bases de precios por especialidad**: cada base se marca como general o de
+  una especialidad; en una obra de esa especialidad solo se ofrecen sus bases
+  y las generales (se puede ver todas) y se abre la suya de entrada.
+
+### Añadido
 - **Descuentos encadenados** de fabricante, hasta tres escalones («40+8»,
   «50+10+5»), en la tabla de descuentos de la obra (Recursos), al añadir un
   descuento, en la biblioteca y en `fijar_descuento_biblioteca` del MCP. El

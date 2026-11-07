@@ -27,6 +27,7 @@ pub mod dificultad;
 pub mod edicion;
 pub mod ejemplos;
 pub mod error;
+pub mod especialidad;
 pub mod explosion;
 pub mod formato;
 pub mod fragmento;

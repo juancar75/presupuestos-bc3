@@ -251,12 +251,12 @@ impl Aplicacion {
 
     pub(super) fn menu_archivo(&mut self, ui: &mut Ui) {
         let boton = |ui: &mut Ui, texto: &str, atajo: &str| ui.add(egui::Button::new(texto).shortcut_text(atajo));
-        if boton(ui, "Nuevo", "Ctrl+N")
-            .on_hover_text("Presupuesto vacío")
+        if boton(ui, "Nuevo…", "Ctrl+N")
+            .on_hover_text("Pregunta qué vas a presupuestar y de dónde partes")
             .clicked()
         {
             ui.close();
-            self.nuevo_presupuesto();
+            self.pedir_nuevo();
         }
         ui.menu_button("Nuevo desde plantilla", |ui| {
             for t in ppto_core::plantillas::Plantilla::TODAS {
@@ -542,7 +542,7 @@ impl Aplicacion {
             .clicked()
         {
             ui.close();
-            self.ventana_bases = Some(bases::VentanaBases::abrir());
+            self.ventana_bases = Some(bases::VentanaBases::abrir(self.especialidad));
         }
         if ui
             .button("Legalización…")

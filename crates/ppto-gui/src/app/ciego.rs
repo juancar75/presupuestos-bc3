@@ -52,6 +52,7 @@ impl Aplicacion {
     /// Pone en pantalla un presupuesto nuevo (sin fichero ni revisiones).
     pub(super) fn cargar_presupuesto(&mut self, p: Presupuesto) {
         self.p = p;
+        self.especialidad = None;
         self.historial.limpiar();
         self.fichero = None;
         self.presupuesto_id = None;
