@@ -53,6 +53,7 @@ impl Aplicacion {
     pub(super) fn cargar_presupuesto(&mut self, p: Presupuesto) {
         self.p = p;
         self.especialidad = None;
+        self.ficha.clear();
         self.historial.limpiar();
         self.fichero = None;
         self.presupuesto_id = None;

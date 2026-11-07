@@ -55,6 +55,7 @@ impl Aplicacion {
     pub(super) fn nuevo_presupuesto(&mut self) {
         self.ciego = None;
         self.especialidad = None;
+        self.ficha.clear();
         self.historial.limpiar();
         self.p = Presupuesto::new("Presupuesto nuevo", "OBRA", "Presupuesto nuevo");
         self.fichero = None;
@@ -190,6 +191,7 @@ impl Aplicacion {
     pub(super) fn importar_bc3(&mut self, ruta: PathBuf) {
         self.ciego = None;
         self.especialidad = None;
+        self.ficha.clear();
         self.historial.limpiar();
         match ppto_bc3::importar_fichero(&ruta) {
             Ok(imp) => {
@@ -306,6 +308,7 @@ impl Aplicacion {
         if let Some(e) = self.especialidad {
             d.insert("especialidad".into(), e.clave().into());
         }
+        ppto_core::ficha::a_datos(&self.ficha, &mut d);
         d
     }
 
@@ -326,6 +329,7 @@ impl Aplicacion {
         self.especialidad = d
             .get("especialidad")
             .and_then(|e| ppto_core::especialidad::Especialidad::leer(e));
+        self.ficha = ppto_core::ficha::de_datos(d);
         self.ciego = None;
         if let Some(r) = d.get("ciego").map(PathBuf::from) {
             match ppto_ciego::leer(&r) {

@@ -2136,3 +2136,31 @@ fn bases_por_especialidad() {
     assert!(app.ventana_bases.is_some());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// La ficha de datos del edificio se abre al crear una obra con
+/// especialidad, pide los campos de esa especialidad y se guarda con la obra.
+#[test]
+fn ficha_del_edificio() {
+    use ppto_core::especialidad::Especialidad;
+    let mut app = Aplicacion::sin_ventana();
+    app.empezar(nuevo::Inicio::Plantilla(Especialidad::VentilacionGaraje));
+    assert!(app.ver_ficha, "paso 3: datos del edificio");
+    let ctx = Context::default();
+    for _ in 0..2 {
+        let mut out = ctx.run_ui(RawInput::default(), |ui| {
+            let c = ui.ctx().clone();
+            app.ventana_ficha(&c);
+        });
+        out.textures_delta.clear();
+    }
+    assert!(app.ver_ficha);
+    app.ficha.insert("garaje_plazas".into(), dec!(60));
+    app.ficha.insert("garaje_superficie_planta".into(), dec!(1200));
+    let d = app.datos_obra();
+    assert_eq!(d.get("ficha.garaje_plazas").map(String::as_str), Some("60"));
+    app.empezar(nuevo::Inicio::EnBlanco);
+    assert!(app.ficha.is_empty() && !app.ver_ficha, "en blanco: sin ficha");
+    app.aplicar_datos_obra(&d);
+    assert_eq!(app.ficha.get("garaje_superficie_planta"), Some(&dec!(1200)));
+    assert_eq!(app.especialidad, Some(Especialidad::VentilacionGaraje));
+}

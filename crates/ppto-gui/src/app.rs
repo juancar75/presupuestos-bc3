@@ -13,6 +13,7 @@ mod biblioteca;
 mod ciego;
 mod comparar;
 mod dificultad;
+mod ficha;
 mod informes;
 mod legalizacion;
 mod menus;
@@ -287,6 +288,10 @@ pub struct Aplicacion {
     asistente_nuevo: Option<nuevo::AsistenteNuevo>,
     /// Especialidad de la obra (orienta plantillas y bases de precios).
     especialidad: Option<ppto_core::especialidad::Especialidad>,
+    /// Ficha de datos del edificio (por clave de campo).
+    ficha: ppto_core::ficha::Ficha,
+    /// Ventana «Datos del edificio» abierta.
+    ver_ficha: bool,
     /// Formulario «Origen del precio» de un recurso.
     form_origen: Option<ofertas::FormOrigen>,
     /// Dónde abre renglón F5 (lo que está bajo el ratón en este fotograma).
@@ -482,6 +487,8 @@ impl Aplicacion {
             ventana_bases: None,
             asistente_nuevo: None,
             especialidad: None,
+            ficha: Default::default(),
+            ver_ficha: false,
             form_origen: None,
             ventana_informes: None,
             ventana_obra: None,
@@ -808,6 +815,7 @@ impl Aplicacion {
         self.ventana_biblioteca(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_nuevo(&ctx);
+        self.ventana_ficha(&ctx);
         self.ventana_origen(&ctx, &mut acciones);
         self.ventana_informes(&ctx);
         self.ventana_obra(&ctx);

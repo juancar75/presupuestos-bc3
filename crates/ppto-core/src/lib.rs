@@ -29,6 +29,7 @@ pub mod ejemplos;
 pub mod error;
 pub mod especialidad;
 pub mod explosion;
+pub mod ficha;
 pub mod formato;
 pub mod fragmento;
 pub mod medicion;

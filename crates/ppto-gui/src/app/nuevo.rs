@@ -30,8 +30,14 @@ impl Aplicacion {
         self.asistente_nuevo = Some(AsistenteNuevo::default());
     }
 
-    /// Crea la obra según lo elegido y la deja con su especialidad.
+    /// Crea la obra según lo elegido y la deja con su especialidad; con
+    /// especialidad, abre la ficha de datos del edificio (paso 3).
     pub(super) fn empezar(&mut self, inicio: Inicio) {
+        self.empezar_sin_ficha(inicio);
+        self.ver_ficha = self.especialidad.is_some();
+    }
+
+    fn empezar_sin_ficha(&mut self, inicio: Inicio) {
         match inicio {
             Inicio::EnBlanco => self.nuevo_presupuesto(),
             Inicio::Plantilla(e) => {

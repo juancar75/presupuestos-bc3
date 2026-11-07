@@ -362,6 +362,15 @@ impl Aplicacion {
     }
 
     pub(super) fn menu_obra(&mut self, ui: &mut Ui) {
+        if ui
+            .button("Datos del edificio…")
+            .on_hover_text("Bloques, plantas, plazas, superficies, escaleras… (base de las reglas de medición)")
+            .clicked()
+        {
+            ui.close();
+            self.ver_ficha = true;
+        }
+        ui.separator();
         let t = if self.p.seguimiento.contrato.is_some() {
             "Contrato 🔒…"
         } else {
