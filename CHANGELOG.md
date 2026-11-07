@@ -5,6 +5,15 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Descuentos encadenados** de fabricante, hasta tres escalones («40+8»,
+  «50+10+5»), en la tabla de descuentos de la obra (Recursos), al añadir un
+  descuento, en la biblioteca y en `fijar_descuento_biblioteca` del MCP. El
+  neto se calcula con el descuento único equivalente (40+8 → 44,8 %), que se
+  muestra al lado; la cadena se guarda en la obra, en la base de datos y en
+  la biblioteca, y viaja en el BC3 con los descuentos a la vista («Descuento
+  FABA 40+8 %»), de donde se recupera al importarlo.
+
 ## [0.1.0-alpha.41] - 2026-11-02
 
 ### Añadido

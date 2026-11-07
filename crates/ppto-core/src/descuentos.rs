@@ -9,6 +9,11 @@
 //!
 //! El precio neto se guarda en `precio`, de modo que el resto del motor,
 //! los informes y el BC3 (que solo lleva netos) no cambian.
+//!
+//! El descuento puede ser **encadenado** (hasta [`MAX_ESCALONES`]): «40+8»
+//! es un 40 % y, sobre lo que queda, otro 8 %. Se guarda la cadena para
+//! mostrarla tal cual y se calcula con su equivalente único
+//! (40+8 → 44,8 %), que es lo que usa el resto del motor.
 
 use crate::concepto::{Concepto, LineaDescomposicion, Naturaleza, PrecioTarifa};
 use crate::error::ErrorMotor;
@@ -33,6 +38,51 @@ fn validar_pct(pct: Decimal) -> Result<(), ErrorMotor> {
         ));
     }
     Ok(())
+}
+
+/// Escalones como mucho de un descuento encadenado («40+8+5»).
+pub const MAX_ESCALONES: usize = 3;
+
+/// Lee un descuento simple o encadenado: «45», «40+8», «50 + 10 + 5 %»,
+/// «40%+8%», con coma o punto decimal.
+pub fn leer_cadena(texto: &str) -> Result<Vec<Decimal>, ErrorMotor> {
+    let limpio: String = texto.chars().filter(|c| !c.is_whitespace() && *c != '%').collect();
+    if limpio.is_empty() {
+        return Err(ErrorMotor::ValorInvalido("falta el descuento".into()));
+    }
+    let mut v = Vec::new();
+    for t in limpio.split('+') {
+        let d: Decimal = t
+            .replace(',', ".")
+            .parse()
+            .map_err(|_| ErrorMotor::ValorInvalido(format!("descuento no válido: «{texto}»")))?;
+        validar_pct(d)?;
+        v.push(d.normalize());
+    }
+    if v.len() > MAX_ESCALONES {
+        return Err(ErrorMotor::ValorInvalido(format!(
+            "como mucho {MAX_ESCALONES} descuentos encadenados"
+        )));
+    }
+    Ok(v)
+}
+
+/// Descuento único equivalente a una cadena: 100 − 100·Π(1 − dᵢ/100).
+/// 40+8 → 44,8; 50+10 → 55.
+pub fn equivalente(cadena: &[Decimal]) -> Decimal {
+    let queda = cadena.iter().fold(Decimal::ONE, |f, d| {
+        f * (Decimal::ONE_HUNDRED - d) / Decimal::ONE_HUNDRED
+    });
+    (Decimal::ONE_HUNDRED - queda * Decimal::ONE_HUNDRED).normalize()
+}
+
+/// «40+8» (o «45» si es simple).
+pub fn texto_cadena(cadena: &[Decimal]) -> String {
+    cadena
+        .iter()
+        .map(|d| d.normalize().to_string())
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 /// Clave de la tabla de descuentos: «S&P» (general del fabricante) o
@@ -60,7 +110,10 @@ pub struct Fabricante {
     pub nombre: String,
     pub fabricante: String,
     pub grupo: Option<String>,
+    /// Descuento equivalente (40+8 → 44,8).
     pub descuento: Decimal,
+    /// Escalones tal como se dieron (`[40, 8]`; uno solo si es simple).
+    pub cadena: Vec<Decimal>,
     /// Recursos a los que se aplica este descuento.
     pub recursos: usize,
 }
@@ -179,6 +232,25 @@ impl Presupuesto {
     /// Fija el descuento de un fabricante («S&P») o de un grupo de producto
     /// («S&P/E08») y recalcula. Devuelve los recursos a los que se aplica.
     pub fn fijar_descuento(&mut self, clave_dto: &str, pct: Decimal) -> Result<Vec<String>, ErrorMotor> {
+        self.fijar_descuento_encadenado(clave_dto, &[pct])
+    }
+
+    /// Como [`Self::fijar_descuento`] con un descuento encadenado
+    /// (`[40, 8]` = 40+8 %, hasta [`MAX_ESCALONES`]).
+    pub fn fijar_descuento_encadenado(
+        &mut self,
+        clave_dto: &str,
+        cadena: &[Decimal],
+    ) -> Result<Vec<String>, ErrorMotor> {
+        if cadena.is_empty() || cadena.len() > MAX_ESCALONES {
+            return Err(ErrorMotor::ValorInvalido(format!(
+                "entre 1 y {MAX_ESCALONES} descuentos encadenados"
+            )));
+        }
+        for d in cadena {
+            validar_pct(*d)?;
+        }
+        let pct = equivalente(cadena);
         validar_pct(pct)?;
         let (f, g) = partes(clave_dto);
         if f.is_empty() {
@@ -186,8 +258,37 @@ impl Presupuesto {
         }
         let k = clave(&f, g.as_deref());
         self.descuentos.insert(k.clone(), pct);
+        if cadena.len() > 1 {
+            self.descuentos_encadenados
+                .insert(k.clone(), cadena.iter().map(|d| d.normalize()).collect());
+        } else {
+            self.descuentos_encadenados.remove(&k);
+        }
         self.recalcular_tarifas();
         Ok(self.aplicados(&k))
+    }
+
+    /// Fija el descuento a partir de un texto («45», «40+8», «50+10+5»).
+    pub fn fijar_descuento_texto(&mut self, clave_dto: &str, texto: &str) -> Result<Vec<String>, ErrorMotor> {
+        let c = leer_cadena(texto)?;
+        self.fijar_descuento_encadenado(clave_dto, &c)
+    }
+
+    /// Escalones del descuento de una clave (uno solo si es simple; vacío si
+    /// no tiene).
+    pub fn cadena_descuento(&self, clave_dto: &str) -> Vec<Decimal> {
+        let (f, g) = partes(clave_dto);
+        let k = clave(&f, g.as_deref());
+        match (self.descuentos_encadenados.get(&k), self.descuentos.get(&k)) {
+            (Some(c), Some(d)) if equivalente(c) == d.normalize() => c.clone(),
+            (_, Some(d)) => vec![d.normalize()],
+            _ => Vec::new(),
+        }
+    }
+
+    /// «40+8» o «45» (vacío si no tiene).
+    pub fn texto_descuento(&self, clave_dto: &str) -> String {
+        texto_cadena(&self.cadena_descuento(clave_dto))
     }
 
     /// Quita un descuento (los recursos de un grupo vuelven al general del
@@ -195,6 +296,7 @@ impl Presupuesto {
     pub fn quitar_descuento(&mut self, clave_dto: &str) -> Vec<String> {
         let (f, g) = partes(clave_dto);
         self.descuentos.remove(&clave(&f, g.as_deref()));
+        self.descuentos_encadenados.remove(&clave(&f, g.as_deref()));
         let antes: Vec<String> = self
             .conceptos
             .values()
@@ -214,6 +316,11 @@ impl Presupuesto {
                 fabricante: f,
                 grupo: g,
                 descuento: d,
+                cadena: if d.is_zero() {
+                    Vec::new()
+                } else {
+                    self.cadena_descuento(k)
+                },
                 recursos: 0,
             }
         };
@@ -301,14 +408,14 @@ impl Presupuesto {
             return (p, avisos);
         }
         // Recursos a PVP y una línea de descuento por recurso.
-        for (codigo, (d, clave)) in &candidatos {
+        for (codigo, (_, clave)) in &candidatos {
             if let Some(c) = p.conceptos.get_mut(codigo)
                 && let Some(t) = &c.tarifa
             {
                 c.precio = t.pvp;
             }
             let pc = format!("{codigo}%");
-            let resumen = format!("Descuento {clave} {} %", d.normalize());
+            let resumen = format!("Descuento {clave} {} %", self.texto_descuento(clave));
             p.conceptos.insert(pc.clone(), Concepto::porcentaje(pc, resumen));
         }
         for c in p.conceptos.values_mut() {
@@ -427,8 +534,8 @@ impl Presupuesto {
     /// Devuelve los fabricantes recuperados y los avisos.
     pub fn recuperar_descuentos_visibles(&mut self) -> Vec<String> {
         let mut avisos = Vec::new();
-        // (recurso, línea %, clave, descuento)
-        let mut hallados: Vec<(String, String, String, Decimal)> = Vec::new();
+        // (recurso, línea %, clave, descuento equivalente, escalones)
+        let mut hallados: Vec<(String, String, String, Decimal, Vec<Decimal>)> = Vec::new();
         for c in self.conceptos.values() {
             if c.naturaleza != Naturaleza::Porcentaje {
                 continue;
@@ -439,9 +546,10 @@ impl Presupuesto {
             if recurso.is_empty() || recurso.contains(['%', '&']) {
                 continue;
             }
-            let Some((clave, d)) = leer_resumen_descuento(&c.resumen) else {
+            let Some((clave, cadena)) = leer_resumen_descuento(&c.resumen) else {
                 continue;
             };
+            let d = equivalente(&cadena);
             if !self.conceptos.get(recurso).is_some_and(|r| r.naturaleza.es_basico()) {
                 continue;
             }
@@ -459,27 +567,32 @@ impl Presupuesto {
                 ));
                 continue;
             }
-            hallados.push((recurso.to_owned(), c.codigo.clone(), clave, d));
+            hallados.push((recurso.to_owned(), c.codigo.clone(), clave, d, cadena));
         }
         // Un descuento por clave
-        let mut por_clave: BTreeMap<String, Decimal> = BTreeMap::new();
-        hallados.retain(|(r, _, k, d)| match por_clave.get(k) {
-            Some(x) if x != d => {
+        let mut por_clave: BTreeMap<String, (Decimal, Vec<Decimal>)> = BTreeMap::new();
+        hallados.retain(|(r, _, k, d, cadena)| match por_clave.get(k) {
+            Some((x, _)) if x != d => {
                 avisos.push(format!(
                     "«{r}»: {k} con {d} % y {x} % en el mismo BC3; se deja como está"
                 ));
                 false
             }
             _ => {
-                por_clave.insert(k.clone(), *d);
+                por_clave.insert(k.clone(), (*d, cadena.clone()));
                 true
             }
         });
-        for (k, d) in &por_clave {
-            self.descuentos.entry(k.clone()).or_insert(*d);
+        for (k, (d, cadena)) in &por_clave {
+            if !self.descuentos.contains_key(k) {
+                self.descuentos.insert(k.clone(), *d);
+                if cadena.len() > 1 {
+                    self.descuentos_encadenados.insert(k.clone(), cadena.clone());
+                }
+            }
         }
         let mut n = 0;
-        for (recurso, linea, clave, _) in &hallados {
+        for (recurso, linea, clave, _, _) in &hallados {
             let pvp = self.conceptos[recurso].precio;
             let (f, g) = partes(clave);
             if self.fijar_tarifa_grupo(recurso, &f, g.as_deref(), pvp).is_err() {
@@ -511,7 +624,7 @@ impl Presupuesto {
                     "descuentos por fabricante recuperados del BC3: {} ({n} recursos a PVP con su descuento)",
                     por_clave
                         .iter()
-                        .map(|(k, d)| format!("{k} {} %", d.normalize()))
+                        .map(|(k, (_, c))| format!("{k} {} %", texto_cadena(c)))
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
@@ -521,14 +634,16 @@ impl Presupuesto {
     }
 }
 
-/// «Descuento ITALSAN 50 %» → («ITALSAN», 50).
-fn leer_resumen_descuento(resumen: &str) -> Option<(String, Decimal)> {
+/// «Descuento ITALSAN 50 %» → («ITALSAN», [50]); «Descuento FABA 40+8 %»
+/// → («FABA», [40, 8]).
+fn leer_resumen_descuento(resumen: &str) -> Option<(String, Vec<Decimal>)> {
     let r = resumen.trim().strip_prefix("Descuento ")?.strip_suffix('%')?.trim_end();
     let (clave, num) = r.rsplit_once(' ')?;
-    let d: Decimal = num.replace(',', ".").parse().ok()?;
+    let cadena = leer_cadena(num).ok()?;
+    let d = equivalente(&cadena);
     let clave = clave.trim();
     (!clave.is_empty() && d > Decimal::ZERO && d < Decimal::ONE_HUNDRED).then(|| {
         let (f, g) = partes(clave);
-        (self::clave(&f, g.as_deref()), d)
+        (self::clave(&f, g.as_deref()), cadena)
     })
 }

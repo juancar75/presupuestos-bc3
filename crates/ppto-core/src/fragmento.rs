@@ -42,6 +42,9 @@ pub struct Fragmento {
     /// Mediciones internas de los capítulos copiados: (padre, hijo, medición).
     pub mediciones: Vec<(String, String, Medicion)>,
     pub descuentos: BTreeMap<String, Decimal>,
+    /// Escalones de los descuentos encadenados copiados.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub descuentos_encadenados: BTreeMap<String, Vec<Decimal>>,
 }
 
 /// Resultado de pegar.
@@ -109,11 +112,15 @@ pub fn copiar(p: &Presupuesto, padre: &str, hijos: &[String]) -> Result<Fragment
         conceptos.push(con.clone());
     }
     let mut descuentos = BTreeMap::new();
+    let mut descuentos_encadenados = BTreeMap::new();
     for c in &conceptos {
         if let Some(t) = &c.tarifa {
             let k = p.clave_aplicada(t);
             if let Some(d) = p.descuentos.get(&k) {
-                descuentos.insert(k, *d);
+                descuentos.insert(k.clone(), *d);
+            }
+            if let Some(c) = p.descuentos_encadenados.get(&k) {
+                descuentos_encadenados.insert(k, c.clone());
             }
         }
     }
@@ -123,6 +130,7 @@ pub fn copiar(p: &Presupuesto, padre: &str, hijos: &[String]) -> Result<Fragment
         lineas,
         mediciones,
         descuentos,
+        descuentos_encadenados,
     })
 }
 
@@ -185,7 +193,12 @@ fn pegar_sin_deshacer(p: &mut Presupuesto, f: &Fragmento, destino: &str) -> Resu
         p.mediciones.entry((n(padre), n(hijo))).or_insert_with(|| m.clone());
     }
     for (k, d) in &f.descuentos {
-        p.descuentos.entry(k.clone()).or_insert(*d);
+        if !p.descuentos.contains_key(k) {
+            p.descuentos.insert(k.clone(), *d);
+            if let Some(c) = f.descuentos_encadenados.get(k) {
+                p.descuentos_encadenados.insert(k.clone(), c.clone());
+            }
+        }
     }
     // 3. Líneas en el capítulo de destino
     for l in &f.lineas {

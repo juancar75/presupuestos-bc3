@@ -890,7 +890,7 @@ fn descuentos_por_fabricante_desde_recursos() {
     let mut app = Aplicacion::sin_ventana();
     app.p.fijar_tarifa("MT.PANEL", "acme", dec!(20)).unwrap();
     app.recalcular();
-    app.aplicar(vec![Accion::Descuento("Acme".into(), dec!(50))]);
+    app.aplicar(vec![Accion::Descuento("Acme".into(), vec![dec!(50)])]);
     assert_eq!(app.p.concepto("MT.PANEL").unwrap().precio, dec!(10));
     app.aplicar(vec![Accion::Pvp("MT.PANEL".into(), dec!(30))]);
     assert_eq!(app.p.concepto("MT.PANEL").unwrap().precio, dec!(15));

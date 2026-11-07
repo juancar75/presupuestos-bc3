@@ -117,11 +117,11 @@ impl Aplicacion {
                 },
                 Accion::Margen(c, m) => self.p.fijar_margen(&c, m),
                 Accion::VentaFija(c, v) => self.p.fijar_venta(&c, v),
-                Accion::Descuento(fab, pct) => self.p.fijar_descuento(&fab, pct).map(|v| {
+                Accion::Descuento(fab, cadena) => self.p.fijar_descuento_encadenado(&fab, &cadena).map(|v| {
                     self.info(format!(
                         "Descuento {} {} %: {} recursos recalculados.",
                         ppto_core::descuentos::normalizar(&fab),
-                        num(pct, 2),
+                        ppto_core::descuentos::texto_cadena(&cadena).replace('.', ","),
                         v.len()
                     ));
                 }),

@@ -519,10 +519,24 @@ fn biblioteca_aprende_de_una_obra_y_de_tarifas_y_ofertas() {
         json!({ "fabricante": "LG", "porcentaje": 50 }),
     );
     assert!(!err, "{t}");
+    // Descuento encadenado (hasta tres escalones)
+    let (t, err) = llamar(
+        &mut e,
+        "fijar_descuento_biblioteca",
+        json!({ "fabricante": "Fabb", "porcentaje": "50+10+5" }),
+    );
+    assert!(!err, "{t}");
+    let (t, err) = llamar(
+        &mut e,
+        "fijar_descuento_biblioteca",
+        json!({ "fabricante": "Fabb", "porcentaje": "40+8+5+2" }),
+    );
+    assert!(err && t.contains("como mucho 3"), "{t}");
     let (t, _) = llamar(&mut e, "estado_biblioteca", json!({}));
     assert!(
         t.contains("2 partidas") && t.contains("| ACME | 2027 |") && t.contains("| LG |"),
         "{t}"
     );
+    assert!(t.contains("| FABB |") && t.contains("50+10+5 %"), "{t}");
     let _ = std::fs::remove_dir_all(&dir);
 }

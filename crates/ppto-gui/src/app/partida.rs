@@ -207,15 +207,16 @@ impl Aplicacion {
                                 // Material de tarifa: PVP y descuento a la vista (en el BC3
                                 // sale a PVP con su línea «Descuento …»).
                                 Some(t) => {
-                                    let d = self.p.descuento_tarifa(t).normalize();
+                                    let k = self.p.clave_aplicada(t);
+                                    let d = self.p.texto_descuento(&k).replace('.', ",");
                                     ui.vertical(|ui| {
                                         campo_resumen(ui, acciones);
                                         ui.label(
                                             RichText::new(format!(
                                                 "PVP {} € − {} % {}",
                                                 num(t.pvp, dec.precio),
-                                                num(d, d.scale()),
-                                                self.p.clave_aplicada(t)
+                                                if d.is_empty() { "0".into() } else { d },
+                                                k
                                             ))
                                             .small()
                                             .weak(),

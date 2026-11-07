@@ -56,6 +56,7 @@ const MIGRACIONES: &[&str] = &[
     include_str!("../migrations/0008_origen_precio.sql"),
     include_str!("../migrations/0009_datos_obra.sql"),
     include_str!("../migrations/0010_seguimiento.sql"),
+    include_str!("../migrations/0011_descuento_encadenado.sql"),
 ];
 
 pub struct Almacen {
@@ -396,12 +397,26 @@ impl Almacen {
         }
 
         let mut descuentos = BTreeMap::new();
+        let mut descuentos_encadenados = BTreeMap::new();
         let mut st = self
             .con
-            .prepare("SELECT fabricante, porcentaje FROM descuentos WHERE revision_id = ?1")?;
-        let filas = st.query_map([rev], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            .prepare("SELECT fabricante, porcentaje, cadena FROM descuentos WHERE revision_id = ?1")?;
+        let filas = st.query_map([rev], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        })?;
         for f in filas {
-            let (fab, pct) = f?;
+            let (fab, pct, cadena) = f?;
+            if let Some(c) = cadena
+                .as_deref()
+                .and_then(|c| ppto_core::descuentos::leer_cadena(c).ok())
+                && c.len() > 1
+            {
+                descuentos_encadenados.insert(fab.clone(), c);
+            }
             descuentos.insert(fab, dec_de(&pct)?);
         }
 
@@ -419,6 +434,7 @@ impl Almacen {
         Ok(Presupuesto {
             seguimiento,
             descuentos,
+            descuentos_encadenados,
             costes_indirectos: dec_de(&ci_txt)?,
             opciones_ci: OpcionesCi {
                 redondear_coste_antes,
@@ -519,9 +535,14 @@ fn escribir_contenido(tx: &Transaction, rev: i64, p: &Presupuesto) -> Resultado<
         }
     }
     {
-        let mut st = tx.prepare("INSERT INTO descuentos (revision_id, fabricante, porcentaje) VALUES (?1, ?2, ?3)")?;
+        let mut st =
+            tx.prepare("INSERT INTO descuentos (revision_id, fabricante, porcentaje, cadena) VALUES (?1, ?2, ?3, ?4)")?;
         for (f, pct) in &p.descuentos {
-            st.execute(params![rev, f, pct.to_string()])?;
+            let cadena = p
+                .descuentos_encadenados
+                .get(f)
+                .map(|c| ppto_core::descuentos::texto_cadena(c));
+            st.execute(params![rev, f, pct.to_string(), cadena])?;
         }
     }
     {
@@ -768,6 +789,7 @@ mod tests {
         p.fijar_tarifa("MT.PANEL", "schako", dec!(20)).unwrap();
         assert_eq!(p.concepto("MT.PANEL").unwrap().precio, dec!(11.60));
         p.fijar_descuento("SCHAKO/G1", dec!(50)).unwrap();
+        p.fijar_descuento_texto("FABA", "40+8").unwrap();
         p.fijar_tarifa_grupo("MT.TUBO16", "SCHAKO", Some("g1"), dec!(2))
             .unwrap();
         assert_eq!(p.concepto("MT.TUBO16").unwrap().precio, dec!(1));
@@ -791,6 +813,7 @@ mod tests {
             assert_eq!(leido.concepto("SR.M2").unwrap().margen, Some(dec!(30)));
             assert_eq!(leido.concepto("SR.COL8").unwrap().venta_fija, Some(dec!(99.5)));
             assert_eq!(leido.concepto("MT.PANEL").unwrap().origen.as_ref(), Some(&o));
+            assert_eq!(leido.texto_descuento("FABA"), "40+8");
             assert_eq!(leido, p);
         }
         // Cambiar el neto a mano desliga la tarifa también en la base de datos

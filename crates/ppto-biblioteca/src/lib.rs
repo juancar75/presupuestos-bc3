@@ -20,7 +20,7 @@
 //! de OneDrive o del NAS). **Los precios reales no van al repositorio.**
 
 use ppto_core::concepto::Naturaleza;
-use ppto_core::descuentos::{clave, normalizar, partes};
+use ppto_core::descuentos::{clave, equivalente, normalizar, partes, texto_cadena};
 use ppto_core::{Decimal, Presupuesto};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -223,6 +223,10 @@ pub struct Fabricante {
     /// Grupo de producto ("" = general) → descuento en puntos.
     #[serde(default)]
     pub descuentos: BTreeMap<String, Decimal>,
+    /// Grupo → escalones de los descuentos encadenados («40+8»); en
+    /// `descuentos` va su equivalente.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub cadenas: BTreeMap<String, Vec<Decimal>>,
     /// Ordenadas de más antigua a más reciente.
     #[serde(default)]
     pub tarifas: Vec<TarifaFabricante>,
@@ -247,6 +251,16 @@ impl Fabricante {
             .and_then(|g| self.descuentos.get(&g).copied())
             .or_else(|| self.descuentos.get("").copied())
             .unwrap_or_default()
+    }
+
+    /// «40+8» o «45» del grupo ("" = general); vacío si no tiene.
+    pub fn texto_descuento(&self, grupo: &str) -> String {
+        let g = normalizar(grupo);
+        match (self.cadenas.get(&g), self.descuentos.get(&g)) {
+            (Some(c), Some(d)) if equivalente(c) == d.normalize() => texto_cadena(c),
+            (_, Some(d)) => d.normalize().to_string(),
+            _ => String::new(),
+        }
     }
 }
 
@@ -363,15 +377,27 @@ impl Biblioteca {
 
     /// Descuento de un fabricante (o «FAB/GRUPO»). `None` lo quita.
     pub fn fijar_descuento(&mut self, fabricante: &str, pct: Option<Decimal>) {
+        self.fijar_descuento_encadenado(fabricante, pct.map(|p| vec![p]).as_deref());
+    }
+
+    /// Descuento encadenado (`[40, 8]` = 40+8 %) de un fabricante (o
+    /// «FAB/GRUPO»). `None` lo quita.
+    pub fn fijar_descuento_encadenado(&mut self, fabricante: &str, cadena: Option<&[Decimal]>) {
         let (f, g) = partes(fabricante);
         let fab = self.fabricante_mut(&f);
         let g = g.unwrap_or_default();
-        match pct {
-            Some(p) => {
-                fab.descuentos.insert(g, p);
+        match cadena.filter(|c| !c.is_empty()) {
+            Some(c) => {
+                fab.descuentos.insert(g.clone(), equivalente(c));
+                if c.len() > 1 {
+                    fab.cadenas.insert(g, c.to_vec());
+                } else {
+                    fab.cadenas.remove(&g);
+                }
             }
             None => {
                 fab.descuentos.remove(&g);
+                fab.cadenas.remove(&g);
             }
         }
     }
@@ -600,10 +626,15 @@ impl Biblioteca {
         }
         for (k, pct) in &p.descuentos {
             let (f, g) = partes(k);
+            let cadena = p.descuentos_encadenados.get(k);
             let fab = self.fabricante_mut(&f);
             let g = g.unwrap_or_default();
-            if fab.descuentos.get(&g) != Some(pct) {
+            if fab.descuentos.get(&g) != Some(pct) || fab.cadenas.get(&g) != cadena {
                 fab.descuentos.insert(g.clone(), *pct);
+                match cadena {
+                    Some(c) => fab.cadenas.insert(g.clone(), c.clone()),
+                    None => fab.cadenas.remove(&g),
+                };
                 inf.descuentos
                     .push(clave(&f, Some(&g).filter(|g| !g.is_empty()).map(String::as_str)));
             }
@@ -785,6 +816,15 @@ mod tests {
         b.fijar_descuento("S&P", Some(dec!(40)));
         b.fijar_descuento("S&P/E08", Some(dec!(50)));
         assert_eq!(b.fabricante("s&p").unwrap().descuento(Some("e08")), dec!(50));
+        // Encadenado (FABB: hasta tres)
+        b.fijar_descuento_encadenado("Fabb", Some(&[dec!(50), dec!(10), dec!(5)]));
+        let pa = b.fabricante("fabb").unwrap();
+        assert_eq!(
+            (pa.descuento(None), pa.texto_descuento("")),
+            (dec!(57.25), "50+10+5".into())
+        );
+        b.fijar_descuento("Fabb", Some(dec!(40)));
+        assert!(b.fabricante("fabb").unwrap().cadenas.is_empty());
         assert_eq!(b.fabricante("s&p").unwrap().descuento(Some("E22")), dec!(40));
 
         b.cargar_tarifa(
@@ -854,6 +894,12 @@ mod tests {
         let i = b.guardar_obra(&p, "Ejemplo", Origen::Real, None);
         assert_eq!(i.nuevas.len(), 2);
         assert!(i.descuentos.contains(&"ACME".to_owned()));
+        // Aprende también un descuento encadenado de la obra
+        let mut q = p.clone();
+        q.fijar_descuento_texto("ACME", "40+8").unwrap();
+        let mut b2 = Biblioteca::default();
+        b2.guardar_obra(&q, "Ejemplo", Origen::Real, None);
+        assert_eq!(b2.fabricante("acme").unwrap().texto_descuento(""), "40+8");
         let v = b.ultima("SR.M2").unwrap();
         assert_eq!(v.origen, Origen::Real);
         let panel = v.lineas.iter().find(|l| l.codigo == "MT.PANEL").unwrap();
