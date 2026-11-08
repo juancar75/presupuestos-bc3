@@ -580,4 +580,57 @@ mod tests {
         assert_eq!(sin_precio(&p).len(), n + 1);
         assert!(sin_precio(&p).contains(&"X.1".to_owned()));
     }
+
+    #[test]
+    fn componer_una_partida_con_varias_de_la_base() {
+        let mut b = Presupuesto::new("t", "BASE", "Base");
+        b.nuevo_capitulo("BASE", "C", "C").unwrap();
+        for (c, r) in [
+            ("VEN", "Ventilador 1,1 kW"),
+            ("VAR", "Variador 1,1 kW"),
+            ("COM", "Compuerta"),
+        ] {
+            b.nueva_partida("C", c, "ud", r).unwrap();
+        }
+        b.nuevo_recurso("MT.V", "ud", "Ventilador", Naturaleza::Material, Decimal::ZERO)
+            .unwrap();
+        b.fijar_tarifa_grupo("MT.V", "Faba", Some("E04"), dec!(1000)).unwrap();
+        b.fijar_descuento_texto("Faba/E04", "60+10").unwrap();
+        b.anadir_linea("VEN", "MT.V", Decimal::ONE).unwrap();
+        b.nuevo_recurso("MT.X", "ud", "Variador", Naturaleza::Material, dec!(200))
+            .unwrap();
+        b.anadir_linea("VAR", "MT.X", Decimal::ONE).unwrap();
+        b.nuevo_recurso("MT.C", "ud", "Compuerta", Naturaleza::Material, dec!(50))
+            .unwrap();
+        b.anadir_linea("COM", "MT.C", Decimal::ONE).unwrap();
+        let mut o = Presupuesto::new("t", "O", "O");
+        o.nuevo_capitulo("O", "K", "K").unwrap();
+        o.nueva_partida("K", "01", "ud", "VENTILADOR 1,1KW + VARIADOR + 2 COMPUERTAS")
+            .unwrap();
+        o.nueva_partida("K", "02", "ud", "Ventilador").unwrap();
+        let partes = vec![
+            ("VEN".to_owned(), dec!(1)),
+            ("VAR".into(), dec!(1)),
+            ("COM".into(), dec!(2)),
+        ];
+        o.componer_de(&b, "01", &partes).unwrap();
+        // 1000 − 60+10 % = 360; + 200 + 2 × 50
+        assert_eq!(o.precio("01").unwrap(), dec!(660));
+        assert_eq!(o.texto_descuento("Faba/E04"), "60+10");
+        assert_eq!(o.conceptos["01"].descomposicion.len(), 3);
+        assert_eq!(o.conceptos["01"].resumen, "VENTILADOR 1,1KW + VARIADOR + 2 COMPUERTAS");
+        // Ya compuesta: no se sustituye; con una sola parte trae el descompuesto plano
+        assert!(o.componer_de(&b, "01", &partes).is_err());
+        o.componer_de(&b, "02", &[("VEN".to_owned(), Decimal::ONE)]).unwrap();
+        assert_eq!(o.conceptos["02"].descomposicion[0].hijo, "MT.V");
+        // Un fallo deja la obra como estaba
+        o.nueva_partida("K", "03", "ud", "x").unwrap();
+        let antes = o.clone();
+        assert!(
+            o.componer_de(&b, "03", &[("VEN".to_owned(), dec!(1)), ("NO".into(), dec!(1))])
+                .is_err()
+        );
+        assert_eq!(o, antes);
+        assert!(o.componer_de(&b, "03", &[]).is_err());
+    }
 }

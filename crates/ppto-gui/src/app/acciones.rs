@@ -141,8 +141,8 @@ impl Aplicacion {
                 Accion::AsignarDeBase { origen, nombre, parejas } => {
                     let mut bien = 0;
                     let mut mal = Vec::new();
-                    for (obra, base) in &parejas {
-                        match self.p.traer_precio_de(&origen, obra, base) {
+                    for (obra, partes) in &parejas {
+                        match self.p.componer_de(&origen, obra, partes) {
                             Ok(_) => bien += 1,
                             Err(e) => mal.push(format!("{obra}: {e}")),
                         }

@@ -316,6 +316,10 @@ pub struct Equivalencia {
     pub base: String,
     pub codigo: String,
     pub resumen: String,
+    /// Otras partidas de la base que la completan, con su cantidad
+    /// («ventilador + variador + 2 compuertas»).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub partes: Vec<(String, Decimal)>,
     /// Veces que se ha confirmado.
     #[serde(default)]
     pub veces: u32,
@@ -325,11 +329,19 @@ pub struct Equivalencia {
 
 impl Biblioteca {
     /// Recuerda que la partida medida `clave` es la `codigo` de `base`.
-    pub fn recordar_equivalencia(&mut self, clave: &str, base: &str, codigo: &str, resumen: &str) {
+    /// `partes`: otras partidas de la base que la completan.
+    pub fn recordar_equivalencia(
+        &mut self,
+        clave: &str,
+        base: &str,
+        codigo: &str,
+        resumen: &str,
+        partes: &[(String, Decimal)],
+    ) {
         let veces = self
             .equivalencias
             .get(clave)
-            .filter(|e| e.base == base && e.codigo == codigo)
+            .filter(|e| e.base == base && e.codigo == codigo && e.partes == partes)
             .map_or(0, |e| e.veces);
         self.equivalencias.insert(
             clave.to_owned(),
@@ -337,6 +349,7 @@ impl Biblioteca {
                 base: base.to_owned(),
                 codigo: codigo.to_owned(),
                 resumen: resumen.to_owned(),
+                partes: partes.to_vec(),
                 veces: veces + 1,
                 fecha: hoy(),
             },
@@ -899,8 +912,8 @@ mod tests {
         let mut b = Biblioteca::default();
         let k = ppto_core::emparejar::clave("Rejilla retorno 400x300", "ud");
         assert!(b.equivalencia(&k, "base.bc3").is_none());
-        b.recordar_equivalencia(&k, "base.bc3", "REJ.400", "Rejilla 400x300");
-        b.recordar_equivalencia(&k, "base.bc3", "REJ.400", "Rejilla 400x300");
+        b.recordar_equivalencia(&k, "base.bc3", "REJ.400", "Rejilla 400x300", &[]);
+        b.recordar_equivalencia(&k, "base.bc3", "REJ.400", "Rejilla 400x300", &[]);
         let e = b
             .equivalencia(
                 &ppto_core::emparejar::clave("REJILLA DE RETORNO 400 x 300", "Ud"),
@@ -910,8 +923,12 @@ mod tests {
         assert_eq!((e.codigo.as_str(), e.veces), ("REJ.400", 2));
         assert!(b.equivalencia(&k, "otra.bc3").is_none());
         // Cambiar de partida reinicia la cuenta
-        b.recordar_equivalencia(&k, "base.bc3", "REJ.450", "Rejilla 450x300");
+        b.recordar_equivalencia(&k, "base.bc3", "REJ.450", "Rejilla 450x300", &[]);
         assert_eq!(b.equivalencia(&k, "base.bc3").unwrap().veces, 1);
+        // Con partes que la completan
+        b.recordar_equivalencia(&k, "base.bc3", "REJ.450", "x", &[("PLENUM".into(), dec!(2))]);
+        let e = b.equivalencia(&k, "base.bc3").unwrap();
+        assert_eq!((e.partes.len(), e.veces), (1, 1));
     }
 
     #[test]

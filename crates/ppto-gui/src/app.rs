@@ -151,11 +151,11 @@ enum Accion {
     /// Quitar un descuento («S&P» o «S&P/E08»).
     QuitarDescuento(String),
     /// Dar a partidas de la obra el descompuesto de partidas de una base
-    /// emparejadas: (código en la obra, código en la base).
+    /// emparejadas: (código en la obra, partidas de la base con su cantidad).
     AsignarDeBase {
         origen: std::sync::Arc<Presupuesto>,
         nombre: String,
-        parejas: Vec<(String, String)>,
+        parejas: Vec<(String, Vec<(String, Decimal)>)>,
     },
     /// Pasar los recursos de un fabricante a su tarifa nueva:
     /// (fabricante, etiqueta, referencia → PVP). Los descuentos no cambian.
