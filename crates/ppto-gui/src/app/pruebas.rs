@@ -2332,3 +2332,67 @@ fn ventana_clientes_se_pinta() {
     assert_eq!(app.ventana_clientes.as_ref().unwrap().clientes.lista.len(), 1);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn base_sqlite_conserva_tarifa_y_permite_actualizar_la_oferta() {
+    use super::emparejar::VentanaEmparejar;
+    use ppto_core::emparejar::Nivel;
+    let dir = std::env::temp_dir().join(format!("gui-base-sqlite-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // Base sintética guardada como .sqlite: material con PVP, familia, 40+8 % y referencia
+    let mut b = Presupuesto::new("t", "BASE", "Base sintética");
+    b.nuevo_capitulo("BASE", "C", "Rejillas").unwrap();
+    b.nueva_partida("C", "REJ.400", "ud", "Rejilla de retorno Acme 400x300")
+        .unwrap();
+    b.nuevo_recurso("MT.R400", "ud", "Rejilla 400x300", Naturaleza::Material, dec!(0))
+        .unwrap();
+    b.fijar_tarifa_grupo("MT.R400", "Acme", Some("F1"), dec!(100)).unwrap();
+    b.fijar_referencia_tarifa("MT.R400", Some("AC-400")).unwrap();
+    b.fijar_descuento_texto("Acme/F1", "40+8").unwrap();
+    b.anadir_linea("REJ.400", "MT.R400", dec!(1)).unwrap();
+    let origen = dir.join("Base sintetica.sqlite");
+    {
+        let mut a = Almacen::abrir(&origen).unwrap();
+        let id = a.crear_presupuesto("Base sintética").unwrap();
+        a.guardar_revision(id, "R1", "prueba", &b).unwrap();
+    }
+    let mut v = bases::VentanaBases::en(Some(dir.join("bases")));
+    v.anadir(&origen);
+    assert!(v.ficheros.iter().any(|f| f.ends_with("Base sintetica.sqlite")));
+    let base = std::sync::Arc::clone(&v.base.as_ref().unwrap().p);
+    assert_eq!(base.precio("REJ.400").unwrap(), dec!(55.20));
+    // Ciego emparejado con la base .sqlite
+    let mut app = Aplicacion::sin_ventana();
+    let raiz = app.p.raiz.clone();
+    app.p.nuevo_capitulo(&raiz, "CV", "Ventilación").unwrap();
+    app.p
+        .nueva_partida("CV", "01", "ud", "REJILLA RETORNO 400 x 300")
+        .unwrap();
+    let mut w = VentanaEmparejar::en(
+        &app.p,
+        std::sync::Arc::clone(&base),
+        "Base sintetica.sqlite".into(),
+        None,
+    );
+    let parejas = w.sacar(Nivel::Dudoso, None);
+    app.aplicar(vec![Accion::AsignarDeBase {
+        origen: base,
+        nombre: "Base sintetica.sqlite".into(),
+        parejas,
+    }]);
+    let t = app.p.concepto("MT.R400").unwrap().tarifa.clone().unwrap();
+    assert_eq!(
+        (t.grupo.as_deref(), t.referencia.as_deref()),
+        (Some("F1"), Some("AC-400"))
+    );
+    assert_eq!(app.p.texto_descuento("Acme/F1"), "40+8");
+    // Meses después: tarifa nueva, mismo descuento → la oferta se actualiza sola
+    app.aplicar(vec![Accion::TarifaNueva(
+        "ACME".into(),
+        "2027".into(),
+        std::collections::BTreeMap::from([("AC-400".to_owned(), dec!(110))]),
+    )]);
+    assert_eq!(app.p.precio("01").unwrap(), dec!(60.72));
+    let _ = std::fs::remove_dir_all(dir);
+}

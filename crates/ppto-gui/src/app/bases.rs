@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Ventana «Bases de precios»: BC3 de bases de precios (propias, de
-//! fabricante, de un distribuidor…) para buscar en ellas y copiar conceptos
-//! (mano de obra, materiales, partidas con su descompuesto) a la obra.
+//! Ventana «Bases de precios»: bases de precios (propias, de fabricante, de un
+//! distribuidor…) para buscar en ellas y copiar conceptos (mano de obra,
+//! materiales, partidas con su descompuesto) a la obra. Se admiten en BC3
+//! (solo netos) y en la base de datos del programa (`.sqlite`), que conserva
+//! PVP, familia, descuento y referencia de cada material: lo copiado de ella
+//! se puede pasar después a la tarifa nueva del fabricante.
 //!
 //! Las bases se copian a la carpeta de datos del usuario (`bases/`), fuera del
 //! repositorio. Lo copiado queda en la obra sin colocar en el árbol, listo
@@ -60,11 +63,36 @@ fn plano(s: &str) -> String {
     ppto_biblioteca::plano(s)
 }
 
+/// Extensiones de base que se admiten: BC3 (solo netos) y la base de datos
+/// del programa (`.sqlite`), que conserva PVP, familia, descuento y
+/// referencia de cada material.
+const EXTENSIONES: [&str; 2] = ["bc3", "sqlite"];
+
+fn es_sqlite(r: &Path) -> bool {
+    r.extension().is_some_and(|x| x.eq_ignore_ascii_case("sqlite"))
+}
+
+/// Última revisión guardada de una base en `.sqlite`.
+fn leer_sqlite(ruta: &Path) -> Result<Presupuesto, String> {
+    let a = ppto_db::Almacen::abrir(ruta).map_err(|e| e.to_string())?;
+    let rev = a
+        .listar_revisiones()
+        .map_err(|e| e.to_string())?
+        .last()
+        .map(|r| r.id)
+        .ok_or_else(|| "no tiene ninguna revisión guardada".to_owned())?;
+    a.cargar_revision(rev).map_err(|e| e.to_string())
+}
+
 impl Base {
     pub fn cargar(ruta: &Path) -> Result<Self, String> {
-        let imp = ppto_bc3::importar_fichero(ruta).map_err(|e| e.to_string())?;
-        let errores = imp.errores();
-        let p = imp.presupuesto;
+        let (p, errores) = if es_sqlite(ruta) {
+            (leer_sqlite(ruta)?, 0)
+        } else {
+            let imp = ppto_bc3::importar_fichero(ruta).map_err(|e| e.to_string())?;
+            let errores = imp.errores();
+            (imp.presupuesto, errores)
+        };
         let mut filas: Vec<Fila> = p
             .conceptos
             .values()
@@ -191,7 +219,10 @@ impl VentanaBases {
             .map(|d| {
                 let mut v: Vec<PathBuf> = d
                     .filter_map(|e| e.ok().map(|e| e.path()))
-                    .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("bc3")))
+                    .filter(|p| {
+                        p.extension()
+                            .is_some_and(|x| EXTENSIONES.iter().any(|e| x.eq_ignore_ascii_case(e)))
+                    })
                     .collect();
                 v.sort();
                 v
@@ -219,7 +250,7 @@ impl VentanaBases {
         }
     }
 
-    /// Copia un BC3 a la carpeta de bases y lo abre.
+    /// Copia una base (BC3 o .sqlite) a la carpeta de bases y la abre.
     pub fn anadir(&mut self, origen: &Path) {
         let Some(c) = &self.carpeta else {
             self.mensaje = Some(("No hay carpeta de datos del usuario.".into(), true));
@@ -375,10 +406,16 @@ impl Aplicacion {
                         v.elegir(f);
                     }
                     if ui
-                        .button("Añadir base BC3…")
-                        .on_hover_text("Se guarda una copia en tu carpeta de datos; el original no se toca")
+                        .button("Añadir base…")
+                        .on_hover_text(
+                            "BC3 o base del programa (.sqlite). Mejor la .sqlite: sus materiales llevan PVP, familia, \
+                             descuento y referencia, y la obra se podrá pasar a la tarifa nueva. Se guarda una copia en \
+                             tu carpeta de datos; el original no se toca",
+                        )
                         .clicked()
-                        && let Some(r) = rfd::FileDialog::new().add_filter("BC3", &["bc3", "BC3"]).pick_file()
+                        && let Some(r) = rfd::FileDialog::new()
+                            .add_filter("Base de precios", &["sqlite", "bc3", "BC3"])
+                            .pick_file()
                     {
                         v.anadir(&r);
                     }
@@ -416,7 +453,9 @@ impl Aplicacion {
                 }
                 if v.base.is_none() {
                     ui.add_space(8.0);
-                    ui.label("Añade un BC3 con tu base de precios para buscar en él y copiar conceptos a la obra.");
+                    ui.label(
+                        "Añade tu base de precios (.sqlite del programa o BC3) para buscar en ella y copiar conceptos a la obra.",
+                    );
                     return;
                 }
                 ui.separator();

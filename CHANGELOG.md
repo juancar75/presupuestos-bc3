@@ -5,6 +5,14 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Bases de precios en `.sqlite`**: «Bases de precios» abre también la base
+  de datos del programa, no solo BC3. Lo que se copia o empareja desde ella
+  entra con PVP, familia, descuento (también encadenado) y referencia de cada
+  material, de modo que una oferta de hace meses se pasa a la tarifa nueva del
+  fabricante con «Pasar la obra a esta tarifa». Lo copiado de un BC3 sigue
+  entrando a neto.
+
 ## [0.1.0-alpha.42] - 2026-11-08
 
 ### Añadido
