@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.42] - 2026-11-08
+
 ### Añadido
 - **Clientes** (Obra → Clientes…): nombre o razón social, CIF, dirección,
   contacto, teléfono, correo, forma de pago y condiciones habituales. Se
