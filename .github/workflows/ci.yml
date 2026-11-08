@@ -44,6 +44,23 @@ jobs:
         run: cargo test --workspace
       - name: Demo reproducible
         run: cargo run -p ppto-cli -- demo
+      - name: Paquete de prueba para Windows (zip con instalador)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build --release -p ppto-cli -p ppto-gui -p ppto-mcp
+          $n = "presupuestos-bc3-prueba-windows"
+          New-Item -ItemType Directory $n | Out-Null
+          Copy-Item target/release/ppto-gui.exe, target/release/ppto-mcp.exe, target/release/ppto.exe $n
+          Copy-Item scripts/instalador/* $n
+          Copy-Item LICENSE, THIRD-PARTY-NOTICES.md $n
+      - name: Guardar el paquete de prueba
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: presupuestos-bc3-prueba-windows
+          path: presupuestos-bc3-prueba-windows
+          retention-days: 14
 
   licencias:
     name: Licencias y avisos de seguridad
