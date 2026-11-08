@@ -2312,3 +2312,23 @@ fn atajos_a_la_base_de_precios() {
     assert_eq!(w.filas.len(), 2);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn ventana_clientes_se_pinta() {
+    let dir = std::env::temp_dir().join(format!("gui-clientes-{}", std::process::id()));
+    let mut app = Aplicacion::sin_ventana();
+    let mut v = super::clientes::VentanaClientes::en(Some(dir.join("clientes.json")));
+    v.edicion.nombre = "Faba Obras".into();
+    v.guardar_edicion();
+    app.ventana_clientes = Some(v);
+    let ctx = Context::default();
+    for _ in 0..2 {
+        let mut out = ctx.run_ui(RawInput::default(), |ui| {
+            let c = ui.ctx().clone();
+            app.ventana_clientes(&c);
+        });
+        out.textures_delta.clear();
+    }
+    assert_eq!(app.ventana_clientes.as_ref().unwrap().clientes.lista.len(), 1);
+    let _ = std::fs::remove_dir_all(dir);
+}

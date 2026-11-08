@@ -6,6 +6,13 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Clientes** (Obra → Clientes…): nombre o razón social, CIF, dirección,
+  contacto, teléfono, correo, forma de pago y condiciones habituales. Se
+  escriben una vez y en el PDF de la oferta se eligen con «📇 Elegir»;
+  «Poner sus condiciones» añade su forma de pago y observaciones, y un
+  cliente escrito a mano se guarda con «Guardar como cliente». Se guardan en
+  `clientes.json` de la carpeta de configuración del usuario, nunca en el
+  repositorio.
 - **Ctrl+B**: abre Bases de precios buscando la partida seleccionada (su
   primera palabra y sus medidas, solo partidas). También en Precios → Bases
   de precios.

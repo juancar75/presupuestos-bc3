@@ -150,6 +150,7 @@ impl Aplicacion {
         let raiz = self.p.raiz.clone();
         let (gg_obra, bi_obra) = (self.gg, self.bi);
         let mut mensaje: Option<(String, bool)> = None;
+        let mut poner_condiciones: Option<Vec<String>> = None;
         egui::Window::new("Presupuesto en PDF")
             .open(&mut abierta)
             .collapsible(false)
@@ -321,7 +322,54 @@ impl Aplicacion {
                         .show(ui, |ui| {
                             fila(ui, "Título", &mut o.titulo, &titulo_obra);
                             fila(ui, "Dirección de la obra", &mut o.direccion, "");
-                            fila(ui, "Cliente", &mut o.cliente, "");
+                            ui.label("Cliente");
+                            ui.horizontal(|ui| {
+                                ui.add(egui::TextEdit::singleline(&mut o.cliente).desired_width(300.0));
+                                let lista = super::clientes::ruta()
+                                    .map(|r| super::clientes::Clientes::cargar(&r))
+                                    .unwrap_or_default();
+                                egui::ComboBox::from_id_salt("pdf_cliente")
+                                    .selected_text("📇 Elegir")
+                                    .show_ui(ui, |ui| {
+                                        for i in lista.buscar(&o.cliente) {
+                                            let c = &lista.lista[i];
+                                            if ui.selectable_label(false, &c.nombre).clicked() {
+                                                o.cliente = c.nombre.clone();
+                                            }
+                                        }
+                                        if lista.lista.is_empty() {
+                                            ui.label("Sin clientes: Obra → Clientes…");
+                                        }
+                                    });
+                                match lista.por_nombre(&o.cliente) {
+                                    Some(c) if !c.lineas_observaciones().is_empty() => {
+                                        if ui
+                                            .small_button("Poner sus condiciones")
+                                            .on_hover_text("Forma de pago y observaciones habituales de este cliente")
+                                            .clicked()
+                                        {
+                                            poner_condiciones = Some(c.lineas_observaciones());
+                                        }
+                                    }
+                                    None if !o.cliente.trim().is_empty() => {
+                                        if ui
+                                            .small_button("Guardar como cliente")
+                                            .on_hover_text("Añadirlo a Obra → Clientes… para las próximas ofertas")
+                                            .clicked()
+                                            && let Some(r) = super::clientes::ruta()
+                                        {
+                                            let mut l = lista.clone();
+                                            l.guardar_cliente(super::clientes::Cliente {
+                                                nombre: o.cliente.trim().to_owned(),
+                                                ..Default::default()
+                                            });
+                                            let _ = l.guardar(&r);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            });
+                            ui.end_row();
                             fila(ui, "Referencia", &mut o.referencia, &raiz);
                             fila(ui, "Revisión", &mut o.revision, "R0");
                             fila(ui, "Fecha", &mut o.fecha, "");
@@ -330,6 +378,16 @@ impl Aplicacion {
                 ui.separator();
                 generar = ui.button(RichText::new("Generar PDF…").strong()).clicked();
             });
+        if let Some(lineas) = poner_condiciones {
+            // Se añaden detrás de las observaciones del perfil, sin repetir
+            let mut t: Vec<String> = v.observaciones.lines().map(str::to_owned).collect();
+            for l in lineas {
+                if !t.iter().any(|x| x.trim() == l.trim()) {
+                    t.push(l);
+                }
+            }
+            v.observaciones = t.join("\n");
+        }
         if generar {
             match v.volcar() {
                 Ok(()) => {
