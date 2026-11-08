@@ -11,6 +11,7 @@ mod asistente;
 mod bases;
 mod biblioteca;
 mod ciego;
+mod clientes;
 mod comparar;
 mod dificultad;
 mod emparejar;
@@ -278,6 +279,7 @@ pub struct Aplicacion {
     ver_acerca: bool,
     alta: Option<Alta>,
     ventana_pdf: Option<pdf::VentanaPdf>,
+    ventana_clientes: Option<clientes::VentanaClientes>,
     ciego: Option<ciego::CiegoAbierto>,
     buscar: String,
     /// Poner el cursor en el buscador del árbol (Ctrl+F) en el próximo fotograma.
@@ -492,6 +494,7 @@ impl Aplicacion {
             ver_acerca: false,
             alta: None,
             ventana_pdf: None,
+            ventana_clientes: None,
             ciego: None,
             buscar: String::new(),
             enfocar_buscar: false,
@@ -839,6 +842,7 @@ impl Aplicacion {
         self.ventana_acerca(&ctx);
         self.ventana_alta(&ctx, &mut acciones);
         self.ventana_pdf(&ctx);
+        self.ventana_clientes(&ctx);
         self.ventana_tarifas(&ctx);
         self.ventana_biblioteca(&ctx);
         self.ventana_bases(&ctx, &mut acciones);

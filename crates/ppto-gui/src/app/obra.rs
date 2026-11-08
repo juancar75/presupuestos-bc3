@@ -370,6 +370,14 @@ impl Aplicacion {
             ui.close();
             self.ver_ficha = true;
         }
+        if ui
+            .button("Clientes…")
+            .on_hover_text("Datos de cada cliente (CIF, dirección, contacto, forma de pago, condiciones) para elegirlos en cada oferta")
+            .clicked()
+        {
+            ui.close();
+            self.ventana_clientes = Some(super::clientes::VentanaClientes::abrir());
+        }
         ui.separator();
         let t = if self.p.seguimiento.contrato.is_some() {
             "Contrato 🔒…"
