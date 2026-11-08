@@ -137,6 +137,12 @@ impl Aplicacion {
                     }
                 }
                 Accion::GrupoTarifa(codigo, grupo) => self.p.fijar_grupo(&codigo, &grupo),
+                Accion::ReferenciaTarifa(codigo, r) => self.p.fijar_referencia_tarifa(&codigo, Some(&r)),
+                Accion::TarifaNueva(fab, etiqueta, pvps) => {
+                    let inf = self.p.actualizar_a_tarifa(&fab, &etiqueta, &pvps);
+                    self.info(inf.resumen(&fab, &etiqueta));
+                    Ok(())
+                }
                 Accion::QuitarDescuento(k) => {
                     let v = self.p.quitar_descuento(&k);
                     self.info(format!("Descuento {k} quitado: {} recursos recalculados.", v.len()));
