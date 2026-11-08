@@ -537,12 +537,15 @@ impl Aplicacion {
             self.ventana_biblioteca = Some(biblioteca::VentanaBiblioteca::abrir());
         }
         if ui
-            .button("Bases de precios…")
-            .on_hover_text("Tus BC3 de bases de precios: buscar y copiar mano de obra, materiales o partidas")
+            .add(egui::Button::new("Bases de precios…").shortcut_text("Ctrl+B"))
+            .on_hover_text(
+                "Tus BC3 de bases de precios: buscar y copiar mano de obra, materiales o partidas. \
+                 Ctrl+B busca directamente la partida seleccionada",
+            )
             .clicked()
         {
             ui.close();
-            self.ventana_bases = Some(bases::VentanaBases::abrir(self.especialidad));
+            self.bases_con_partida();
         }
         if ui
             .button("Legalización…")

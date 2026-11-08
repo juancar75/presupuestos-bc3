@@ -6,6 +6,13 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Ctrl+B**: abre Bases de precios buscando la partida seleccionada (su
+  primera palabra y sus medidas, solo partidas). También en Precios → Bases
+  de precios.
+- **«🔍 Buscar en la base»** en la pestaña Partida, si la partida no tiene
+  precio: abre «Emparejar» solo con ella (verde/naranja/rojo, «+ otra
+  partida», asignar), con la base abierta o, si no hay, la de la
+  especialidad de la obra.
 - **Partidas compuestas al emparejar**: si la partida de la obra junta varias
   cosas («ventilador 1,1 kW + variador + 2 compuertas»), «+ otra partida»
   busca en la base y añade las que la completan, cada una con su cantidad.
