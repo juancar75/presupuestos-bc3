@@ -6,6 +6,16 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Emparejar la obra con una base** (Bases de precios → «Emparejar la obra
+  con esta base…»): para cada partida sin precio (p. ej. de un presupuesto
+  ciego) propone las 5 partidas de la base que mejor encajan, por modelo
+  («CHGT/4-560-6»), medidas («400x300», o la inmediata superior), diámetro
+  («Ø125», «D=125 mm»), potencia («1,1 kW»), palabras y unidad, en verde
+  (segura), naranja (dudosa o empate) o rojo (sin candidato). Se asigna de una
+  en una o todas las verdes: la partida conserva su código, texto y medición
+  y recibe el descompuesto de la base, con los descuentos de fabricante que
+  usa. Las parejas confirmadas se recuerdan en la biblioteca y la próxima vez
+  salen marcadas con ★.
 - **Pasar la obra a la tarifa nueva de un fabricante** (Biblioteca →
   «Pasar la obra a esta tarifa»): cada recurso guarda la **referencia del
   artículo** en la tarifa (columna «ref.» en Recursos; si no la tiene se usa

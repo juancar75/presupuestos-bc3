@@ -402,6 +402,15 @@ impl Presupuesto {
     ///
     /// Devuelve los códigos nuevos añadidos.
     pub fn traer_precio(&mut self, origen: &Presupuesto, codigo: &str) -> Result<Vec<String>, ErrorMotor> {
+        self.traer_precio_de(origen, codigo, codigo)
+    }
+
+    /// Como [`Self::traer_precio`], con la partida `de` de `origen` (otro
+    /// código: p. ej. la partida de la base emparejada con una del ciego).
+    /// La partida de aquí conserva su código, resumen, texto y medición.
+    /// Los descuentos de fabricante que aquí no existan y usen los recursos
+    /// traídos se copian también, para que el neto no cambie.
+    pub fn traer_precio_de(&mut self, origen: &Presupuesto, codigo: &str, de: &str) -> Result<Vec<String>, ErrorMotor> {
         let destino = self.concepto(codigo)?;
         if destino.naturaleza != Naturaleza::Partida {
             return Err(ErrorMotor::ValorInvalido(format!("«{codigo}» no es una partida")));
@@ -411,9 +420,9 @@ impl Presupuesto {
                 "«{codigo}» ya está descompuesta aquí: no se sustituye"
             )));
         }
-        let o = origen.concepto(codigo)?;
+        let o = origen.concepto(de)?;
         if o.descomposicion.is_empty() {
-            let precio = origen.precio(codigo)?;
+            let precio = origen.precio(de)?;
             self.concepto_mut(codigo)?.precio = precio;
             return Ok(Vec::new());
         }
@@ -429,6 +438,7 @@ impl Presupuesto {
             self.conceptos.insert(c.clone(), concepto);
             nuevos.push(c);
         }
+        self.copiar_descuentos_de(origen, &nuevos);
         self.concepto_mut(codigo)?.descomposicion = o.descomposicion.clone();
         if let Err(e) = self.validar() {
             *self = copia;
@@ -436,6 +446,26 @@ impl Presupuesto {
         }
         nuevos.sort();
         Ok(nuevos)
+    }
+
+    /// Copia de `origen` los descuentos de fabricante (y su cadena) que usan
+    /// los recursos `codigos` y aquí no existen.
+    pub(crate) fn copiar_descuentos_de(&mut self, origen: &Presupuesto, codigos: &[String]) {
+        for c in codigos {
+            let Some(t) = self.conceptos.get(c).and_then(|x| x.tarifa.clone()) else {
+                continue;
+            };
+            let k = origen.clave_aplicada(&t);
+            if self.descuentos.contains_key(&k) {
+                continue;
+            }
+            if let Some(d) = origen.descuentos.get(&k) {
+                self.descuentos.insert(k.clone(), *d);
+                if let Some(cad) = origen.descuentos_encadenados.get(&k) {
+                    self.descuentos_encadenados.insert(k, cad.clone());
+                }
+            }
+        }
     }
 
     /// Copia de `origen` (una base de precios) los conceptos `codigos` con todo
@@ -482,6 +512,7 @@ impl Presupuesto {
             self.conceptos.insert(c.clone(), concepto.clone());
             nuevos.push(c);
         }
+        self.copiar_descuentos_de(origen, &nuevos);
         if let Err(e) = self.validar() {
             *self = copia;
             return Err(e);
