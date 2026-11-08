@@ -6,6 +6,13 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Partidas compuestas al emparejar**: si la partida de la obra junta varias
+  cosas («ventilador 1,1 kW + variador + 2 compuertas»), «+ otra partida»
+  busca en la base y añade las que la completan, cada una con su cantidad.
+  Al asignar, la partida queda descompuesta en esas partidas de la base (como
+  auxiliares, con todo lo que cuelga de ellas y sus descuentos). La
+  composición se recuerda en la biblioteca: el siguiente ciego con el mismo
+  texto sale ya compuesto (★).
 - **Emparejar la obra con una base** (Bases de precios → «Emparejar la obra
   con esta base…»): para cada partida sin precio (p. ej. de un presupuesto
   ciego) propone las 5 partidas de la base que mejor encajan, por modelo

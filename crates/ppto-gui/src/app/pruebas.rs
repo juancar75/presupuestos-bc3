@@ -2237,7 +2237,10 @@ fn emparejar_ciego_con_base_y_recordar() {
     assert!(acc.is_empty() && app.ventana_emparejar.is_some());
     v.filas.retain(|f| f.codigo == "01.01");
     let parejas = v.sacar(Nivel::Seguro, None);
-    assert_eq!(parejas, vec![("01.01".to_owned(), "REJ.400".to_owned())]);
+    assert_eq!(
+        parejas,
+        vec![("01.01".to_owned(), vec![("REJ.400".to_owned(), dec!(1))])]
+    );
     acc.push(Accion::AsignarDeBase {
         origen: std::sync::Arc::clone(&base),
         nombre: "base.bc3".into(),
@@ -2255,6 +2258,7 @@ fn emparejar_ciego_con_base_y_recordar() {
             "base.bc3",
             "REJ.600",
             "x",
+            &[("REJ.400".into(), dec!(2))],
         )
     });
     let mut obra = Presupuesto::new("t", "O", "O");
@@ -2265,5 +2269,10 @@ fn emparejar_ciego_con_base_y_recordar() {
     let c = &v.filas[0].candidatos[0];
     assert!(c.recordado);
     assert_eq!(c.codigo, "REJ.600");
+    // La combinación recordada vuelve compuesta
+    assert_eq!(
+        v.filas[0].partes(),
+        vec![("REJ.600".to_owned(), dec!(1)), ("REJ.400".to_owned(), dec!(2))]
+    );
     let _ = std::fs::remove_dir_all(dir);
 }

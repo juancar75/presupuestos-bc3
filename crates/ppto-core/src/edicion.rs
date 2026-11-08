@@ -448,6 +448,53 @@ impl Presupuesto {
         Ok(nuevos)
     }
 
+    /// Compone la partida `codigo` (sin descompuesto, p. ej. de un ciego que
+    /// junta varias cosas: «ventilador + variador + compuerta») con varias
+    /// partidas de `origen`, cada una con su cantidad: quedan como partidas
+    /// auxiliares de la de aquí, con todo lo que cuelga de ellas y los
+    /// descuentos de fabricante que usan. Con una sola parte de cantidad 1
+    /// es [`Self::traer_precio_de`]. Si algo falla, el presupuesto queda
+    /// como estaba.
+    pub fn componer_de(
+        &mut self,
+        origen: &Presupuesto,
+        codigo: &str,
+        partes: &[(String, Decimal)],
+    ) -> Result<Vec<String>, ErrorMotor> {
+        match partes {
+            [] => return Err(ErrorMotor::ValorInvalido("no hay partidas con que componer".into())),
+            [(de, c)] if *c == Decimal::ONE => return self.traer_precio_de(origen, codigo, de),
+            _ => {}
+        }
+        let destino = self.concepto(codigo)?;
+        if destino.naturaleza != Naturaleza::Partida {
+            return Err(ErrorMotor::ValorInvalido(format!("«{codigo}» no es una partida")));
+        }
+        if !destino.descomposicion.is_empty() {
+            return Err(ErrorMotor::ValorInvalido(format!(
+                "«{codigo}» ya está descompuesta aquí: no se sustituye"
+            )));
+        }
+        let copia = self.clone();
+        let r = (|| {
+            let codigos: Vec<String> = partes.iter().map(|(c, _)| c.clone()).collect();
+            if codigos.iter().any(|c| c == codigo) {
+                return Err(ErrorMotor::ValorInvalido(format!(
+                    "«{codigo}» no puede formar parte de sí misma"
+                )));
+            }
+            let (nuevos, _) = self.copiar_conceptos(origen, &codigos)?;
+            for (c, cantidad) in partes {
+                self.anadir_linea(codigo, c, *cantidad)?;
+            }
+            Ok(nuevos)
+        })();
+        if r.is_err() {
+            *self = copia;
+        }
+        r
+    }
+
     /// Copia de `origen` los descuentos de fabricante (y su cadena) que usan
     /// los recursos `codigos` y aquí no existen.
     pub(crate) fn copiar_descuentos_de(&mut self, origen: &Presupuesto, codigos: &[String]) {
