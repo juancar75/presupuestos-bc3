@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.43] - 2026-11-08
+
 ### Añadido
 - **Bases de precios en `.sqlite`**: «Bases de precios» abre también la base
   de datos del programa, no solo BC3. Lo que se copia o empareja desde ella
