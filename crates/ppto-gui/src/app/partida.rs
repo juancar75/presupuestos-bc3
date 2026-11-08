@@ -65,6 +65,19 @@ impl Aplicacion {
             {
                 acciones.push(Accion::SiguienteSinPrecio);
             }
+            if c.naturaleza == Naturaleza::Partida
+                && c.descomposicion.is_empty()
+                && c.precio.is_zero()
+                && ui
+                    .button(RichText::new("🔍 Buscar en la base").strong())
+                    .on_hover_text(
+                        "Las partidas de la base que mejor encajan con esta (verde, naranja o rojo); \
+                         asígnela o compóngala con varias. Ctrl+B abre la base buscándola.",
+                    )
+                    .clicked()
+            {
+                acciones.push(Accion::BuscarEnBase(hijo.clone()));
+            }
             if let Some(i) = pos {
                 let sin = orden
                     .iter()

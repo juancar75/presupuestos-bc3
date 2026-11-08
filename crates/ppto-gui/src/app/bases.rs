@@ -261,6 +261,73 @@ impl VentanaBases {
     }
 }
 
+/// Texto de búsqueda para una partida: su primera palabra significativa y
+/// sus medidas («REJILLA RETORNO 400 x 300 mm» → «rejilla 400x300»).
+pub(super) fn texto_busqueda(resumen: &str) -> String {
+    let r = ppto_core::emparejar::rasgos(resumen);
+    let primera = plano(resumen)
+        .split(|c: char| !c.is_alphanumeric())
+        .find(|w| w.chars().count() >= 4 && w.chars().all(char::is_alphabetic))
+        .map(str::to_owned);
+    let medidas = r.tecnicos.into_iter().filter(|t| {
+        t.split_once('x')
+            .is_some_and(|(a, b)| a.parse::<u32>().is_ok() && b.parse::<u32>().is_ok())
+    });
+    primera.into_iter().chain(medidas).collect::<Vec<_>>().join(" ")
+}
+
+impl Aplicacion {
+    /// Partida seleccionada en el árbol (si es una partida).
+    fn partida_seleccionada(&self) -> Option<String> {
+        self.sel.as_ref().map(|(_, h)| h.clone()).filter(|h| {
+            self.p
+                .conceptos
+                .get(h)
+                .is_some_and(|c| c.naturaleza == Naturaleza::Partida)
+        })
+    }
+
+    /// Ctrl+B: abre las bases de precios buscando la partida seleccionada.
+    pub(super) fn bases_con_partida(&mut self) {
+        let mut v = self
+            .ventana_bases
+            .take()
+            .unwrap_or_else(|| VentanaBases::abrir(self.especialidad));
+        if let Some(c) = self.partida_seleccionada().and_then(|c| self.p.conceptos.get(&c)) {
+            v.buscar = texto_busqueda(&c.resumen);
+            v.filtro = Some(Naturaleza::Partida);
+        }
+        self.ventana_bases = Some(v);
+    }
+
+    /// «Buscar en la base» de una partida sin precio: la ventana de emparejar
+    /// solo con ella, con la base abierta en «Bases de precios» o, si no hay,
+    /// la de la especialidad de la obra.
+    pub(super) fn buscar_en_base(&mut self, codigo: &str) {
+        let base = self
+            .ventana_bases
+            .as_ref()
+            .and_then(|v| v.base.as_ref())
+            .map(|b| (Arc::clone(&b.p), b.nombre()))
+            .or_else(|| {
+                VentanaBases::abrir(self.especialidad)
+                    .base
+                    .map(|b| (Arc::clone(&b.p), b.nombre()))
+            });
+        let Some((base, nombre)) = base else {
+            self.error("No hay ninguna base de precios: añada una en Precios → Bases de precios.");
+            return;
+        };
+        let mut w = super::emparejar::VentanaEmparejar::nueva(&self.p, base, nombre);
+        w.filas.retain(|f| f.codigo == codigo);
+        if w.filas.is_empty() {
+            self.info(format!("«{codigo}» ya tiene precio."));
+        } else {
+            self.ventana_emparejar = Some(w);
+        }
+    }
+}
+
 impl Aplicacion {
     pub(super) fn ventana_bases(&mut self, ctx: &egui::Context, acciones: &mut Vec<Accion>) {
         let Some(mut v) = self.ventana_bases.take() else {
@@ -271,12 +338,7 @@ impl Aplicacion {
             v.solo_especialidad = v.obra.is_some();
         }
         // Partida elegida en el árbol (para «añadir a la partida»)
-        let partida = self.sel.as_ref().map(|(_, h)| h.clone()).filter(|h| {
-            self.p
-                .conceptos
-                .get(h)
-                .is_some_and(|c| c.naturaleza == Naturaleza::Partida)
-        });
+        let partida = self.partida_seleccionada();
         let mut abierta = true;
         let mut emparejar: Option<(Arc<Presupuesto>, String)> = None;
         egui::Window::new("Bases de precios")
@@ -374,7 +436,7 @@ impl Aplicacion {
                     ui.add(
                         egui::TextEdit::singleline(&mut v.buscar)
                             .desired_width(260.0)
-                            .hint_text("código o texto, p. ej. rejilla colocación"),
+                            .hint_text("código o texto, p. ej. rejilla colocación (Ctrl+B: la partida seleccionada)"),
                     );
                     ui.separator();
                     ui.radio_value(&mut v.filtro, None, "Todo");

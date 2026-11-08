@@ -157,6 +157,8 @@ enum Accion {
         nombre: String,
         parejas: Vec<(String, Vec<(String, Decimal)>)>,
     },
+    /// Abrir «Emparejar» solo con esta partida sin precio.
+    BuscarEnBase(String),
     /// Pasar los recursos de un fabricante a su tarifa nueva:
     /// (fabricante, etiqueta, referencia → PVP). Los descuentos no cambian.
     TarifaNueva(String, String, std::collections::BTreeMap<String, Decimal>),
@@ -720,6 +722,12 @@ impl Aplicacion {
             }
         }
         // Atajos de Archivo y Ctrl+F (buscar)
+        if ui
+            .ctx()
+            .input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::B))
+        {
+            self.bases_con_partida();
+        }
         let (nuevo, abrir, guardar_como, guardar, buscar, pdf) = ui.ctx().input_mut(|i| {
             let c = egui::Modifiers::CTRL;
             let cs = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;

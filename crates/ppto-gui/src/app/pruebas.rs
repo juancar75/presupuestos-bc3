@@ -2276,3 +2276,39 @@ fn emparejar_ciego_con_base_y_recordar() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn atajos_a_la_base_de_precios() {
+    assert_eq!(
+        super::bases::texto_busqueda("REJILLA RETORNO 400 x 300 mm"),
+        "rejilla 400x300"
+    );
+    assert_eq!(super::bases::texto_busqueda("Tubería de cobre Ø25"), "tuberia");
+    let dir = std::env::temp_dir().join(format!("gui-ctrlb-{}", std::process::id()));
+    let mut app = Aplicacion::sin_ventana();
+    let raiz = app.p.raiz.clone();
+    app.p.nuevo_capitulo(&raiz, "CV", "Ventilación").unwrap();
+    app.p
+        .nueva_partida("CV", "01.01", "ud", "Rejilla retorno 400x300")
+        .unwrap();
+    app.sel = Some(("CV".into(), "01.01".into()));
+    // Sin bases: Ctrl+B abre la ventana con la búsqueda puesta; «Buscar en la base» avisa
+    app.ventana_bases = Some(super::bases::VentanaBases::en(Some(dir.clone())));
+    app.bases_con_partida();
+    let v = app.ventana_bases.as_ref().unwrap();
+    assert_eq!(
+        (v.buscar.as_str(), v.filtro),
+        ("rejilla 400x300", Some(Naturaleza::Partida))
+    );
+    app.aplicar(vec![Accion::BuscarEnBase("01.01".into())]);
+    assert!(app.ventana_emparejar.is_none());
+    // Con una base cargada: emparejar solo esa partida
+    let mut base = Presupuesto::new("t", "B", "B");
+    base.nuevo_capitulo("B", "C", "C").unwrap();
+    base.nueva_partida("C", "REJ.400", "ud", "Rejilla de retorno 400x300")
+        .unwrap();
+    app.p.nueva_partida("CV", "01.02", "ud", "Otra sin precio").unwrap();
+    let w = super::emparejar::VentanaEmparejar::en(&app.p, std::sync::Arc::new(base), "b.bc3".into(), None);
+    assert_eq!(w.filas.len(), 2);
+    let _ = std::fs::remove_dir_all(dir);
+}

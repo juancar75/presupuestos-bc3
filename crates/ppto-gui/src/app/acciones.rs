@@ -212,6 +212,10 @@ impl Aplicacion {
                     self.portapapeles = x;
                     continue;
                 }
+                Accion::BuscarEnBase(c) => {
+                    self.buscar_en_base(&c);
+                    continue;
+                }
                 Accion::SiguienteSinPrecio => {
                     self.navegar(1, true);
                     continue;
