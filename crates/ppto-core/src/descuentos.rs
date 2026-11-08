@@ -176,10 +176,17 @@ impl Presupuesto {
         if pvp < Decimal::ZERO {
             return Err(ErrorMotor::ValorInvalido("el PVP no puede ser negativo".into()));
         }
+        // La referencia se conserva si el recurso ya la tenía (cambio de grupo o de PVP).
+        let referencia = self
+            .conceptos
+            .get(codigo)
+            .and_then(|c| c.tarifa.as_ref())
+            .and_then(|t| t.referencia.clone());
         let t = PrecioTarifa {
             fabricante: fab,
             grupo: grupo.map(normalizar).filter(|g| !g.is_empty()),
             pvp,
+            referencia,
         };
         let neto = self.neto(pvp, self.descuento_tarifa(&t));
         let c = self.concepto_mut(codigo)?;

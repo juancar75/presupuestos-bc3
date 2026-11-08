@@ -145,8 +145,13 @@ enum Accion {
     Pvp(String, Decimal),
     /// Grupo de producto de un recurso con tarifa (vacío = sin grupo).
     GrupoTarifa(String, String),
+    /// Referencia del artículo en la tarifa del fabricante (vacío = sin referencia).
+    ReferenciaTarifa(String, String),
     /// Quitar un descuento («S&P» o «S&P/E08»).
     QuitarDescuento(String),
+    /// Pasar los recursos de un fabricante a su tarifa nueva:
+    /// (fabricante, etiqueta, referencia → PVP). Los descuentos no cambian.
+    TarifaNueva(String, String, std::collections::BTreeMap<String, Decimal>),
     RechazarPropuesta(u64),
     Dificultad {
         ambito: String,
@@ -395,7 +400,9 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::VentaFija(c, _) => (format!("venta bloqueada de {c}"), None),
         Accion::Pvp(c, _) => (format!("PVP de {c}"), None),
         Accion::GrupoTarifa(c, _) => (format!("grupo de {c}"), None),
+        Accion::ReferenciaTarifa(c, _) => (format!("referencia de {c}"), None),
         Accion::QuitarDescuento(k) => (format!("quitar descuento {k}"), None),
+        Accion::TarifaNueva(f, e, _) => (format!("tarifa {e} de {f}"), None),
         Accion::Dificultad {
             ambito,
             coeficiente,

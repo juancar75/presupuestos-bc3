@@ -57,6 +57,7 @@ const MIGRACIONES: &[&str] = &[
     include_str!("../migrations/0009_datos_obra.sql"),
     include_str!("../migrations/0010_seguimiento.sql"),
     include_str!("../migrations/0011_descuento_encadenado.sql"),
+    include_str!("../migrations/0012_referencia_tarifa.sql"),
 ];
 
 pub struct Almacen {
@@ -235,7 +236,7 @@ impl Almacen {
             .optional()?;
         let anterior = anterior.ok_or_else(|| ppto_core::ErrorMotor::ConceptoInexistente(codigo.into()))?;
         tx.execute(
-            "UPDATE conceptos SET precio = ?3, tarifa_fabricante = NULL, tarifa_pvp = NULL, tarifa_grupo = NULL
+            "UPDATE conceptos SET precio = ?3, tarifa_fabricante = NULL, tarifa_pvp = NULL, tarifa_grupo = NULL, tarifa_referencia = NULL
              WHERE revision_id = ?1 AND codigo = ?2",
             params![rev, codigo, precio.to_string()],
         )?;
@@ -286,7 +287,7 @@ impl Almacen {
 
         let mut conceptos = BTreeMap::new();
         let mut st = self.con.prepare(
-            "SELECT codigo, unidad, resumen, naturaleza, precio, texto, tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija, origen
+            "SELECT codigo, unidad, resumen, naturaleza, precio, texto, tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija, origen, tarifa_referencia
              FROM conceptos WHERE revision_id = ?1",
         )?;
         let filas = st.query_map([rev], |r| {
@@ -306,16 +307,21 @@ impl Almacen {
                     r.get::<_, Option<String>>(9)?,
                     r.get::<_, Option<String>>(10)?,
                     r.get::<_, Option<String>>(11)?,
+                    r.get::<_, Option<String>>(12)?,
                 ),
             ))
         })?;
         for f in filas {
-            let ((codigo, unidad, resumen, nat, precio, texto), (fab, pvp, grupo, margen, venta_fija, origen)) = f?;
+            let (
+                (codigo, unidad, resumen, nat, precio, texto),
+                (fab, pvp, grupo, margen, venta_fija, origen, referencia),
+            ) = f?;
             let tarifa = match (fab, pvp) {
                 (Some(fabricante), Some(pvp)) => Some(ppto_core::PrecioTarifa {
                     fabricante,
                     grupo,
                     pvp: dec_de(&pvp)?,
+                    referencia,
                 }),
                 _ => None,
             };
@@ -513,8 +519,8 @@ fn escribir_contenido(tx: &Transaction, rev: i64, p: &Presupuesto) -> Resultado<
     {
         let mut st = tx.prepare(
             "INSERT INTO conceptos (revision_id, codigo, unidad, resumen, naturaleza, precio, texto,
-                tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija, origen)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija, origen, tarifa_referencia)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         )?;
         for c in p.conceptos.values() {
             st.execute(params![
@@ -530,7 +536,8 @@ fn escribir_contenido(tx: &Transaction, rev: i64, p: &Presupuesto) -> Resultado<
                 c.tarifa.as_ref().and_then(|t| t.grupo.clone()),
                 c.margen.map(|m| m.to_string()),
                 c.venta_fija.map(|v| v.to_string()),
-                c.origen.as_ref().and_then(|o| serde_json::to_string(o).ok())
+                c.origen.as_ref().and_then(|o| serde_json::to_string(o).ok()),
+                c.tarifa.as_ref().and_then(|t| t.referencia.clone())
             ])?;
         }
     }
@@ -792,6 +799,7 @@ mod tests {
         p.fijar_descuento_texto("FABA", "40+8").unwrap();
         p.fijar_tarifa_grupo("MT.TUBO16", "SCHAKO", Some("g1"), dec!(2))
             .unwrap();
+        p.fijar_referencia_tarifa("MT.TUBO16", Some("REF-0001")).unwrap();
         assert_eq!(p.concepto("MT.TUBO16").unwrap().precio, dec!(1));
         p.fijar_margen("SR.M2", Some(dec!(30))).unwrap();
         p.fijar_venta("SR.COL8", Some(dec!(99.5))).unwrap();

@@ -110,6 +110,16 @@ impl Aplicacion {
                                     ) {
                                         acciones.push(Accion::GrupoTarifa(r.codigo.clone(), g));
                                     }
+                                    ui.label(RichText::new("ref.").weak());
+                                    let referencia = self
+                                        .p
+                                        .conceptos
+                                        .get(&r.codigo)
+                                        .and_then(ppto_core::Presupuesto::referencia_tarifa)
+                                        .unwrap_or_default();
+                                    if let Some(rf) = self.edicion.texto(ui, &format!("ref|{}", r.codigo), &referencia, 80.0) {
+                                        acciones.push(Accion::ReferenciaTarifa(r.codigo.clone(), rf));
+                                    }
                                     ui.label(
                                         RichText::new({
                                             let k = self.p.clave_aplicada(&t);

@@ -11,9 +11,9 @@
 //!
 //! La IA consulta la misma biblioteca (`buscar_biblioteca`) antes de estimar.
 
-use super::Aplicacion;
 use super::asistente::abrir_en_sistema;
 use super::ofertas::{NARANJA, OpDoc, boton_documento, elegir_documento};
+use super::{Accion, Aplicacion};
 use eframe::egui::{self, Color32, RichText};
 use ppto_biblioteca::{Biblioteca, DatosFabricante, LineaPvp, Oferta, Origen, anio, hoy};
 use ppto_core::Decimal;
@@ -208,8 +208,9 @@ impl Aplicacion {
                         .color(Color32::from_rgb(220, 150, 40)),
                     );
                 }
-                egui::Grid::new("fabricantes_bib").striped(true).num_columns(6).show(ui, |ui| {
-                    for t in ["Fabricante", "Tarifa vigente", "Refs", "Descuentos", "Ofertas", "Subida est."] {
+                let mut a_tarifa: Option<String> = None;
+                egui::Grid::new("fabricantes_bib").striped(true).num_columns(7).show(ui, |ui| {
+                    for t in ["Fabricante", "Tarifa vigente", "Refs", "Descuentos", "Ofertas", "Subida est.", ""] {
                         ui.label(RichText::new(t).strong());
                     }
                     ui.end_row();
@@ -232,9 +233,29 @@ impl Aplicacion {
                         );
                         ui.label(f.ofertas.len().to_string());
                         ui.label(f.subida_estimada.map_or("—".into(), |s| format!("{} %", num(s, 2))));
+                        if f.vigente().is_some() {
+                            if ui
+                                .small_button("Pasar la obra a esta tarifa")
+                                .on_hover_text(
+                                    "Cambia el PVP de los recursos de este fabricante por el de la tarifa vigente, \
+                                     buscando cada uno por su referencia. Los descuentos por familia no cambian.",
+                                )
+                                .clicked()
+                            {
+                                a_tarifa = Some(f.nombre.clone());
+                            }
+                        } else {
+                            ui.label("");
+                        }
                         ui.end_row();
                     }
                 });
+                if let Some(fab) = a_tarifa {
+                    match v.b.pvps_vigentes(&fab, actual) {
+                        Some((etiqueta, _, pvps)) => self.aplicar(vec![Accion::TarifaNueva(fab, etiqueta, pvps)]),
+                        None => v.mensaje = Some((format!("{fab} no tiene tarifa en la biblioteca."), true)),
+                    }
+                }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label("Cargar tarifa: fabricante");

@@ -153,6 +153,11 @@ pub struct PrecioTarifa {
     #[serde(default)]
     pub grupo: Option<String>,
     pub pvp: Decimal,
+    /// Referencia del artículo en la tarifa del fabricante (p. ej.
+    /// «5153135100»). Con ella el recurso se actualiza solo cuando se carga
+    /// la tarifa del año siguiente.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub referencia: Option<String>,
 }
 
 impl Concepto {

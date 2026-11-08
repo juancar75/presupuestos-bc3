@@ -6,6 +6,18 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Pasar la obra a la tarifa nueva de un fabricante** (Biblioteca →
+  «Pasar la obra a esta tarifa»): cada recurso guarda la **referencia del
+  artículo** en la tarifa (columna «ref.» en Recursos; si no la tiene se usa
+  la del origen del precio). Al cargar la tarifa del año, el PVP de cada
+  recurso se busca por su referencia y el neto se recalcula con el
+  descuento de su familia, simple o encadenado, que no cambia. Se informa
+  de la subida media, de las referencias que ya no están en la tarifa (se
+  quedan con el PVP anterior) y de los recursos sin referencia. Se deshace
+  como cualquier otro cambio. Si la tarifa del año aún no ha llegado, usa la
+  subida estimada del fabricante.
+- La referencia se guarda en la base de datos de la obra (migración 0012) y
+  en la biblioteca al guardar la obra.
 - **«Nuevo…» pregunta qué vas a presupuestar**: ventilación de garaje y zonas
   comunes, PCI, climatización, ventilación de viviendas, fontanería o
   electricidad, y de dónde partes (ciego del cliente en Excel, BC3 o desde

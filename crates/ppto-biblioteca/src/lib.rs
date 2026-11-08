@@ -490,6 +490,34 @@ impl Biblioteca {
         })
     }
 
+    /// PVP de la tarifa vigente de un fabricante para pasar una obra a ella:
+    /// (etiqueta, estimado, referencia → PVP). Si la tarifa es de un año
+    /// anterior y hay subida estimada, los PVP la llevan y `estimado` es `true`.
+    pub fn pvps_vigentes(
+        &self,
+        fabricante: &str,
+        anio_actual: i32,
+    ) -> Option<(String, bool, BTreeMap<String, Decimal>)> {
+        let fab = self.fabricante(fabricante)?;
+        let t = fab.vigente()?;
+        let mut estimado = false;
+        let pvps = t
+            .lineas
+            .keys()
+            .filter_map(|r| {
+                let p = self.pvp(fabricante, r, anio_actual)?;
+                estimado |= p.estimado;
+                Some((r.clone(), p.pvp))
+            })
+            .collect();
+        let etiqueta = if estimado {
+            format!("{} + subida estimada", t.etiqueta)
+        } else {
+            t.etiqueta.clone()
+        };
+        Some((etiqueta, estimado, pvps))
+    }
+
     /// Fabricantes cuya tarifa más reciente es de un año anterior: (nombre, etiqueta, año).
     pub fn tarifas_antiguas(&self, anio_actual: i32) -> Vec<(String, String, i32)> {
         self.fabricantes
@@ -598,7 +626,7 @@ impl Biblioteca {
                     fabricante: h.tarifa.as_ref().map(|t| t.fabricante.clone()),
                     grupo: h.tarifa.as_ref().and_then(|t| t.grupo.clone()),
                     pvp: h.tarifa.as_ref().map(|t| t.pvp),
-                    referencia: None,
+                    referencia: ppto_core::Presupuesto::referencia_tarifa(h),
                 });
             }
             let v = VersionPartida {
@@ -808,6 +836,17 @@ mod tests {
         assert!(nota.unwrap().contains("2027"));
         // La referencia desaparecida sigue disponible con su tarifa antigua
         assert_eq!(b.pvp("KOOLAIR", "VIEJA", 2027).unwrap().tarifa, "2026");
+        // PVP para pasar una obra a la tarifa vigente
+        let (et, est, pvps) = b.pvps_vigentes("Koolair", 2027).unwrap();
+        assert_eq!((et.as_str(), est, pvps["20-H-400x300"]), ("2027", false, dec!(106)));
+        assert!(!pvps.contains_key("VIEJA"));
+        b.fijar_subida("koolair", Some(dec!(5)));
+        let (et, est, pvps) = b.pvps_vigentes("Koolair", 2028).unwrap();
+        assert_eq!(
+            (et.as_str(), est, pvps["NUEVA"]),
+            ("2027 + subida estimada", true, dec!(10.50))
+        );
+        assert!(b.pvps_vigentes("NADIE", 2027).is_none());
     }
 
     #[test]

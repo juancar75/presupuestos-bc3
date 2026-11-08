@@ -896,6 +896,16 @@ fn descuentos_por_fabricante_desde_recursos() {
     assert_eq!(app.p.concepto("MT.PANEL").unwrap().precio, dec!(15));
     app.deshacer();
     assert_eq!(app.p.concepto("MT.PANEL").unwrap().precio, dec!(10));
+    // Tarifa nueva por referencia: el PVP sube y el descuento se mantiene
+    app.aplicar(vec![Accion::ReferenciaTarifa("MT.PANEL".into(), "AC-20".into())]);
+    app.aplicar(vec![Accion::TarifaNueva(
+        "ACME".into(),
+        "2027".into(),
+        std::collections::BTreeMap::from([("AC-20".to_owned(), dec!(24))]),
+    )]);
+    assert_eq!(app.p.concepto("MT.PANEL").unwrap().precio, dec!(12));
+    app.deshacer();
+    assert_eq!(app.p.concepto("MT.PANEL").unwrap().precio, dec!(10));
     // La pestaña se pinta con la tabla de descuentos
     let ctx = Context::default();
     for _ in 0..2 {
@@ -1319,6 +1329,7 @@ fn recursos_horas_por_oficio_y_por_fabricante() {
         fabricante: "COLEC".into(),
         grupo: None,
         pvp: dec!(300),
+        referencia: None,
     });
     app.p.fijar_descuento("COLEC", dec!(40)).unwrap();
     app.recalcular();

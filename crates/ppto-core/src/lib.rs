@@ -40,6 +40,7 @@ pub mod propuesta;
 pub mod ratio;
 pub mod seguimiento;
 pub mod subcontrata;
+pub mod tarifa_nueva;
 pub mod valoracion;
 pub mod venta;
 
