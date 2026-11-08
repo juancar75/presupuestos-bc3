@@ -13,6 +13,7 @@ mod biblioteca;
 mod ciego;
 mod comparar;
 mod dificultad;
+mod emparejar;
 mod ficha;
 mod informes;
 mod legalizacion;
@@ -149,6 +150,13 @@ enum Accion {
     ReferenciaTarifa(String, String),
     /// Quitar un descuento («S&P» o «S&P/E08»).
     QuitarDescuento(String),
+    /// Dar a partidas de la obra el descompuesto de partidas de una base
+    /// emparejadas: (código en la obra, código en la base).
+    AsignarDeBase {
+        origen: std::sync::Arc<Presupuesto>,
+        nombre: String,
+        parejas: Vec<(String, String)>,
+    },
     /// Pasar los recursos de un fabricante a su tarifa nueva:
     /// (fabricante, etiqueta, referencia → PVP). Los descuentos no cambian.
     TarifaNueva(String, String, std::collections::BTreeMap<String, Decimal>),
@@ -289,6 +297,7 @@ pub struct Aplicacion {
     ventana_tarifas: Option<tarifas::VentanaTarifas>,
     ventana_biblioteca: Option<biblioteca::VentanaBiblioteca>,
     ventana_bases: Option<bases::VentanaBases>,
+    ventana_emparejar: Option<emparejar::VentanaEmparejar>,
     /// Ventana «Nuevo presupuesto» (qué se presupuesta y de dónde se parte).
     asistente_nuevo: Option<nuevo::AsistenteNuevo>,
     /// Especialidad de la obra (orienta plantillas y bases de precios).
@@ -403,6 +412,9 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::ReferenciaTarifa(c, _) => (format!("referencia de {c}"), None),
         Accion::QuitarDescuento(k) => (format!("quitar descuento {k}"), None),
         Accion::TarifaNueva(f, e, _) => (format!("tarifa {e} de {f}"), None),
+        Accion::AsignarDeBase { nombre, parejas, .. } => {
+            (format!("asignar {} partidas de {nombre}", parejas.len()), None)
+        }
         Accion::Dificultad {
             ambito,
             coeficiente,
@@ -492,6 +504,7 @@ impl Aplicacion {
             ventana_tarifas: None,
             ventana_biblioteca: None,
             ventana_bases: None,
+            ventana_emparejar: None,
             asistente_nuevo: None,
             especialidad: None,
             ficha: Default::default(),
@@ -821,6 +834,7 @@ impl Aplicacion {
         self.ventana_tarifas(&ctx);
         self.ventana_biblioteca(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
+        self.ventana_emparejar(&ctx, &mut acciones);
         self.ventana_nuevo(&ctx);
         self.ventana_ficha(&ctx);
         self.ventana_origen(&ctx, &mut acciones);

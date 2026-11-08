@@ -138,6 +138,22 @@ impl Aplicacion {
                 }
                 Accion::GrupoTarifa(codigo, grupo) => self.p.fijar_grupo(&codigo, &grupo),
                 Accion::ReferenciaTarifa(codigo, r) => self.p.fijar_referencia_tarifa(&codigo, Some(&r)),
+                Accion::AsignarDeBase { origen, nombre, parejas } => {
+                    let mut bien = 0;
+                    let mut mal = Vec::new();
+                    for (obra, base) in &parejas {
+                        match self.p.traer_precio_de(&origen, obra, base) {
+                            Ok(_) => bien += 1,
+                            Err(e) => mal.push(format!("{obra}: {e}")),
+                        }
+                    }
+                    let mut m = format!("{bien} partidas con el descompuesto de {nombre}.");
+                    if !mal.is_empty() {
+                        m += &format!(" No se pudieron asignar: {}.", mal.join("; "));
+                    }
+                    self.info(m);
+                    Ok(())
+                }
                 Accion::TarifaNueva(fab, etiqueta, pvps) => {
                     let inf = self.p.actualizar_a_tarifa(&fab, &etiqueta, &pvps);
                     self.info(inf.resumen(&fab, &etiqueta));

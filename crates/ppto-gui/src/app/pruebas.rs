@@ -2175,3 +2175,95 @@ fn ficha_del_edificio() {
     assert_eq!(app.ficha.get("garaje_superficie_planta"), Some(&dec!(1200)));
     assert_eq!(app.especialidad, Some(Especialidad::VentilacionGaraje));
 }
+
+#[test]
+fn emparejar_ciego_con_base_y_recordar() {
+    use super::emparejar::VentanaEmparejar;
+    use ppto_core::emparejar::Nivel;
+    let dir = std::env::temp_dir().join(format!("gui-emparejar-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bib = dir.join("biblioteca.json");
+    // Base con una rejilla descompuesta (material con tarifa y descuento)
+    let mut base = Presupuesto::new("t", "BASE", "Base");
+    base.nuevo_capitulo("BASE", "C1", "Rejillas").unwrap();
+    base.nueva_partida("C1", "REJ.400", "ud", "Rejilla de retorno Acme 20-H 400x300 instalada")
+        .unwrap();
+    base.nueva_partida("C1", "REJ.600", "ud", "Rejilla de retorno Acme 20-H 600x300 instalada")
+        .unwrap();
+    base.nuevo_recurso("MT.R400", "ud", "Rejilla 400x300", Naturaleza::Material, dec!(0))
+        .unwrap();
+    base.fijar_tarifa_grupo("MT.R400", "Acme", Some("F1"), dec!(100))
+        .unwrap();
+    base.fijar_descuento_texto("Acme/F1", "40+8").unwrap();
+    base.anadir_linea("REJ.400", "MT.R400", dec!(1)).unwrap();
+    let base = std::sync::Arc::new(base);
+    // Obra (ciego): dos partidas sin precio
+    let mut app = Aplicacion::sin_ventana();
+    let raiz = app.p.raiz.clone();
+    app.p.nuevo_capitulo(&raiz, "CV", "Ventilación").unwrap();
+    app.p
+        .nueva_partida("CV", "01.01", "Ud", "REJILLA RETORNO 400 x 300 mm")
+        .unwrap();
+    app.p.nueva_partida("CV", "01.02", "ud", "Extintor de polvo").unwrap();
+    let mut v = VentanaEmparejar::en(
+        &app.p,
+        std::sync::Arc::clone(&base),
+        "base.bc3".into(),
+        Some(bib.clone()),
+    );
+    let f = v.filas.iter().find(|f| f.codigo == "01.01").unwrap();
+    assert_eq!((f.candidatos[0].codigo.as_str(), f.nivel()), ("REJ.400", Nivel::Seguro));
+    assert_eq!(
+        v.filas.iter().find(|f| f.codigo == "01.02").unwrap().nivel(),
+        Nivel::Ninguno
+    );
+    // Asignar las seguras: la partida conserva código y resumen, el neto y el descuento encadenado vienen de la base
+    let mut acc = Vec::new();
+    // La ventana se pinta
+    app.ventana_emparejar = Some(VentanaEmparejar::en(
+        &app.p,
+        std::sync::Arc::clone(&base),
+        "base.bc3".into(),
+        None,
+    ));
+    let ctx = Context::default();
+    for _ in 0..2 {
+        let mut out = ctx.run_ui(RawInput::default(), |ui| {
+            let c = ui.ctx().clone();
+            app.ventana_emparejar(&c, &mut acc);
+        });
+        out.textures_delta.clear();
+    }
+    assert!(acc.is_empty() && app.ventana_emparejar.is_some());
+    v.filas.retain(|f| f.codigo == "01.01");
+    let parejas = v.sacar(Nivel::Seguro, None);
+    assert_eq!(parejas, vec![("01.01".to_owned(), "REJ.400".to_owned())]);
+    acc.push(Accion::AsignarDeBase {
+        origen: std::sync::Arc::clone(&base),
+        nombre: "base.bc3".into(),
+        parejas,
+    });
+    app.aplicar(acc);
+    let c = app.p.concepto("01.01").unwrap();
+    assert_eq!(c.resumen, "REJILLA RETORNO 400 x 300 mm");
+    assert_eq!(app.p.precio("01.01").unwrap(), dec!(55.20));
+    assert_eq!(app.p.texto_descuento("Acme/F1"), "40+8");
+    // Se recuerda: con otra redacción equivalente sale ★ en verde
+    let _ = ppto_biblioteca::Biblioteca::modificar(&bib, |b| {
+        b.recordar_equivalencia(
+            &ppto_core::emparejar::clave("Rejilla de retorno 400x300", "ud"),
+            "base.bc3",
+            "REJ.600",
+            "x",
+        )
+    });
+    let mut obra = Presupuesto::new("t", "O", "O");
+    obra.nuevo_capitulo("O", "C", "C").unwrap();
+    obra.nueva_partida("C", "P1", "ud", "rejilla de retorno 400 x 300")
+        .unwrap();
+    let v = VentanaEmparejar::en(&obra, base, "base.bc3".into(), Some(bib));
+    let c = &v.filas[0].candidatos[0];
+    assert!(c.recordado);
+    assert_eq!(c.codigo, "REJ.600");
+    let _ = std::fs::remove_dir_all(dir);
+}

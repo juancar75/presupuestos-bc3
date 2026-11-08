@@ -302,6 +302,51 @@ pub struct Biblioteca {
     /// Código → versiones (de más antigua a más reciente).
     #[serde(default)]
     pub partidas: BTreeMap<String, Vec<VersionPartida>>,
+    /// Parejas confirmadas al emparejar una medición con una base:
+    /// clave de la partida medida ([`ppto_core::emparejar::clave`]) → partida
+    /// de la base.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub equivalencias: BTreeMap<String, Equivalencia>,
+}
+
+/// Partida de una base elegida para una partida medida.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Equivalencia {
+    /// Nombre del fichero de la base.
+    pub base: String,
+    pub codigo: String,
+    pub resumen: String,
+    /// Veces que se ha confirmado.
+    #[serde(default)]
+    pub veces: u32,
+    #[serde(default)]
+    pub fecha: String,
+}
+
+impl Biblioteca {
+    /// Recuerda que la partida medida `clave` es la `codigo` de `base`.
+    pub fn recordar_equivalencia(&mut self, clave: &str, base: &str, codigo: &str, resumen: &str) {
+        let veces = self
+            .equivalencias
+            .get(clave)
+            .filter(|e| e.base == base && e.codigo == codigo)
+            .map_or(0, |e| e.veces);
+        self.equivalencias.insert(
+            clave.to_owned(),
+            Equivalencia {
+                base: base.to_owned(),
+                codigo: codigo.to_owned(),
+                resumen: resumen.to_owned(),
+                veces: veces + 1,
+                fecha: hoy(),
+            },
+        );
+    }
+
+    /// Partida de `base` recordada para la partida medida `clave`.
+    pub fn equivalencia(&self, clave: &str, base: &str) -> Option<&Equivalencia> {
+        self.equivalencias.get(clave).filter(|e| e.base == base)
+    }
 }
 
 /// Texto en minúsculas sin tildes, para buscar.
@@ -847,6 +892,26 @@ mod tests {
             ("2027 + subida estimada", true, dec!(10.50))
         );
         assert!(b.pvps_vigentes("NADIE", 2027).is_none());
+    }
+
+    #[test]
+    fn equivalencias_confirmadas() {
+        let mut b = Biblioteca::default();
+        let k = ppto_core::emparejar::clave("Rejilla retorno 400x300", "ud");
+        assert!(b.equivalencia(&k, "base.bc3").is_none());
+        b.recordar_equivalencia(&k, "base.bc3", "REJ.400", "Rejilla 400x300");
+        b.recordar_equivalencia(&k, "base.bc3", "REJ.400", "Rejilla 400x300");
+        let e = b
+            .equivalencia(
+                &ppto_core::emparejar::clave("REJILLA DE RETORNO 400 x 300", "Ud"),
+                "base.bc3",
+            )
+            .unwrap();
+        assert_eq!((e.codigo.as_str(), e.veces), ("REJ.400", 2));
+        assert!(b.equivalencia(&k, "otra.bc3").is_none());
+        // Cambiar de partida reinicia la cuenta
+        b.recordar_equivalencia(&k, "base.bc3", "REJ.450", "Rejilla 450x300");
+        assert_eq!(b.equivalencia(&k, "base.bc3").unwrap().veces, 1);
     }
 
     #[test]

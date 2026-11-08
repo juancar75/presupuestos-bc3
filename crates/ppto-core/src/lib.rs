@@ -26,6 +26,7 @@ pub mod descuentos;
 pub mod dificultad;
 pub mod edicion;
 pub mod ejemplos;
+pub mod emparejar;
 pub mod error;
 pub mod especialidad;
 pub mod explosion;

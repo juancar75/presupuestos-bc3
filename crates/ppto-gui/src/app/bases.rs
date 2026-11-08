@@ -278,6 +278,7 @@ impl Aplicacion {
                 .is_some_and(|c| c.naturaleza == Naturaleza::Partida)
         });
         let mut abierta = true;
+        let mut emparejar: Option<(Arc<Presupuesto>, String)> = None;
         egui::Window::new("Bases de precios")
             .open(&mut abierta)
             .default_width(860.0)
@@ -357,6 +358,17 @@ impl Aplicacion {
                     return;
                 }
                 ui.separator();
+                if let Some(b) = v.base.as_ref()
+                    && ui
+                        .button("Emparejar la obra con esta base…")
+                        .on_hover_text(
+                            "Propone, para cada partida sin precio de la obra, la partida de esta base que mejor encaja \
+                             (por modelo, medidas, diámetro, potencia, palabras y unidad). Usted confirma.",
+                        )
+                        .clicked()
+                {
+                    emparejar = Some((Arc::clone(&b.p), b.nombre()));
+                }
                 ui.horizontal(|ui| {
                     ui.label("Buscar:");
                     ui.add(
@@ -478,6 +490,14 @@ impl Aplicacion {
                     }
                 });
             });
+        if let Some((base, nombre)) = emparejar {
+            let w = super::emparejar::VentanaEmparejar::nueva(&self.p, base, nombre);
+            if w.filas.is_empty() {
+                self.info("No hay partidas sin precio en la obra.");
+            } else {
+                self.ventana_emparejar = Some(w);
+            }
+        }
         if abierta {
             self.ventana_bases = Some(v);
         }
