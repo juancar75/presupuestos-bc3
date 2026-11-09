@@ -184,17 +184,18 @@ impl Aplicacion {
             .add_filter("FIEBDC-3 (BC3)", &["bc3", "BC3"])
             .pick_file()
         {
-            self.importar_bc3(ruta);
+            let _ = self.importar_bc3(ruta);
         }
     }
 
-    pub(super) fn importar_bc3(&mut self, ruta: PathBuf) {
-        self.ciego = None;
-        self.especialidad = None;
-        self.ficha.clear();
-        self.historial.limpiar();
+    /// Importa un BC3 como obra nueva; `false` si no se pudo (la obra abierta no cambia).
+    pub(super) fn importar_bc3(&mut self, ruta: PathBuf) -> bool {
         match ppto_bc3::importar_fichero(&ruta) {
             Ok(imp) => {
+                self.ciego = None;
+                self.especialidad = None;
+                self.ficha.clear();
+                self.historial.limpiar();
                 self.p = imp.presupuesto.clone();
                 let k = &imp.porcentajes;
                 self.gg = k.gastos_generales.unwrap_or(self.gg);
@@ -223,8 +224,12 @@ impl Aplicacion {
                 ));
                 self.ver_informe = imp.errores() + imp.avisos() + imp.discrepancias.len() > 0;
                 self.informe = Some(imp);
+                true
             }
-            Err(e) => self.error(format!("No se pudo importar: {e}")),
+            Err(e) => {
+                self.error(format!("No se pudo importar: {e}"));
+                false
+            }
         }
     }
 

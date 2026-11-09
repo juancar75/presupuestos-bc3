@@ -2396,3 +2396,17 @@ fn base_sqlite_conserva_tarifa_y_permite_actualizar_la_oferta() {
     assert_eq!(app.p.precio("01").unwrap(), dec!(60.72));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn ciego_que_no_se_lee_no_deja_la_obra_cambiada() {
+    let dir = std::env::temp_dir().join(format!("gui-ciego-mal-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mal = dir.join("no_es_un_excel.xlsx");
+    std::fs::write(&mal, b"no es un excel").unwrap();
+    let mut app = Aplicacion::sin_ventana();
+    let antes = app.p.clone();
+    assert!(!app.importar_ciego(mal));
+    assert_eq!(app.p, antes);
+    assert!(app.ciego.is_none());
+    let _ = std::fs::remove_dir_all(dir);
+}

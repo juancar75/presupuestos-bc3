@@ -20,11 +20,12 @@ impl Aplicacion {
             .set_title("Presupuesto ciego (listado de Presto en Excel)")
             .pick_file()
         {
-            self.importar_ciego(r);
+            let _ = self.importar_ciego(r);
         }
     }
 
-    pub(super) fn importar_ciego(&mut self, ruta: PathBuf) {
+    /// Importa un ciego como obra nueva; `false` si no se pudo (la obra abierta no cambia).
+    pub(super) fn importar_ciego(&mut self, ruta: PathBuf) -> bool {
         match ppto_ciego::leer(&ruta) {
             Ok(c) => {
                 self.cargar_presupuesto(c.presupuesto.clone());
@@ -44,8 +45,14 @@ impl Aplicacion {
                      o «Traer precios…» de un BC3, y luego «Devolver valorado…».{avisos}"
                 ));
                 self.ciego = Some(CiegoAbierto { ruta, ciego: c });
+                true
             }
-            Err(e) => self.error(format!("No se pudo importar el ciego: {e}")),
+            Err(e) => {
+                self.error(format!(
+                    "No se pudo importar el ciego: {e}. Envíe el Excel para que el programa aprenda a leer ese formato."
+                ));
+                false
+            }
         }
     }
 

@@ -29,7 +29,7 @@ pub enum ErrorCiego {
     #[error("no se pudo leer el Excel: {0}")]
     Lectura(String),
     #[error(
-        "no se encuentra la fila de cabecera de Presto (Código, Nat, Ud, Resumen y CanPres o Cantidad) en ninguna hoja"
+        "no se reconoce el Excel como presupuesto: no hay cabecera de Presto (Código, Nat, Ud, Resumen y CanPres o Cantidad) ni una columna con «Capítulo»/«Partida» en ninguna hoja"
     )]
     SinCabecera,
     #[error(transparent)]
@@ -164,6 +164,52 @@ impl Columnas {
     }
 }
 
+/// Naturaleza de Presto en una celda («Capítulo», «Partida»).
+fn es_naturaleza(v: &Data) -> bool {
+    matches!(
+        texto(v).trim().to_lowercase().as_str(),
+        "capítulo" | "capitulo" | "partida"
+    )
+}
+
+impl Columnas {
+    /// Columnas deducidas del contenido cuando la cabecera no es la de
+    /// Presto (p. ej. exportada con «EDT» y las columnas corridas): la
+    /// columna donde pone «Capítulo»/«Partida» es Nat y, como en Presto,
+    /// delante va el Código y detrás Ud, Resumen, CanPres, Pres e ImpPres.
+    /// Devuelve las columnas y la primera fila con naturaleza.
+    fn por_contenido(filas: &[&[Data]], inicio: u32) -> Option<(Self, usize)> {
+        let ancho = filas.iter().map(|f| f.len()).max().unwrap_or(0);
+        let j = (1..ancho)
+            .map(|j| (j, filas.iter().filter(|f| f.get(j).is_some_and(es_naturaleza)).count()))
+            .filter(|(_, n)| *n >= 2)
+            .max_by_key(|(_, n)| *n)?
+            .0;
+        // Alguna partida con cantidad numérica en CanPres
+        let partida = |f: &[Data]| {
+            f.get(j)
+                .is_some_and(|v| texto(v).trim().eq_ignore_ascii_case("partida"))
+        };
+        if !filas
+            .iter()
+            .any(|f| partida(f) && f.get(j + 3).and_then(decimal).is_some())
+        {
+            return None;
+        }
+        let primera = filas.iter().position(|f| f.get(j).is_some_and(es_naturaleza))?;
+        let col = |k: usize| u32::try_from(k).ok().map(|k| inicio + k);
+        let mut c = [None; 13];
+        c[0] = col(j - 1);
+        c[1] = col(j);
+        c[2] = col(j + 1);
+        c[3] = col(j + 2);
+        c[10] = col(j + 3);
+        c[11] = col(j + 4);
+        c[12] = col(j + 5);
+        Some((Self(c), primera))
+    }
+}
+
 /// Lee un ciego desde un fichero .xlsx o .xls.
 pub fn leer(ruta: impl AsRef<Path>) -> Result<Ciego, ErrorCiego> {
     let ruta = ruta.as_ref();
@@ -198,13 +244,32 @@ pub fn leer_bytes(bytes: &[u8], nombre: &str) -> Result<Ciego, ErrorCiego> {
             .unwrap_or_default();
         let (f0, c0) = rango.start().unwrap_or((0, 0));
         let filas: Vec<&[Data]> = rango.rows().collect();
-        let Some((i_cab, cols)) = filas
+        let cabecera = filas
             .iter()
             .take(40)
             .enumerate()
-            .find_map(|(i, f)| Columnas::de(f, c0).map(|c| (i, c)))
-        else {
-            continue;
+            .find_map(|(i, f)| Columnas::de(f, c0).map(|c| (i, c)));
+        // Sin cabecera de Presto reconocible: columnas deducidas del contenido
+        let (i_cab, cols, deducidas) = match cabecera {
+            Some((i, c)) => (i, c, false),
+            None => match Columnas::por_contenido(&filas, c0) {
+                Some((c, primera)) => (primera.saturating_sub(1), c, true),
+                None => continue,
+            },
+        };
+        // Con columnas deducidas se lee desde la primera fila con naturaleza
+        // (lo de encima, p. ej. una fila «EDT» de resumen, no es del ciego)
+        let desde = if deducidas {
+            filas
+                .iter()
+                .position(|f| {
+                    cols.0[1]
+                        .and_then(|k| f.get(usize::try_from(k - c0).ok()?))
+                        .is_some_and(es_naturaleza)
+                })
+                .unwrap_or(i_cab + 1)
+        } else {
+            i_cab + 1
         };
         // Título: el primer texto con sentido sobre la cabecera (no «B» ni
         // «Presupuesto», que pone Presto), o el nombre del fichero
@@ -221,13 +286,26 @@ pub fn leer_bytes(bytes: &[u8], nombre: &str) -> Result<Ciego, ErrorCiego> {
                         "presupuesto" | "mediciones" | "presupuesto y mediciones" | "mediciones y presupuesto"
                     )
             })
+            .filter(|_| !deducidas)
             .unwrap_or_else(|| nombre.to_owned());
         let mut lector = Lector::new(&hoja, cols, c0, titulo);
         lector.formulas = formulas;
-        let sin_precio = !filas[i_cab]
-            .iter()
-            .any(|v| matches!(texto(v).trim().to_lowercase().as_str(), "prpres" | "pres" | "precio"));
-        let mut ciego = lector.leer(&filas, f0, i_cab + 1)?;
+        let sin_precio = !deducidas
+            && !filas[i_cab]
+                .iter()
+                .any(|v| matches!(texto(v).trim().to_lowercase().as_str(), "prpres" | "pres" | "precio"));
+        let mut ciego = lector.leer(&filas, f0, desde)?;
+        if deducidas {
+            // Estos listados no traen filas de total de capítulo
+            ciego
+                .incidencias
+                .retain(|i| !i.starts_with("capítulos sin fila de total"));
+            ciego.incidencias.push(
+                "la cabecera no es la de Presto: columnas deducidas del contenido (Código, Nat, Ud, Resumen, \
+                 CanPres, Pres, ImpPres alrededor de la columna «Capítulo/Partida»)"
+                    .into(),
+            );
+        }
         if sin_precio {
             ciego.columnas_nuevas = Some(ColumnasNuevas {
                 cabecera: f0 + u32::try_from(i_cab).unwrap_or(0),
