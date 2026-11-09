@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.45] - 2026-11-09
+
 ### Añadido
 - **Tarifas de una base en la biblioteca** (Biblioteca → «Tarifas de una base
   (.sqlite)…»): carga de golpe todas las tarifas que lleva una base de precios
