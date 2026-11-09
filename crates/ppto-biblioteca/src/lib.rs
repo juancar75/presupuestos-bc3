@@ -548,6 +548,44 @@ impl Biblioteca {
         })
     }
 
+    /// Carga en la biblioteca las tarifas que lleva dentro una base de
+    /// precios (o una obra): por fabricante, la referencia, descripción,
+    /// unidad, PVP y familia de cada material con tarifa, y los descuentos
+    /// por familia (también encadenados). Devuelve, por fabricante, cuántas
+    /// referencias se han cargado. Los materiales sin referencia no entran.
+    pub fn cargar_tarifas_de(&mut self, p: &Presupuesto, etiqueta: &str, anio: i32) -> Vec<(String, usize)> {
+        let mut por_fab: BTreeMap<String, BTreeMap<String, LineaPvp>> = BTreeMap::new();
+        for c in p.conceptos.values() {
+            let (Some(t), Some(r)) = (c.tarifa.as_ref(), Presupuesto::referencia_tarifa(c)) else {
+                continue;
+            };
+            por_fab.entry(t.fabricante.clone()).or_default().insert(
+                r,
+                LineaPvp {
+                    descripcion: c.resumen.clone(),
+                    unidad: c.unidad.clone(),
+                    pvp: t.pvp,
+                    grupo: t.grupo.clone(),
+                },
+            );
+        }
+        let mut v = Vec::new();
+        for (fab, lineas) in por_fab {
+            let n = lineas.len();
+            self.cargar_tarifa(&fab, etiqueta, anio, lineas);
+            // Descuentos de este fabricante (general y por familia)
+            for k in p.descuentos.keys() {
+                let (f, _) = partes(k);
+                if normalizar(&f) == normalizar(&fab) {
+                    let cadena = p.cadena_descuento(k);
+                    self.fijar_descuento_encadenado(k, Some(&cadena));
+                }
+            }
+            v.push((fab, n));
+        }
+        v
+    }
+
     /// PVP de la tarifa vigente de un fabricante para pasar una obra a ella:
     /// (etiqueta, estimado, referencia → PVP). Si la tarifa es de un año
     /// anterior y hay subida estimada, los PVP la llevan y `estimado` es `true`.
@@ -905,6 +943,37 @@ mod tests {
             ("2027 + subida estimada", true, dec!(10.50))
         );
         assert!(b.pvps_vigentes("NADIE", 2027).is_none());
+    }
+
+    #[test]
+    fn tarifas_de_una_base() {
+        let mut p = Presupuesto::new("t", "B", "Base");
+        for (c, g, pvp, r) in [
+            ("MT.A", "F1", dec!(100), Some("A-1")),
+            ("MT.B", "F2", dec!(50), Some("B-2")),
+            ("MT.C", "F1", dec!(10), None),
+        ] {
+            p.conceptos.insert(
+                c.into(),
+                ppto_core::Concepto::basico(c, "ud", format!("Material {c}"), Naturaleza::Material, Decimal::ZERO),
+            );
+            p.fijar_tarifa_grupo(c, "Acme", Some(g), pvp).unwrap();
+            p.fijar_referencia_tarifa(c, r).unwrap();
+        }
+        p.fijar_descuento("Acme/F1", dec!(60)).unwrap();
+        p.fijar_descuento_texto("Acme/F2", "40+8").unwrap();
+        let mut b = Biblioteca::default();
+        assert_eq!(b.cargar_tarifas_de(&p, "2026", 2026), vec![("ACME".to_owned(), 2)]);
+        let pv = b.pvp("acme", "A-1", 2026).unwrap();
+        assert_eq!(pv.pvp, dec!(100));
+        assert_eq!(
+            b.fabricante("Acme").unwrap().vigente().unwrap().lineas["B-2"]
+                .grupo
+                .as_deref(),
+            Some("F2")
+        );
+        assert_eq!(b.fabricante("Acme").unwrap().descuentos["F1"], dec!(60));
+        assert_eq!(b.fabricante("Acme").unwrap().cadenas["F2"], vec![dec!(40), dec!(8)]);
     }
 
     #[test]

@@ -204,6 +204,56 @@ fn singular(p: &str) -> String {
     }
 }
 
+/// Serie y tamaño de un modelo con guiones o barras: letras iniciales y hasta
+/// tres números enteros antes del primer decimal («chgt/4-560-6/-0.55» →
+/// «chgt:4-560-6», «cvht-h-15/15-1.1kw» → «cvht:15-15»).
+fn clave_modelo(w: &str) -> Option<String> {
+    if !w.contains(['-', '/']) {
+        return None;
+    }
+    let serie: String = w.chars().take_while(char::is_ascii_alphabetic).collect();
+    if serie.len() < 2 {
+        return None;
+    }
+    let mut nums = Vec::new();
+    for trozo in w[serie.len()..].split(|c: char| !(c.is_ascii_digit() || c == '.')) {
+        let trozo = trozo.trim_matches('.');
+        if trozo.is_empty() {
+            continue;
+        }
+        if trozo.contains('.') || nums.len() == 3 {
+            break;
+        }
+        nums.push(trozo.to_owned());
+    }
+    (!nums.is_empty()).then(|| format!("{serie}:{}", nums.join("-")))
+}
+
+/// Potencia escrita dentro de un modelo («…-1.1kw-…» → «1.1kw»).
+fn potencia_dentro(w: &str) -> Option<String> {
+    let i = w.find("kw")?;
+    let n: String = w[..i]
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let n = numero(n.trim_start_matches('.'));
+    (!n.is_empty() && i < w.len())
+        .then(|| format!("{n}kw"))
+        .filter(|_| w.len() > i + 2 || w.contains(['-', '/']))
+}
+
+/// Dos datos técnicos coinciden si son iguales o uno es el otro con un
+/// sufijo tras guion («20-45-h-o» y «20-45-h»).
+fn coincide(a: &str, b: &str) -> bool {
+    let sufijo =
+        |x: &str, y: &str| x.len() > y.len() && y.len() >= 4 && x.starts_with(y) && x[y.len()..].starts_with('-');
+    a == b || sufijo(a, b) || sufijo(b, a)
+}
+
 /// Etiquetas de la medición («E1», «A6», «P3»): no son datos técnicos.
 fn es_etiqueta(w: &str) -> bool {
     let mut c = w.chars();
@@ -266,6 +316,18 @@ pub fn rasgos(texto: &str) -> Rasgos {
                     i += 3;
                     continue;
                 }
+                // «2 zonas», «4 extractores»: número y lo que cuenta
+                Some(p)
+                    if w.len() <= 2
+                        && !w.contains('.')
+                        && p.chars().count() >= 4
+                        && p.chars().all(char::is_alphabetic)
+                        && !VACIAS.contains(&p) =>
+                {
+                    r.tecnicos.insert(format!("{w}{}", singular(p)));
+                    i += 1;
+                    continue;
+                }
                 _ => {}
             }
         }
@@ -289,13 +351,18 @@ pub fn rasgos(texto: &str) -> Rasgos {
                         .strip_prefix("o")
                         .filter(|x| es_num(x))
                         .map_or(w.to_owned(), |x| format!("d{x}"));
-                    // Modelo: se queda la serie y el tamaño («chgt/4-560-6/-0.55» y
-                    // «chgt/4-560-6/14a» → «chgt/4-560-6»); la potencia va aparte
-                    match w.rsplit_once('/') {
-                        Some((pre, _)) if pre.contains('-') && pre.chars().any(|c| c.is_ascii_digit()) => {
-                            r.tecnicos.insert(pre.trim_end_matches(['-', '/']).to_owned());
+                    // Modelo: serie y tamaño, sin potencia ni sufijos
+                    // («CHGT/4-560-6/-0,55» y «CHGT/4-560-6/14A» → «chgt:4-560-6»;
+                    // «CVHT-H-15/15-1,1kW-700RPM» y «CVHT-15/15-1,1» → «cvht:15-15»);
+                    // la potencia que lleve dentro va aparte («1.1kw»)
+                    if let Some(k) = potencia_dentro(&w) {
+                        r.tecnicos.insert(k);
+                    }
+                    match clave_modelo(&w) {
+                        Some(k) => {
+                            r.tecnicos.insert(k);
                         }
-                        _ => {
+                        None => {
                             r.tecnicos.insert(w);
                         }
                     }
@@ -324,7 +391,7 @@ pub fn puntuar(medicion: &Rasgos, extra: &BTreeSet<String>, base: &Rasgos) -> u3
     let mut exactos = 0;
     let mut suma = 0u64;
     for t in &medicion.tecnicos {
-        if base.tecnicos.contains(t) {
+        if base.tecnicos.contains(t) || base.tecnicos.iter().any(|b| coincide(t, b)) {
             exactos += 1;
             suma += T;
         } else if let Some((a, b)) = medida(t) {
@@ -502,7 +569,16 @@ mod tests {
         assert!(r.palabras.contains("rejilla") && r.palabras.contains("aluminio"));
         assert!(!r.palabras.contains("con"));
         let r = rasgos("Ventilador FABA/4-560-6/-0,55 400 ºC/2h");
-        assert!(r.tecnicos.contains("faba/4-560-6"), "{:?}", r.tecnicos);
+        assert!(r.tecnicos.contains("faba:4-560-6"), "{:?}", r.tecnicos);
+        let a = rasgos("CAJA DE VENTILACION CVHT-H-15/15-1,1kW-700RPM-F400");
+        let b = rasgos("Caja de ventilación F400 S&P CVHT-15/15-1,1 (1,1 kW, 9.000 m³/h)");
+        assert!(
+            a.tecnicos.contains("cvht:15-15") && b.tecnicos.contains("cvht:15-15"),
+            "{a:?} {b:?}"
+        );
+        assert!(a.tecnicos.contains("1.1kw") && b.tecnicos.contains("1.1kw"));
+        assert!(coincide("20-45-h-o", "20-45-h") && !coincide("20-45-h", "20-45-v"));
+        assert!(rasgos("Central de detección de CO 2 zonas").tecnicos.contains("2zona"));
         assert_eq!(
             rasgos("FABA/4-560-6/14A").tecnicos,
             rasgos("faba/4-560-6/-0,55").tecnicos

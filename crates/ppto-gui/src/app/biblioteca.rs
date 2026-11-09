@@ -92,6 +92,43 @@ impl VentanaBiblioteca {
         }
     }
 
+    fn cargar_tarifas_de_base(&mut self) {
+        let etiqueta = self.etiqueta.trim().to_owned();
+        let an = anio(&etiqueta);
+        if an < 2000 {
+            self.mensaje = Some(("Indique el año de las tarifas (p. ej. 2026).".into(), true));
+            return;
+        }
+        let Some(r) = rfd::FileDialog::new()
+            .add_filter("Base de precios del programa", &["sqlite"])
+            .set_title("Base de precios (.sqlite) con las tarifas")
+            .pick_file()
+        else {
+            return;
+        };
+        match super::bases::leer_sqlite(&r) {
+            Ok(p) => {
+                if let Some(v) = self.modificar(|b| b.cargar_tarifas_de(&p, &etiqueta, an)) {
+                    self.mensaje = Some(if v.is_empty() {
+                        ("Esa base no tiene materiales con tarifa y referencia.".into(), true)
+                    } else {
+                        (
+                            format!(
+                                "Tarifas {etiqueta} cargadas: {}. Con sus descuentos por familia.",
+                                v.iter()
+                                    .map(|(f, n)| format!("{f} ({n} ref.)"))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                            false,
+                        )
+                    });
+                }
+            }
+            Err(e) => self.mensaje = Some((format!("No se pudo abrir la base: {e}"), true)),
+        }
+    }
+
     fn cargar_tarifa(&mut self) {
         let fab = self.fabricante.trim().to_owned();
         let etiqueta = self.etiqueta.trim().to_owned();
@@ -264,6 +301,17 @@ impl Aplicacion {
                     ui.add(egui::TextEdit::singleline(&mut v.etiqueta).desired_width(60.0));
                     if ui.button("Elegir Excel…").clicked() {
                         v.cargar_tarifa();
+                    }
+                    ui.separator();
+                    if ui
+                        .button("Tarifas de una base (.sqlite)…")
+                        .on_hover_text(
+                            "Carga todas las tarifas que lleva una base de precios del programa: por fabricante, \
+                             referencias, PVP y familias, y sus descuentos (también encadenados). Con el año de la izquierda.",
+                        )
+                        .clicked()
+                    {
+                        v.cargar_tarifas_de_base();
                     }
                 });
                 ui.horizontal(|ui| {
