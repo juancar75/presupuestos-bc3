@@ -5,6 +5,21 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Tarifas de una base en la biblioteca** (Biblioteca → «Tarifas de una base
+  (.sqlite)…»): carga de golpe todas las tarifas que lleva una base de precios
+  del programa (S&P, Koolair, GEMIDI, Saltoki, Basor…): referencias,
+  descripción, PVP y familia de cada material, y sus descuentos por familia,
+  también encadenados. Así aparecen en la biblioteca (cuadros, cables,
+  bandejas…), la IA las usa y la obra se puede pasar a la tarifa nueva.
+
+### Corregido
+- Emparejar: los modelos se comparan por serie y tamaño
+  («CVHT-H-15/15-1,1kW-700RPM-F400» = «CVHT-15/15-1,1»), la potencia escrita
+  dentro del modelo cuenta aparte, un sufijo tras guion no impide la
+  coincidencia («20-45-H-O» = «20-45-H») y «2 zonas», «4 extractores» cuentan
+  como dato. En un ciego real de garaje pasa de 2 a 10 partidas seguras de 19.
+
 ## [0.1.0-alpha.44] - 2026-11-09
 
 ### Corregido

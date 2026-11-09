@@ -73,7 +73,7 @@ fn es_sqlite(r: &Path) -> bool {
 }
 
 /// Última revisión guardada de una base en `.sqlite`.
-fn leer_sqlite(ruta: &Path) -> Result<Presupuesto, String> {
+pub(super) fn leer_sqlite(ruta: &Path) -> Result<Presupuesto, String> {
     let a = ppto_db::Almacen::abrir(ruta).map_err(|e| e.to_string())?;
     let rev = a
         .listar_revisiones()
