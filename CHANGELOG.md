@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.44] - 2026-11-09
+
 ### Corregido
 - **Ciegos que no traen la cabecera de Presto** (p. ej. exportados con «EDT» y
   las columnas corridas: *EDT · Código · Resumen · CanPres…* encima de filas
