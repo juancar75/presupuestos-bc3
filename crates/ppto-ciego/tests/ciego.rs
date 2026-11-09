@@ -564,3 +564,86 @@ fn mediciones_sin_columna_de_precio() {
     // Lo que había sigue igual
     assert_eq!(h.get_value((12, 4)), Some(&Data::String("S1".into())));
 }
+
+/// Listado con cabecera «EDT | Código | Resumen | CanPres | Ud | Pres | ImpPres»
+/// y las filas corridas (Código, Nat, Ud, Resumen, CanPres, Pres, ImpPres),
+/// texto descriptivo en la columna Resumen y sin filas de total.
+#[test]
+fn ciego_con_cabecera_corrida_se_lee_por_el_contenido() {
+    let mut wb = Workbook::new();
+    let h = wb.add_worksheet();
+    let filas: Vec<Vec<&str>> = vec![
+        vec!["EDT", "Código", "Resumen", "CanPres", "Ud", "Pres", "ImpPres"],
+        vec!["5.16", "CAP", "INSTALACION SINTETICA", "1", "", "0", ""],
+        vec!["CAP", "Capítulo", "", "INSTALACION SINTETICA", "1", "", "0"],
+        vec![
+            "P.VEN",
+            "Partida",
+            "ud",
+            "CAJA DE VENTILACION FABA-15/15-1,1kW",
+            "2",
+            "0",
+            "0",
+        ],
+        vec!["", "", "", "Suministro y montaje de caja de ventilación."],
+        vec!["P.REJ", "Partida", "ud", "REJILLA RETORNO 400x100 mm.", "8", "0", "0"],
+        vec!["", "", "", "Rejilla de retorno de aluminio."],
+        vec![
+            "P.CON",
+            "Partida",
+            "m2",
+            "CONDUCTO CHAPA ACERO GALV.",
+            "153,5",
+            "0",
+            "0",
+        ],
+    ];
+    for (i, f) in filas.iter().enumerate() {
+        for (j, v) in f.iter().enumerate() {
+            let (i, j) = (u32::try_from(i).unwrap(), u16::try_from(j).unwrap());
+            match v.replace(',', ".").parse::<f64>() {
+                Ok(n) if j >= 4 || (j == 3 && *v != "INSTALACION SINTETICA") && !v.is_empty() => {
+                    h.write_number(i, j, n).unwrap();
+                }
+                _ if !v.is_empty() => {
+                    h.write_string(i, j, *v).unwrap();
+                }
+                _ => {}
+            }
+        }
+    }
+    let b = wb.save_to_buffer().unwrap();
+    let c = ppto_ciego::leer_bytes(&b, "Memoria sintética").unwrap();
+    let p = &c.presupuesto;
+    assert_eq!(p.conceptos["OBRA"].resumen, "Memoria sintética");
+    let cap = &p.conceptos["CAP"];
+    assert_eq!(cap.resumen, "INSTALACION SINTETICA");
+    let q: Vec<(String, rust_decimal::Decimal)> = cap
+        .descomposicion
+        .iter()
+        .map(|l| (l.hijo.clone(), l.rendimiento))
+        .collect();
+    assert_eq!(
+        q,
+        vec![
+            ("P.VEN".into(), dec!(2)),
+            ("P.REJ".into(), dec!(8)),
+            ("P.CON".into(), dec!(153.5))
+        ]
+    );
+    assert_eq!(p.conceptos["P.CON"].unidad, "m2");
+    assert_eq!(
+        p.conceptos["P.REJ"].texto.as_deref(),
+        Some("Rejilla de retorno de aluminio.")
+    );
+    assert!(c.incidencias.iter().any(|i| i.contains("columnas deducidas")));
+    assert!(!c.incidencias.iter().any(|i| i.contains("sin fila de total al final")));
+    // Se devuelve valorado en sus columnas Pres e ImpPres
+    let mut v = p.clone();
+    for k in ["P.VEN", "P.REJ", "P.CON"] {
+        v.fijar_precio(k, dec!(10)).unwrap();
+    }
+    let val = ppto_ciego::valorar(&b, &c, &v).unwrap();
+    assert_eq!(val.total_excel, dec!(1635));
+    assert!(val.sin_precio.is_empty());
+}

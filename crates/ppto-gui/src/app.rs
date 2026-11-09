@@ -456,7 +456,7 @@ impl Aplicacion {
         if let Some(ruta) = inicial {
             let es_bc3 = ruta.extension().is_some_and(|e| e.eq_ignore_ascii_case("bc3"));
             if es_bc3 {
-                app.importar_bc3(ruta)
+                let _ = app.importar_bc3(ruta);
             } else {
                 app.abrir(ruta)
             }

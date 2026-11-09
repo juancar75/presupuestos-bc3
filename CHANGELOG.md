@@ -5,6 +5,17 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Corregido
+- **Ciegos que no traen la cabecera de Presto** (p. ej. exportados con «EDT» y
+  las columnas corridas: *EDT · Código · Resumen · CanPres…* encima de filas
+  *Código · Nat · Ud · Resumen · CanPres · Pres · ImpPres*): las columnas se
+  deducen del contenido a partir de la columna con «Capítulo»/«Partida», se
+  lee el texto descriptivo de cada partida y se devuelve valorado en sus
+  columnas Pres e ImpPres.
+- «Nuevo…» con un ciego o un BC3 que no se puede leer (o si se cancela la
+  elección del fichero) ya no deja abierta la obra anterior con la ficha de
+  la especialidad: vuelve a la ventana con la especialidad elegida.
+
 ## [0.1.0-alpha.43] - 2026-11-08
 
 ### Añadido

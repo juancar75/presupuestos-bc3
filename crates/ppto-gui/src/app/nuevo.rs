@@ -32,14 +32,28 @@ impl Aplicacion {
 
     /// Crea la obra según lo elegido y la deja con su especialidad; con
     /// especialidad, abre la ficha de datos del edificio (paso 3).
+    /// Si no se pudo (fichero cancelado o que no se lee), vuelve a la ventana
+    /// con la especialidad elegida y la obra abierta no cambia.
     pub(super) fn empezar(&mut self, inicio: Inicio) {
-        self.empezar_sin_ficha(inicio);
-        self.ver_ficha = self.especialidad.is_some();
+        if self.empezar_sin_ficha(inicio) {
+            self.ver_ficha = self.especialidad.is_some();
+        } else {
+            self.ver_ficha = false;
+            self.asistente_nuevo = Some(AsistenteNuevo {
+                especialidad: match inicio {
+                    Inicio::Ciego(e) | Inicio::Bc3(e) | Inicio::Plantilla(e) => Some(e),
+                    Inicio::EnBlanco => None,
+                },
+            });
+        }
     }
 
-    fn empezar_sin_ficha(&mut self, inicio: Inicio) {
+    fn empezar_sin_ficha(&mut self, inicio: Inicio) -> bool {
         match inicio {
-            Inicio::EnBlanco => self.nuevo_presupuesto(),
+            Inicio::EnBlanco => {
+                self.nuevo_presupuesto();
+                true
+            }
             Inicio::Plantilla(e) => {
                 match e.plantilla() {
                     Some(t) => self.nuevo_desde_plantilla(t),
@@ -55,26 +69,29 @@ impl Aplicacion {
                         "presupuesto vacío (esta especialidad aún no tiene plantilla); "
                     }
                 ));
+                true
             }
             Inicio::Ciego(e) => {
-                if let Some(r) = rfd::FileDialog::new()
+                let ok = rfd::FileDialog::new()
                     .add_filter("Excel", &["xlsx", "xls"])
                     .set_title("Presupuesto ciego del cliente (Excel)")
                     .pick_file()
-                {
-                    self.importar_ciego(r);
+                    .is_some_and(|r| self.importar_ciego(r));
+                if ok {
                     self.especialidad = Some(e);
                 }
+                ok
             }
             Inicio::Bc3(e) => {
-                if let Some(r) = rfd::FileDialog::new()
+                let ok = rfd::FileDialog::new()
                     .add_filter("BC3", &["bc3", "BC3"])
                     .set_title("Presupuesto del cliente (BC3)")
                     .pick_file()
-                {
-                    self.importar_bc3(r);
+                    .is_some_and(|r| self.importar_bc3(r));
+                if ok {
                     self.especialidad = Some(e);
                 }
+                ok
             }
         }
     }
