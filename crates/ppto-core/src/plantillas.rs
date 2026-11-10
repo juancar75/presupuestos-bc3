@@ -29,6 +29,20 @@ impl Plantilla {
             Self::Pci => "Protección contra incendios (RIPCI)",
         }
     }
+
+    /// Prefijo de capítulos y partidas cuando la obra junta varias plantillas.
+    fn sigla(self) -> &'static str {
+        match self {
+            Self::Climatizacion => "CL",
+            Self::VentilacionGaraje => "VG",
+            Self::Pci => "PCI",
+        }
+    }
+
+    /// Capítulos de la plantilla (número, resumen), para elegir cuáles entran.
+    pub fn capitulos(self) -> Vec<(&'static str, &'static str)> {
+        capitulos(self).into_iter().map(|(n, r, _)| (n, r)).collect()
+    }
 }
 
 /// (código, unidad, resumen, texto)
@@ -423,28 +437,52 @@ fn capitulos(t: Plantilla) -> Vec<(&'static str, &'static str, Vec<P>)> {
 
 /// Presupuesto nuevo con la estructura de la plantilla.
 pub fn crear(t: Plantilla, nombre: &str) -> Result<Presupuesto, ErrorMotor> {
+    let todos: Vec<&str> = t.capitulos().into_iter().map(|(n, _)| n).collect();
+    crear_con(&[(t, todos)], nombre)
+}
+
+/// Presupuesto nuevo con los capítulos elegidos de una o varias plantillas
+/// (p. ej. climatización y PCI en la misma oferta). Con una sola plantilla
+/// los códigos son los de siempre (C01, P01.01); con varias, cada
+/// especialidad lleva su prefijo (CCL01 y PCL01.01, CPCI01 y PPCI01.01) y sus
+/// capítulos se ordenan seguidos. Siempre van las observaciones (C00) y los
+/// contradictorios (C99).
+pub fn crear_con(elegidos: &[(Plantilla, Vec<&str>)], nombre: &str) -> Result<Presupuesto, ErrorMotor> {
     let mut p = Presupuesto::new(nombre, "OBRA", nombre);
-    let poner = |p: &mut Presupuesto, cap: &str, (codigo, ud, resumen, texto): P| -> Result<(), ErrorMotor> {
-        let codigo = if codigo.starts_with("OBS") {
-            codigo.to_owned()
-        } else {
-            format!("P{codigo}")
+    let poner =
+        |p: &mut Presupuesto, cap: &str, codigo: String, (_, ud, resumen, texto): P| -> Result<(), ErrorMotor> {
+            p.nueva_partida(cap, &codigo, ud, resumen)?;
+            if let Some(c) = p.conceptos.get_mut(&codigo) {
+                c.texto = Some(texto.split_whitespace().collect::<Vec<_>>().join(" "));
+            }
+            Ok(())
         };
-        p.nueva_partida(cap, &codigo, ud, resumen)?;
-        if let Some(c) = p.conceptos.get_mut(&codigo) {
-            c.texto = Some(texto.split_whitespace().collect::<Vec<_>>().join(" "));
-        }
-        Ok(())
-    };
     p.nuevo_capitulo("OBRA", "C00", "Observaciones particulares de esta oferta")?;
     for o in OBS_COMUNES {
-        poner(&mut p, "C00", o)?;
+        poner(&mut p, "C00", o.0.to_owned(), o)?;
     }
-    for (n, resumen, partidas) in capitulos(t) {
-        let cap = format!("C{n}");
-        p.nuevo_capitulo("OBRA", &cap, resumen)?;
-        for x in partidas {
-            poner(&mut p, &cap, x)?;
+    let varias = elegidos.len() > 1;
+    for (t, caps) in elegidos {
+        let sigla = if varias { t.sigla() } else { "" };
+        for (n, resumen, partidas) in capitulos(*t) {
+            if !caps.contains(&n) {
+                continue;
+            }
+            let cap = format!("C{sigla}{n}");
+            let resumen = if varias {
+                format!("{} · {resumen}", t.nombre())
+            } else {
+                resumen.to_owned()
+            };
+            p.nuevo_capitulo("OBRA", &cap, &resumen)?;
+            for x in partidas {
+                let codigo = if x.0.starts_with("OBS") {
+                    x.0.to_owned()
+                } else {
+                    format!("P{sigla}{}", x.0)
+                };
+                poner(&mut p, &cap, codigo, x)?;
+            }
         }
     }
     p.nuevo_capitulo("OBRA", "C99", "Contradictorios")?;
@@ -480,5 +518,43 @@ mod tests {
                     .all(|c| c.texto.as_deref().is_some_and(|t| t.len() > 20))
             );
         }
+    }
+
+    #[test]
+    fn varias_plantillas_y_capitulos_elegidos() {
+        let cl = Plantilla::Climatizacion.capitulos();
+        let pci = Plantilla::Pci.capitulos();
+        assert!(cl.len() > 2 && pci.len() > 2);
+        let p = crear_con(
+            &[
+                (Plantilla::Climatizacion, vec![cl[0].0, cl[1].0]),
+                (Plantilla::Pci, pci.iter().map(|c| c.0).collect()),
+            ],
+            "Clima y PCI",
+        )
+        .unwrap();
+        p.validar().unwrap();
+        let caps: Vec<&str> = p.conceptos["OBRA"]
+            .descomposicion
+            .iter()
+            .map(|l| l.hijo.as_str())
+            .collect();
+        assert_eq!(caps.len(), 2 + 2 + pci.len());
+        assert_eq!(caps[0], "C00");
+        assert_eq!(caps[1], format!("CCL{}", cl[0].0));
+        assert_eq!(*caps.last().unwrap(), "C99");
+        assert!(caps.contains(&format!("CPCI{}", pci[0].0).as_str()));
+        assert!(
+            !caps.contains(&format!("CCL{}", cl[2].0).as_str()),
+            "capítulo no elegido"
+        );
+        assert!(
+            p.conceptos[&format!("CPCI{}", pci[0].0)]
+                .resumen
+                .starts_with("Protección contra incendios")
+        );
+        // Una sola plantilla: los códigos de siempre
+        let q = crear(Plantilla::Pci, "PCI").unwrap();
+        assert!(q.conceptos.contains_key(&format!("C{}", pci[0].0)));
     }
 }

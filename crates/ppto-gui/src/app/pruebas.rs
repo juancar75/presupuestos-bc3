@@ -2098,13 +2098,13 @@ fn nuevo_por_especialidad() {
     app.pedir_nuevo();
     pintar_ventanas(&mut app); // primer paso: lista de especialidades
     assert!(app.asistente_nuevo.is_some());
-    app.asistente_nuevo = Some(nuevo::AsistenteNuevo {
-        especialidad: Some(Especialidad::VentilacionGaraje),
-    });
+    let mut a = nuevo::AsistenteNuevo::default();
+    a.elegir(vec![Especialidad::VentilacionGaraje]);
+    app.asistente_nuevo = Some(a);
     pintar_ventanas(&mut app); // segundo paso: ¿de dónde partes?
     assert!(app.asistente_nuevo.is_some(), "sigue abierta hasta elegir");
-    app.empezar(nuevo::Inicio::Plantilla(Especialidad::VentilacionGaraje));
-    assert_eq!(app.especialidad, Some(Especialidad::VentilacionGaraje));
+    app.empezar(nuevo::Inicio::plantilla(Especialidad::VentilacionGaraje));
+    assert_eq!(app.especialidades, [Especialidad::VentilacionGaraje]);
     assert!(
         app.p.conceptos.contains_key("P01.01"),
         "ventilador F400 de la plantilla"
@@ -2112,17 +2112,51 @@ fn nuevo_por_especialidad() {
     let d = app.datos_obra();
     assert_eq!(d.get("especialidad").map(String::as_str), Some("ventilacion_garaje"));
     // Sin plantilla: obra vacía, pero con su especialidad
-    app.empezar(nuevo::Inicio::Plantilla(Especialidad::Fontaneria));
-    assert_eq!(app.especialidad, Some(Especialidad::Fontaneria));
+    app.empezar(nuevo::Inicio::plantilla(Especialidad::Fontaneria));
+    assert_eq!(app.especialidades, [Especialidad::Fontaneria]);
     // En blanco: sin especialidad
     app.empezar(nuevo::Inicio::EnBlanco);
-    assert_eq!(app.especialidad, None);
+    assert!(app.especialidades.is_empty());
     // Se recupera de los datos de la obra
     app.aplicar_datos_obra(&d);
-    assert_eq!(app.especialidad, Some(Especialidad::VentilacionGaraje));
+    assert_eq!(app.especialidades, [Especialidad::VentilacionGaraje]);
     // Abrir un BC3 o un ciego empieza sin especialidad hasta que se elija
     app.cargar_presupuesto(ppto_core::ejemplos::suelo_radiante());
-    assert_eq!(app.especialidad, None);
+    assert!(app.especialidades.is_empty());
+}
+
+/// Oferta de clima y PCI: se marcan las dos, se eligen capítulos y la obra
+/// junta las dos plantillas con sus prefijos; las especialidades se guardan
+/// con la obra.
+#[test]
+fn nuevo_con_varias_especialidades() {
+    use ppto_core::especialidad::Especialidad;
+    let es = vec![Especialidad::Pci, Especialidad::Climatizacion];
+    let mut a = nuevo::AsistenteNuevo::default();
+    a.elegir(es.clone());
+    let todos = a.capitulos.len();
+    // Fuera el primer capítulo de clima
+    let quitado = a
+        .capitulos
+        .iter()
+        .find(|(e, _)| *e == Especialidad::Climatizacion)
+        .copied()
+        .unwrap();
+    a.capitulos.retain(|c| *c != quitado);
+    let mut app = Aplicacion::sin_ventana();
+    app.asistente_nuevo = Some(a.clone());
+    pintar_ventanas(&mut app); // segundo paso con la lista de capítulos
+    app.empezar(nuevo::Inicio::Plantilla(es.clone(), a.capitulos.clone()));
+    assert_eq!(app.especialidades, es);
+    let caps = &app.p.conceptos["OBRA"].descomposicion;
+    assert_eq!(caps.len(), todos - 1 + 2, "C00 y C99 además de los elegidos");
+    assert!(!app.p.conceptos.contains_key(&format!("CCL{}", quitado.1)));
+    assert!(app.ver_ficha);
+    let d = app.datos_obra();
+    assert_eq!(d.get("especialidad").map(String::as_str), Some("pci,climatizacion"));
+    app.empezar(nuevo::Inicio::EnBlanco);
+    app.aplicar_datos_obra(&d);
+    assert_eq!(app.especialidades, es);
 }
 
 /// Las bases de precios se asignan a una especialidad; en una obra de esa
@@ -2143,7 +2177,7 @@ fn bases_por_especialidad() {
     v.fijar_especialidad(&carpeta.join("garaje.bc3"), Some(Especialidad::VentilacionGaraje));
     v.fijar_especialidad(&carpeta.join("pci.bc3"), Some(Especialidad::Pci));
     // Obra de garaje: su base (elegida de entrada) y la general, no la de PCI
-    let v = bases::VentanaBases::en_para(Some(carpeta.clone()), Some(Especialidad::VentilacionGaraje));
+    let v = bases::VentanaBases::en_para(Some(carpeta.clone()), &[Especialidad::VentilacionGaraje]);
     let nombres: Vec<String> = v
         .ficheros_visibles()
         .iter()
@@ -2152,14 +2186,18 @@ fn bases_por_especialidad() {
     assert_eq!(nombres, ["garaje.bc3", "general.bc3"]);
     assert_eq!(v.elegido.as_deref(), Some(carpeta.join("garaje.bc3").as_path()));
     // Sin especialidad, todas
-    let mut v = bases::VentanaBases::en_para(Some(carpeta.clone()), None);
+    let mut v = bases::VentanaBases::en_para(Some(carpeta.clone()), &[]);
     assert_eq!(v.ficheros_visibles().len(), 3);
     // La ventana se dibuja con la obra de PCI
-    v.obra = Some(Especialidad::Pci);
+    v.obra = vec![Especialidad::Pci];
     v.solo_especialidad = true;
     assert_eq!(v.ficheros_visibles().len(), 2);
+    // Obra de garaje y PCI: las bases de las dos y la general
+    v.obra = vec![Especialidad::VentilacionGaraje, Especialidad::Pci];
+    assert_eq!(v.ficheros_visibles().len(), 3);
+    v.obra = vec![Especialidad::Pci];
     let mut app = Aplicacion::sin_ventana();
-    app.especialidad = Some(Especialidad::Pci);
+    app.especialidades = vec![Especialidad::Pci];
     app.ventana_bases = Some(v);
     pintar_ventanas(&mut app);
     assert!(app.ventana_bases.is_some());
@@ -2172,7 +2210,7 @@ fn bases_por_especialidad() {
 fn ficha_del_edificio() {
     use ppto_core::especialidad::Especialidad;
     let mut app = Aplicacion::sin_ventana();
-    app.empezar(nuevo::Inicio::Plantilla(Especialidad::VentilacionGaraje));
+    app.empezar(nuevo::Inicio::plantilla(Especialidad::VentilacionGaraje));
     assert!(app.ver_ficha, "paso 3: datos del edificio");
     let ctx = Context::default();
     for _ in 0..2 {
@@ -2191,7 +2229,7 @@ fn ficha_del_edificio() {
     assert!(app.ficha.is_empty() && !app.ver_ficha, "en blanco: sin ficha");
     app.aplicar_datos_obra(&d);
     assert_eq!(app.ficha.get("garaje_superficie_planta"), Some(&dec!(1200)));
-    assert_eq!(app.especialidad, Some(Especialidad::VentilacionGaraje));
+    assert_eq!(app.especialidades, [Especialidad::VentilacionGaraje]);
 }
 
 #[test]

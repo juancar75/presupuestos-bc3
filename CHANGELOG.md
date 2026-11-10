@@ -5,6 +5,19 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Ofertas con varias especialidades** (p. ej. clima y PCI). En «Nuevo
+  presupuesto» se marcan las que entran y se sigue con todas.
+  - Bases de precios ofrece las bases de todas ellas y las generales.
+  - La ficha del edificio junta sus campos.
+  - Se guardan con la obra.
+- **Elegir capítulos al empezar desde cero**: en el segundo paso se ve la
+  lista de capítulos de cada plantilla (todos marcados) y se quitan los que no
+  entran.
+  - Con varias especialidades, cada una lleva su prefijo para que los códigos
+    no choquen: CCL01 y PCL01.01, CPCI01 y PPCI01.01.
+  - El resumen del capítulo empieza por la especialidad.
+
 ## [0.1.0-alpha.46] - 2026-11-10
 
 ### Añadido
