@@ -18,6 +18,11 @@ versionado [semántico](https://semver.org/lang/es/).
   factor 0 en el capítulo, así Presto la ve sin importe, y al volver a
   importarla queda marcada como excluida.
 
+### Corregido
+- Asistente IA (MCP): un número en texto con un solo punto («7.518») se lee
+  como decimal (7,518) y no como 7.518 con separador de miles. Esto inflaba
+  algunos precios propuestos.
+
 ## [0.1.0-alpha.45] - 2026-11-09
 
 ### Añadido
