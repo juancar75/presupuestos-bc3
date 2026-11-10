@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.47] - 2026-11-10
+
 ### Añadido
 - **Ofertas con varias especialidades** (p. ej. clima y PCI). En «Nuevo
   presupuesto» se marcan las que entran y se sigue con todas.
