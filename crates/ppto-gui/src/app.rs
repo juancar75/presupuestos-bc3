@@ -310,7 +310,8 @@ pub struct Aplicacion {
     /// Ventana «Nuevo presupuesto» (qué se presupuesta y de dónde se parte).
     asistente_nuevo: Option<nuevo::AsistenteNuevo>,
     /// Especialidad de la obra (orienta plantillas y bases de precios).
-    especialidad: Option<ppto_core::especialidad::Especialidad>,
+    /// Especialidades de la obra (una o varias: clima y PCI en la misma oferta).
+    especialidades: Vec<ppto_core::especialidad::Especialidad>,
     /// Ficha de datos del edificio (por clave de campo).
     ficha: ppto_core::ficha::Ficha,
     /// Ventana «Datos del edificio» abierta.
@@ -518,7 +519,7 @@ impl Aplicacion {
             ventana_bases: None,
             ventana_emparejar: None,
             asistente_nuevo: None,
-            especialidad: None,
+            especialidades: Vec::new(),
             ficha: Default::default(),
             ver_ficha: false,
             form_origen: None,

@@ -41,7 +41,7 @@ impl Aplicacion {
             Ok(p) => {
                 self.nuevo_presupuesto();
                 self.p = p;
-                self.especialidad = Some(ppto_core::especialidad::Especialidad::de_plantilla(t));
+                self.especialidades = vec![ppto_core::especialidad::Especialidad::de_plantilla(t)];
                 self.recalcular();
                 self.info(format!(
                     "Plantilla «{}» cargada: capítulos, observaciones, exclusiones y legalización. Las partidas están sin precio.",
@@ -54,7 +54,7 @@ impl Aplicacion {
 
     pub(super) fn nuevo_presupuesto(&mut self) {
         self.ciego = None;
-        self.especialidad = None;
+        self.especialidades.clear();
         self.ficha.clear();
         self.historial.limpiar();
         self.p = Presupuesto::new("Presupuesto nuevo", "OBRA", "Presupuesto nuevo");
@@ -193,7 +193,7 @@ impl Aplicacion {
         match ppto_bc3::importar_fichero(&ruta) {
             Ok(imp) => {
                 self.ciego = None;
-                self.especialidad = None;
+                self.especialidades.clear();
                 self.ficha.clear();
                 self.historial.limpiar();
                 self.p = imp.presupuesto.clone();
@@ -310,8 +310,9 @@ impl Aplicacion {
         if let Some(c) = &self.ciego {
             d.insert("ciego".into(), c.ruta.display().to_string());
         }
-        if let Some(e) = self.especialidad {
-            d.insert("especialidad".into(), e.clave().into());
+        if !self.especialidades.is_empty() {
+            let v: Vec<&str> = self.especialidades.iter().map(|e| e.clave()).collect();
+            d.insert("especialidad".into(), v.join(","));
         }
         ppto_core::ficha::a_datos(&self.ficha, &mut d);
         d
@@ -331,9 +332,14 @@ impl Aplicacion {
             self.iva = v;
         }
         self.retencion = dec("retencion").unwrap_or_default();
-        self.especialidad = d
+        self.especialidades = d
             .get("especialidad")
-            .and_then(|e| ppto_core::especialidad::Especialidad::leer(e));
+            .map(|e| {
+                e.split(',')
+                    .filter_map(ppto_core::especialidad::Especialidad::leer)
+                    .collect()
+            })
+            .unwrap_or_default();
         self.ficha = ppto_core::ficha::de_datos(d);
         self.ciego = None;
         if let Some(r) = d.get("ciego").map(PathBuf::from) {

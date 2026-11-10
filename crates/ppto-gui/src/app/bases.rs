@@ -60,7 +60,7 @@ pub(super) struct VentanaBases {
     /// están son generales. Se guarda en `especialidades.json` de la carpeta.
     pub especialidades: BTreeMap<String, String>,
     /// Especialidad de la obra abierta.
-    pub obra: Option<Especialidad>,
+    pub obra: Vec<Especialidad>,
     /// Mostrar solo las bases de la especialidad de la obra (y las generales).
     pub solo_especialidad: bool,
 }
@@ -134,18 +134,18 @@ fn nombre_de(r: &Path) -> String {
 }
 
 impl VentanaBases {
-    pub fn abrir(obra: Option<Especialidad>) -> Self {
+    pub fn abrir(obra: &[Especialidad]) -> Self {
         Self::en_para(super::pdf::carpeta_config().map(|c| c.join("bases")), obra)
     }
 
     #[cfg(test)]
     pub fn en(carpeta: Option<PathBuf>) -> Self {
-        Self::en_para(carpeta, None)
+        Self::en_para(carpeta, &[])
     }
 
     /// Abre la carpeta de bases para una obra de una especialidad: elige la
     /// primera base de esa especialidad (o, si no hay, la primera general).
-    pub fn en_para(carpeta: Option<PathBuf>, obra: Option<Especialidad>) -> Self {
+    pub fn en_para(carpeta: Option<PathBuf>, obra: &[Especialidad]) -> Self {
         let especialidades = carpeta
             .as_ref()
             .and_then(|c| std::fs::read_to_string(c.join("especialidades.json")).ok())
@@ -161,8 +161,8 @@ impl VentanaBases {
             marcados: BTreeSet::new(),
             mensaje: None,
             especialidades,
-            obra,
-            solo_especialidad: obra.is_some(),
+            obra: obra.to_vec(),
+            solo_especialidad: !obra.is_empty(),
         };
         v.releer_carpeta();
         let primera = v
@@ -188,9 +188,10 @@ impl VentanaBases {
     pub fn ficheros_visibles(&self) -> Vec<&PathBuf> {
         self.ficheros
             .iter()
-            .filter(|f| match (self.solo_especialidad, self.obra) {
-                (true, Some(e)) => self.especialidad_de(f).is_none_or(|x| x == e),
-                _ => true,
+            .filter(|f| {
+                !self.solo_especialidad
+                    || self.obra.is_empty()
+                    || self.especialidad_de(f).is_none_or(|x| self.obra.contains(&x))
             })
             .collect()
     }
@@ -330,7 +331,7 @@ impl Aplicacion {
         let mut v = self
             .ventana_bases
             .take()
-            .unwrap_or_else(|| VentanaBases::abrir(self.especialidad));
+            .unwrap_or_else(|| VentanaBases::abrir(&self.especialidades));
         if let Some(c) = self.partida_seleccionada().and_then(|c| self.p.conceptos.get(&c)) {
             v.buscar = texto_busqueda(&c.resumen);
             v.filtro = Some(Naturaleza::Partida);
@@ -348,7 +349,7 @@ impl Aplicacion {
             .and_then(|v| v.base.as_ref())
             .map(|b| (Arc::clone(&b.p), b.nombre()))
             .or_else(|| {
-                VentanaBases::abrir(self.especialidad)
+                VentanaBases::abrir(&self.especialidades)
                     .base
                     .map(|b| (Arc::clone(&b.p), b.nombre()))
             });
@@ -371,9 +372,9 @@ impl Aplicacion {
         let Some(mut v) = self.ventana_bases.take() else {
             return;
         };
-        if v.obra != self.especialidad {
-            v.obra = self.especialidad;
-            v.solo_especialidad = v.obra.is_some();
+        if v.obra != self.especialidades {
+            v.obra = self.especialidades.clone();
+            v.solo_especialidad = !v.obra.is_empty();
         }
         // Partida elegida en el árbol (para «añadir a la partida»)
         let partida = self.partida_seleccionada();
@@ -385,9 +386,10 @@ impl Aplicacion {
             .default_height(620.0)
             .resizable(true)
             .show(ctx, |ui| {
-                if let Some(e) = v.obra {
+                if !v.obra.is_empty() {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("Obra de {}", e.nombre())).strong());
+                        let n: Vec<&str> = v.obra.iter().map(|e| e.nombre()).collect();
+                        ui.label(RichText::new(format!("Obra de {}", n.join(" + "))).strong());
                         ui.checkbox(&mut v.solo_especialidad, "solo sus bases y las generales");
                     });
                 }

@@ -15,10 +15,12 @@ impl Aplicacion {
             return;
         }
         let mut abierta = true;
-        let campos = ficha::campos(self.especialidad);
-        let titulo = match self.especialidad {
-            Some(e) => format!("Datos del edificio · {}", e.nombre()),
-            None => "Datos del edificio".to_owned(),
+        let campos = ficha::campos_de(&self.especialidades);
+        let titulo = if self.especialidades.is_empty() {
+            "Datos del edificio".to_owned()
+        } else {
+            let n: Vec<&str> = self.especialidades.iter().map(|e| e.nombre()).collect();
+            format!("Datos del edificio · {}", n.join(" + "))
         };
         let mut cambios = Vec::new();
         egui::Window::new(titulo)

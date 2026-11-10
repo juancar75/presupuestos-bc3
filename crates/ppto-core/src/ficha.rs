@@ -105,8 +105,25 @@ const VIVIENDA: &[Campo] = &[
 
 /// Campos que pide una especialidad (sin especialidad, los del edificio).
 pub fn campos(e: Option<Especialidad>) -> Vec<Campo> {
+    campos_de(e.as_slice())
+}
+
+/// Campos de una obra con varias especialidades (sin repetir).
+pub fn campos_de(es: &[Especialidad]) -> Vec<Campo> {
     let mut v: Vec<Campo> = EDIFICIO.to_vec();
-    match e {
+    for e in es {
+        for c in campos_de_una(*e) {
+            if !v.iter().any(|x| x.clave == c.clave) {
+                v.push(c);
+            }
+        }
+    }
+    v
+}
+
+fn campos_de_una(e: Especialidad) -> Vec<Campo> {
+    let mut v: Vec<Campo> = Vec::new();
+    match Some(e) {
         Some(Especialidad::VentilacionGaraje) => {
             v.extend_from_slice(GARAJE);
             v.extend_from_slice(COMUNES);
