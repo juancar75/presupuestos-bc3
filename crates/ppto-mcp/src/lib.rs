@@ -561,7 +561,16 @@ fn decimal(v: &Value) -> Option<Decimal> {
             let s = n.to_string();
             Decimal::from_str(&s).or_else(|_| Decimal::from_scientific(&s)).ok()
         }
-        Value::String(s) => ppto_core::formato::leer(s),
+        Value::String(s) => {
+            // Texto de una IA: «7.518» es 7,518 (punto decimal, como en JSON),
+            // no 7.518 con separador de miles. Con coma o varios puntos, formato español.
+            let t = s.trim();
+            if !t.contains(',') && t.matches('.').count() == 1 {
+                Decimal::from_str(t).ok()
+            } else {
+                ppto_core::formato::leer(t)
+            }
+        }
         _ => None,
     }
 }
@@ -1443,4 +1452,21 @@ fn ver_propuestas(estado: &Estado) -> Result<String, String> {
         let _ = writeln!(t, "| {} | {} | {e} | {} |", p.id, p.partida, p.confianza.nombre());
     }
     Ok(t)
+}
+
+#[cfg(test)]
+mod pruebas_decimal {
+    use super::decimal;
+    use rust_decimal_macros::dec;
+    use serde_json::json;
+
+    #[test]
+    fn un_punto_en_texto_es_decimal() {
+        assert_eq!(decimal(&json!("7.518")), Some(dec!(7.518)));
+        assert_eq!(decimal(&json!(7.518)), Some(dec!(7.518)));
+        assert_eq!(decimal(&json!("7,518")), Some(dec!(7.518)));
+        assert_eq!(decimal(&json!("1.234,56")), Some(dec!(1234.56)));
+        assert_eq!(decimal(&json!("1.234.567")), Some(dec!(1234567)));
+        assert_eq!(decimal(&json!("45")), Some(dec!(45)));
+    }
 }

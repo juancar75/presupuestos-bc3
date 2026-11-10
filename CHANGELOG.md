@@ -12,6 +12,11 @@ versionado [semántico](https://semver.org/lang/es/).
   descuentos, y como línea con cantidad 1. También una partida, que queda como
   subpartida. La zona de soltar se marca en azul mientras se arrastra.
 
+### Corregido
+- Asistente IA (MCP): un número en texto con un solo punto («7.518») se lee
+  como decimal (7,518) y no como 7.518 con separador de miles. Esto inflaba
+  algunos precios propuestos.
+
 ## [0.1.0-alpha.45] - 2026-11-09
 
 ### Añadido
