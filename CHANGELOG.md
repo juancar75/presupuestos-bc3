@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.46] - 2026-11-10
+
 ### Añadido
 - **Arrastrar desde la base al descompuesto**: con la ventana Bases de precios
   abierta, se coge un concepto por su código o su resumen y se suelta sobre el
