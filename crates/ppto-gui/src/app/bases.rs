@@ -153,7 +153,12 @@ impl Base {
                 }
             }
             for (k, d) in &o.p.descuentos {
-                p.descuentos.entry(k.clone()).or_insert_with(|| d.clone());
+                if !p.descuentos.contains_key(k) {
+                    p.descuentos.insert(k.clone(), *d);
+                    if let Some(cad) = o.p.descuentos_encadenados.get(k) {
+                        p.descuentos_encadenados.insert(k.clone(), cad.clone());
+                    }
+                }
             }
             let ya: BTreeSet<String> = b.filas.iter().map(|f| f.codigo.clone()).collect();
             b.filas.extend(o.filas.into_iter().filter(|f| !ya.contains(&f.codigo)));
