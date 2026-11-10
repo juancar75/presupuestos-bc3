@@ -6,6 +6,11 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Arrastrar desde la base al descompuesto**: con la ventana Bases de precios
+  abierta, se coge un concepto por su código o su resumen y se suelta sobre el
+  precio descompuesto de la partida. Entra en la obra con su descompuesto y
+  descuentos, y como línea con cantidad 1. También una partida, que queda como
+  subpartida. La zona de soltar se marca en azul mientras se arrastra.
 - **Partida excluida**: casilla «Excluida» en la pestaña Partida. Conserva su
   medición y su descompuesto, pero no suma en el capítulo, ni en coste ni en
   venta, y no cuenta como «sin precio». En el árbol sale tachada. En el PDF y

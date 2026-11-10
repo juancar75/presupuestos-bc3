@@ -118,6 +118,9 @@ enum Accion {
         nombre: String,
         codigos: Vec<String>,
         partida: Option<String>,
+        /// También las partidas (como subpartidas): al arrastrar un concepto
+        /// concreto al descompuesto.
+        con_partidas: bool,
     },
     /// Pegar en un capítulo lo copiado en otra ventana (u obra) con Ctrl+C.
     PegarFragmento(Box<ppto_core::fragmento::Fragmento>, String),

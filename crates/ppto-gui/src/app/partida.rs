@@ -168,6 +168,7 @@ impl Aplicacion {
                     }
                 });
             ui.add_space(6.0);
+            let y_zona = ui.cursor().top();
             ui.label(RichText::new("Precio descompuesto").strong());
             if let Some(lineas) = self.calc.lineas.get(&hijo).cloned() {
                 // La columna Resumen se lleva el ancho que sobra de la ventana
@@ -380,6 +381,11 @@ impl Aplicacion {
                 });
             } else {
                 ui.label(RichText::new("Recurso básico sin descomposición.").weak());
+            }
+            if c.naturaleza == Naturaleza::Partida {
+                // Soltar aquí un concepto arrastrado desde Bases de precios
+                let zona = egui::Rect::from_x_y_ranges(ui.min_rect().x_range(), y_zona..=ui.cursor().top() + 4.0);
+                self.soltar_de_base(ui, zona, &hijo, acciones);
             }
 
             ui.add_space(12.0);
@@ -871,6 +877,44 @@ impl Aplicacion {
         match self.p.conceptos.get(codigo) {
             Some(c) => format!("{} — {}", c.codigo, corto(&c.resumen, 40)),
             None => codigo.to_owned(),
+        }
+    }
+
+    /// Zona del descompuesto que recibe un concepto arrastrado desde la
+    /// ventana Bases de precios: se copia a la obra (con su descompuesto y
+    /// descuentos) y entra como línea con cantidad 1.
+    fn soltar_de_base(&self, ui: &Ui, zona: egui::Rect, partida: &str, acciones: &mut Vec<Accion>) {
+        use super::bases::ArrastreBase;
+        let Some(a) = egui::DragAndDrop::payload::<ArrastreBase>(ui.ctx()) else {
+            return;
+        };
+        let encima = ui.rect_contains_pointer(zona);
+        let color = Color32::from_rgb(90, 150, 230);
+        ui.painter().rect_stroke(
+            zona.expand(2.0),
+            4.0,
+            egui::Stroke::new(if encima { 2.5 } else { 1.0 }, color),
+            egui::StrokeKind::Outside,
+        );
+        if encima {
+            ui.painter().text(
+                zona.right_top() + egui::vec2(-6.0, 2.0),
+                egui::Align2::RIGHT_TOP,
+                format!("Soltar: añadir {} a {partida}", a.codigo),
+                egui::FontId::proportional(13.0),
+                color,
+            );
+            if ui.input(|i| i.pointer.any_released())
+                && let Some(a) = egui::DragAndDrop::take_payload::<ArrastreBase>(ui.ctx())
+            {
+                acciones.push(Accion::CopiarDeBase {
+                    origen: std::sync::Arc::clone(&a.origen),
+                    nombre: a.nombre.clone(),
+                    codigos: vec![a.codigo.clone()],
+                    partida: Some(partida.to_owned()),
+                    con_partidas: true,
+                });
+            }
         }
     }
 }
