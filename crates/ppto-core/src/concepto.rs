@@ -91,6 +91,10 @@ pub struct Concepto {
     /// documento), para poder justificarlo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origen: Option<OrigenPrecio>,
+    /// Partida excluida de la oferta: se ve con su medición y su precio,
+    /// pero su importe en el capítulo es cero y sale como «EXCLUIDO».
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub excluida: bool,
 }
 
 /// Procedencia del precio de un recurso: la oferta que lo justifica.
@@ -179,6 +183,7 @@ impl Concepto {
             tarifa: None,
             margen: None,
             venta_fija: None,
+            excluida: false,
             origen: None,
         }
     }
@@ -200,6 +205,7 @@ impl Concepto {
             tarifa: None,
             margen: None,
             venta_fija: None,
+            excluida: false,
             origen: None,
         }
     }
@@ -216,6 +222,7 @@ impl Concepto {
             tarifa: None,
             margen: None,
             venta_fija: None,
+            excluida: false,
             origen: None,
         }
     }

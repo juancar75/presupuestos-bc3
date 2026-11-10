@@ -445,8 +445,14 @@ impl Presupuesto {
                     hijo: l.hijo.clone(),
                     naturaleza: hijo.naturaleza,
                     cantidad,
-                    precio,
-                    importe: redondear(cantidad * precio, d.importe),
+                    // Excluida: se mantiene la medición, pero ni precio ni importe
+                    // en el capítulo (así no suma en coste, venta ni pedidos)
+                    precio: if hijo.excluida { Decimal::ZERO } else { precio },
+                    importe: if hijo.excluida {
+                        Decimal::ZERO
+                    } else {
+                        redondear(cantidad * precio, d.importe)
+                    },
                 }
             } else if hijo.naturaleza == Naturaleza::Porcentaje {
                 // Base: líneas anteriores cuyo código empieza por la máscara
