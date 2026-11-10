@@ -2195,6 +2195,18 @@ fn bases_por_especialidad() {
     // Obra de garaje y PCI: las bases de las dos y la general
     v.obra = vec![Especialidad::VentilacionGaraje, Especialidad::Pci];
     assert_eq!(v.ficheros_visibles().len(), 3);
+    // y se abren todas a la vez, como una sola
+    let w = bases::VentanaBases::en_para(
+        Some(carpeta.clone()),
+        &[Especialidad::VentilacionGaraje, Especialidad::Pci],
+    );
+    assert!(w.todas);
+    let b = w.base.as_ref().unwrap();
+    assert_eq!(b.varias, 3);
+    assert_eq!(b.nombre(), "3 bases");
+    assert_eq!(b.filas.iter().filter(|f| f.codigo == "MO1").count(), 1, "sin repetir");
+    // La de la especialidad va antes que la general
+    assert_ne!(b.filas.iter().find(|f| f.codigo == "MO1").unwrap().base, "general.bc3");
     v.obra = vec![Especialidad::Pci];
     let mut app = Aplicacion::sin_ventana();
     app.especialidades = vec![Especialidad::Pci];

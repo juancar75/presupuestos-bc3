@@ -35,6 +35,8 @@ pub(super) struct Fila {
     pub resumen: String,
     pub naturaleza: Naturaleza,
     pub precio: Decimal,
+    /// Base de la que viene (cuando se buscan varias a la vez).
+    pub base: String,
     /// Código y resumen en minúsculas y sin tildes, para buscar.
     clave: String,
 }
@@ -44,6 +46,8 @@ pub(super) struct Base {
     pub p: Arc<Presupuesto>,
     pub filas: Vec<Fila>,
     pub errores: usize,
+    /// Varias bases juntas: cuántas (0 = una sola).
+    pub varias: usize,
 }
 
 pub(super) struct VentanaBases {
@@ -63,6 +67,8 @@ pub(super) struct VentanaBases {
     pub obra: Vec<Especialidad>,
     /// Mostrar solo las bases de la especialidad de la obra (y las generales).
     pub solo_especialidad: bool,
+    /// Buscar en todas las bases visibles a la vez.
+    pub todas: bool,
 }
 
 /// Minúsculas y sin tildes, para buscar sin distinguir.
@@ -110,6 +116,7 @@ impl Base {
                 resumen: c.resumen.clone(),
                 naturaleza: c.naturaleza,
                 precio: p.precio(&c.codigo).unwrap_or(c.precio),
+                base: nombre_de(ruta),
                 clave: plano(&format!("{} {}", c.codigo, c.resumen)),
             })
             .collect();
@@ -119,11 +126,50 @@ impl Base {
             p: Arc::new(p),
             filas,
             errores,
+            varias: 0,
         })
     }
 
+    /// Varias bases como una sola para buscar, arrastrar, copiar y emparejar.
+    /// Si un código está en más de una, vale el de la primera (las de la
+    /// especialidad van antes que las generales); igual con los descuentos.
+    pub fn juntar(rutas: &[PathBuf]) -> Result<Self, String> {
+        let mut bases = rutas
+            .iter()
+            .map(|r| Self::cargar(r).map_err(|e| format!("{}: {e}", nombre_de(r))));
+        let Some(primera) = bases.next() else {
+            return Err("no hay bases".into());
+        };
+        let mut b = primera?;
+        let mut p = Arc::unwrap_or_clone(b.p);
+        let mut n = 1;
+        for otra in bases {
+            let o = otra?;
+            n += 1;
+            b.errores += o.errores;
+            for (k, c) in &o.p.conceptos {
+                if !p.conceptos.contains_key(k) {
+                    p.conceptos.insert(k.clone(), c.clone());
+                }
+            }
+            for (k, d) in &o.p.descuentos {
+                p.descuentos.entry(k.clone()).or_insert_with(|| d.clone());
+            }
+            let ya: BTreeSet<String> = b.filas.iter().map(|f| f.codigo.clone()).collect();
+            b.filas.extend(o.filas.into_iter().filter(|f| !ya.contains(&f.codigo)));
+        }
+        b.filas.sort_by(|a, b| a.codigo.cmp(&b.codigo));
+        b.p = Arc::new(p);
+        b.varias = n;
+        Ok(b)
+    }
+
     pub fn nombre(&self) -> String {
-        nombre_de(&self.ruta)
+        if self.varias > 1 {
+            format!("{} bases", self.varias)
+        } else {
+            nombre_de(&self.ruta)
+        }
     }
 }
 
@@ -163,8 +209,14 @@ impl VentanaBases {
             especialidades,
             obra: obra.to_vec(),
             solo_especialidad: !obra.is_empty(),
+            todas: false,
         };
         v.releer_carpeta();
+        // Obra de varias especialidades: todas sus bases a la vez
+        if obra.len() > 1 && v.ficheros_visibles().len() > 1 {
+            v.elegir_todas();
+            return v;
+        }
         let primera = v
             .ficheros_visibles()
             .into_iter()
@@ -238,7 +290,31 @@ impl VentanaBases {
             .unwrap_or_default();
     }
 
+    /// Todas las bases visibles a la vez: primero las de la especialidad,
+    /// luego las generales.
+    pub fn elegir_todas(&mut self) {
+        let mut rutas: Vec<PathBuf> = self.ficheros_visibles().into_iter().cloned().collect();
+        rutas.sort_by_key(|f| self.especialidad_de(f).is_none());
+        self.marcados.clear();
+        self.elegido = None;
+        self.todas = true;
+        match Base::juntar(&rutas) {
+            Ok(b) => {
+                self.mensaje = Some((
+                    format!("{} bases a la vez: {} conceptos.", rutas.len(), b.filas.len()),
+                    false,
+                ));
+                self.base = Some(b);
+            }
+            Err(e) => {
+                self.base = None;
+                self.mensaje = Some((format!("No se pudieron leer las bases: {e}"), true));
+            }
+        }
+    }
+
     pub fn elegir(&mut self, ruta: PathBuf) {
+        self.todas = false;
         self.marcados.clear();
         self.elegido = Some(ruta.clone());
         match Base::cargar(&ruta) {
@@ -395,12 +471,25 @@ impl Aplicacion {
                 }
                 ui.horizontal(|ui| {
                     ui.label("Base:");
-                    let actual = v.elegido.as_deref().map(nombre_de).unwrap_or_else(|| "(ninguna)".into());
-                    let mut cambiar = None;
                     let visibles: Vec<PathBuf> = v.ficheros_visibles().into_iter().cloned().collect();
+                    let actual = if v.todas {
+                        format!("Todas a la vez ({})", visibles.len())
+                    } else {
+                        v.elegido.as_deref().map(nombre_de).unwrap_or_else(|| "(ninguna)".into())
+                    };
+                    let mut cambiar = None;
+                    let mut todas = false;
                     egui::ComboBox::from_id_salt("base_elegida")
                         .selected_text(actual)
                         .show_ui(ui, |ui| {
+                            if visibles.len() > 1
+                                && ui
+                                    .selectable_label(v.todas, format!("Todas a la vez ({})", visibles.len()))
+                                    .on_hover_text("Busca, arrastra, copia y empareja en todas las bases de la lista")
+                                    .clicked()
+                            {
+                                todas = true;
+                            }
                             for f in &visibles {
                                 let etiqueta = match v.especialidad_de(f) {
                                     Some(e) => format!("{} · {}", nombre_de(f), e.nombre()),
@@ -413,6 +502,8 @@ impl Aplicacion {
                         });
                     if let Some(f) = cambiar {
                         v.elegir(f);
+                    } else if todas {
+                        v.elegir_todas();
                     }
                     if ui
                         .button("Añadir base…")
@@ -470,7 +561,11 @@ impl Aplicacion {
                 ui.separator();
                 if let Some(b) = v.base.as_ref()
                     && ui
-                        .button("Emparejar la obra con esta base…")
+                        .button(if b.varias > 1 {
+                            "Emparejar la obra con estas bases…"
+                        } else {
+                            "Emparejar la obra con esta base…"
+                        })
                         .on_hover_text(
                             "Propone, para cada partida sin precio de la obra, la partida de esta base que mejor encaja \
                              (por modelo, medidas, diámetro, potencia, palabras y unidad). Usted confirma.",
@@ -498,10 +593,20 @@ impl Aplicacion {
                         ui.radio_value(&mut v.filtro, Some(n), nombre_naturaleza(n));
                     }
                 });
-                let visibles: Vec<(String, String, String, Naturaleza, Decimal)> = v
+                let varias = v.base.as_ref().is_some_and(|b| b.varias > 1);
+                let visibles: Vec<(String, String, String, Naturaleza, Decimal, String)> = v
                     .visibles()
                     .into_iter()
-                    .map(|f| (f.codigo.clone(), f.unidad.clone(), f.resumen.clone(), f.naturaleza, f.precio))
+                    .map(|f| {
+                        (
+                            f.codigo.clone(),
+                            f.unidad.clone(),
+                            f.resumen.clone(),
+                            f.naturaleza,
+                            f.precio,
+                            f.base.clone(),
+                        )
+                    })
                     .collect();
                 ui.horizontal(|ui| {
                     ui.label(format!("{} conceptos · {} marcados", visibles.len(), v.marcados.len()));
@@ -574,15 +679,18 @@ impl Aplicacion {
                     );
                 }
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    egui::Grid::new("filas_base").striped(true).num_columns(6).show(ui, |ui| {
+                    egui::Grid::new("filas_base").striped(true).num_columns(7).show(ui, |ui| {
                         ui.label("");
                         ui.strong("Código");
                         ui.strong("Ud");
                         ui.strong("Resumen");
                         ui.strong("Tipo");
                         ui.strong("Precio");
+                        if varias {
+                            ui.strong("Base");
+                        }
                         ui.end_row();
-                        for (codigo, unidad, resumen, nat, precio) in visibles.iter().take(MAX_FILAS) {
+                        for (codigo, unidad, resumen, nat, precio, de_base) in visibles.iter().take(MAX_FILAS) {
                             let mut m = v.marcados.contains(codigo);
                             if ui.checkbox(&mut m, "").changed() {
                                 if m {
@@ -598,7 +706,7 @@ impl Aplicacion {
                             let rr = ui
                                 .add(egui::Label::new(super::corto(resumen, 70)).sense(egui::Sense::drag()))
                                 .on_hover_text(resumen);
-                            if let Some((origen, nombre)) = &base_abierta {
+                            if let Some((origen, _)) = &base_abierta {
                                 for r in [&rc, &rr] {
                                     if r.hovered() {
                                         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
@@ -606,7 +714,7 @@ impl Aplicacion {
                                     if r.drag_started() {
                                         r.dnd_set_drag_payload(ArrastreBase {
                                             origen: Arc::clone(origen),
-                                            nombre: nombre.clone(),
+                                            nombre: de_base.clone(),
                                             codigo: codigo.clone(),
                                         });
                                     }
@@ -628,6 +736,9 @@ impl Aplicacion {
                             }
                             ui.label(nombre_naturaleza(*nat));
                             ui.label(format!("{} €", eur(*precio)));
+                            if varias {
+                                ui.label(RichText::new(de_base.trim_end_matches(".sqlite")).small().weak());
+                            }
                             ui.end_row();
                         }
                     });
