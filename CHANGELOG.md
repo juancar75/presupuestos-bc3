@@ -5,6 +5,16 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Bases de precios: todas a la vez**. En el desplegable de bases, «Todas a
+  la vez (N)» junta todas las de la lista como si fueran una.
+  - Es como se abre la ventana en las obras de varias especialidades (p. ej.
+    garaje + PCI: la de garaje, la de PCI y la general).
+  - Buscar, arrastrar, copiar, Ctrl+B y Emparejar trabajan sobre todas.
+  - Una columna dice de qué base viene cada concepto.
+  - Si un código está en varias, vale el de la base de la especialidad antes
+    que el de la general; lo mismo con los descuentos.
+
 ## [0.1.0-alpha.47] - 2026-11-10
 
 ### Añadido
