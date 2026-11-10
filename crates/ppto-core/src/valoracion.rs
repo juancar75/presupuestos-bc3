@@ -52,6 +52,10 @@ pub fn estado(p: &Presupuesto, partida: &str) -> Estado {
     let Ok(c) = p.concepto(partida) else {
         return Estado::SinPrecio;
     };
+    if c.excluida {
+        // Fuera de la oferta: no falta nada
+        return Estado::Valorada;
+    }
     if c.descomposicion.is_empty() {
         return if c.precio.is_zero() {
             Estado::SinPrecio

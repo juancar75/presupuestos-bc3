@@ -29,6 +29,9 @@ impl Aplicacion {
     /// Rojo: sin valorar. Naranja: mano de obra sin material o al revés.
     pub(super) fn color_estado(&self, t: RichText, codigo: &str) -> RichText {
         use ppto_core::valoracion::Estado;
+        if self.p.conceptos.get(codigo).is_some_and(|c| c.excluida) {
+            return t.weak().strikethrough();
+        }
         match self.calc.estados.get(codigo) {
             Some(Estado::SinPrecio) => t.color(COLOR_SIN_VALORAR),
             Some(e) if e.incompleta() => t.color(COLOR_INCOMPLETA),

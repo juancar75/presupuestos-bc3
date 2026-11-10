@@ -58,6 +58,7 @@ const MIGRACIONES: &[&str] = &[
     include_str!("../migrations/0010_seguimiento.sql"),
     include_str!("../migrations/0011_descuento_encadenado.sql"),
     include_str!("../migrations/0012_referencia_tarifa.sql"),
+    include_str!("../migrations/0013_partida_excluida.sql"),
 ];
 
 pub struct Almacen {
@@ -287,7 +288,7 @@ impl Almacen {
 
         let mut conceptos = BTreeMap::new();
         let mut st = self.con.prepare(
-            "SELECT codigo, unidad, resumen, naturaleza, precio, texto, tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija, origen, tarifa_referencia
+            "SELECT codigo, unidad, resumen, naturaleza, precio, texto, tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija, origen, tarifa_referencia, excluida
              FROM conceptos WHERE revision_id = ?1",
         )?;
         let filas = st.query_map([rev], |r| {
@@ -308,13 +309,14 @@ impl Almacen {
                     r.get::<_, Option<String>>(10)?,
                     r.get::<_, Option<String>>(11)?,
                     r.get::<_, Option<String>>(12)?,
+                    r.get::<_, bool>(13)?,
                 ),
             ))
         })?;
         for f in filas {
             let (
                 (codigo, unidad, resumen, nat, precio, texto),
-                (fab, pvp, grupo, margen, venta_fija, origen, referencia),
+                (fab, pvp, grupo, margen, venta_fija, origen, referencia, excluida),
             ) = f?;
             let tarifa = match (fab, pvp) {
                 (Some(fabricante), Some(pvp)) => Some(ppto_core::PrecioTarifa {
@@ -340,6 +342,7 @@ impl Almacen {
                     venta_fija: venta_fija.as_deref().map(dec_de).transpose()?,
                     // Un origen ilegible no impide abrir la obra: se pierde solo la referencia
                     origen: origen.as_deref().and_then(|o| serde_json::from_str(o).ok()),
+                    excluida,
                 },
             );
         }
@@ -519,8 +522,8 @@ fn escribir_contenido(tx: &Transaction, rev: i64, p: &Presupuesto) -> Resultado<
     {
         let mut st = tx.prepare(
             "INSERT INTO conceptos (revision_id, codigo, unidad, resumen, naturaleza, precio, texto,
-                tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija, origen, tarifa_referencia)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                tarifa_fabricante, tarifa_pvp, tarifa_grupo, margen, venta_fija, origen, tarifa_referencia, excluida)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         )?;
         for c in p.conceptos.values() {
             st.execute(params![
@@ -537,7 +540,8 @@ fn escribir_contenido(tx: &Transaction, rev: i64, p: &Presupuesto) -> Resultado<
                 c.margen.map(|m| m.to_string()),
                 c.venta_fija.map(|v| v.to_string()),
                 c.origen.as_ref().and_then(|o| serde_json::to_string(o).ok()),
-                c.tarifa.as_ref().and_then(|t| t.referencia.clone())
+                c.tarifa.as_ref().and_then(|t| t.referencia.clone()),
+                c.excluida
             ])?;
         }
     }
@@ -803,6 +807,7 @@ mod tests {
         assert_eq!(p.concepto("MT.TUBO16").unwrap().precio, dec!(1));
         p.fijar_margen("SR.M2", Some(dec!(30))).unwrap();
         p.fijar_venta("SR.COL8", Some(dec!(99.5))).unwrap();
+        p.fijar_excluida("SR.COL8", true).unwrap();
         // Precio justificado con una oferta (ruta de red, la que se eligió)
         let o = ppto_core::OrigenPrecio {
             fabricante: "SCHAKO".into(),
@@ -820,6 +825,8 @@ mod tests {
             let leido = a.cargar_revision(r).unwrap();
             assert_eq!(leido.concepto("SR.M2").unwrap().margen, Some(dec!(30)));
             assert_eq!(leido.concepto("SR.COL8").unwrap().venta_fija, Some(dec!(99.5)));
+            assert!(leido.concepto("SR.COL8").unwrap().excluida);
+            assert!(!leido.concepto("SR.M2").unwrap().excluida);
             assert_eq!(leido.concepto("MT.PANEL").unwrap().origen.as_ref(), Some(&o));
             assert_eq!(leido.texto_descuento("FABA"), "40+8");
             assert_eq!(leido, p);

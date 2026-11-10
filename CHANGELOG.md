@@ -11,6 +11,12 @@ versionado [semántico](https://semver.org/lang/es/).
   precio descompuesto de la partida. Entra en la obra con su descompuesto y
   descuentos, y como línea con cantidad 1. También una partida, que queda como
   subpartida. La zona de soltar se marca en azul mientras se arrastra.
+- **Partida excluida**: casilla «Excluida» en la pestaña Partida. Conserva su
+  medición y su descompuesto, pero no suma en el capítulo, ni en coste ni en
+  venta, y no cuenta como «sin precio». En el árbol sale tachada. En el PDF y
+  el Excel aparece «EXCLUIDO» en lugar del importe. En el BC3 viaja con
+  factor 0 en el capítulo, así Presto la ve sin importe, y al volver a
+  importarla queda marcada como excluida.
 
 ### Corregido
 - Asistente IA (MCP): un número en texto con un solo punto («7.518») se lee

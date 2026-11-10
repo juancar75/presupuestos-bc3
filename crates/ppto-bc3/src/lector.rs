@@ -591,6 +591,7 @@ impl Lector {
                     tarifa: None,
                     margen: None,
                     venta_fija: None,
+                    excluida: false,
                     origen: None,
                 },
             );
@@ -674,13 +675,19 @@ impl Lector {
 
         // 4. Descomposiciones.
         let mut info_pct = false;
+        let mut excluidas: Vec<String> = Vec::new();
         for (padre, lineas) in std::mem::take(&mut self.desc) {
             let es_cap = conceptos
                 .get(&padre)
                 .is_some_and(|c| c.naturaleza == Naturaleza::Capitulo);
             let mut out = Vec::with_capacity(lineas.len());
             for l in lineas {
-                let factor = l.factor.unwrap_or(Decimal::ONE);
+                let mut factor = l.factor.unwrap_or(Decimal::ONE);
+                // Factor 0 en un capítulo: partida excluida (así la exporta el programa)
+                if es_cap && factor.is_zero() {
+                    excluidas.push(l.hijo.clone());
+                    factor = Decimal::ONE;
+                }
                 let rendimiento = match l.rendimiento {
                     Some(r) => r,
                     None => {
@@ -734,6 +741,13 @@ impl Lector {
             }
             if let Some(c) = conceptos.get_mut(&padre) {
                 c.descomposicion = out;
+            }
+        }
+        for h in excluidas {
+            if let Some(c) = conceptos.get_mut(&h)
+                && c.naturaleza != Naturaleza::Capitulo
+            {
+                c.excluida = true;
             }
         }
         if info_pct {

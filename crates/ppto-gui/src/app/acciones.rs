@@ -116,6 +116,7 @@ impl Aplicacion {
                     Err(e) => Err(ppto_core::ErrorMotor::ValorInvalido(e)),
                 },
                 Accion::Margen(c, m) => self.p.fijar_margen(&c, m),
+                Accion::Excluir(c, e) => self.p.fijar_excluida(&c, e),
                 Accion::VentaFija(c, v) => self.p.fijar_venta(&c, v),
                 Accion::Descuento(fab, cadena) => self.p.fijar_descuento_encadenado(&fab, &cadena).map(|v| {
                     self.info(format!(

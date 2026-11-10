@@ -355,8 +355,12 @@ fn partida(
     h.write_string(fila, 1, &c.unidad)?;
     h.write_string_with_format(fila, 2, &c.resumen, &f.texto)?;
     h.write_number_with_format(fila, 3, n(l.cantidad), &f.num2)?;
-    h.write_number_with_format(fila, 4, n(l.precio), &f.num2)?;
-    h.write_number_with_format(fila, 5, n(l.importe), &f.num2)?;
+    if c.excluida {
+        h.write_string_with_format(fila, 5, "EXCLUIDO", &f.texto)?;
+    } else {
+        h.write_number_with_format(fila, 4, n(l.precio), &f.num2)?;
+        h.write_number_with_format(fila, 5, n(l.importe), &f.num2)?;
+    }
     Ok(())
 }
 
