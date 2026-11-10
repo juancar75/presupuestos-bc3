@@ -19,6 +19,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Concepto de la base arrastrado al descompuesto de la partida.
+pub(super) struct ArrastreBase {
+    pub origen: Arc<Presupuesto>,
+    pub nombre: String,
+    pub codigo: String,
+}
+
 /// Máximo de filas que se dibujan a la vez (la búsqueda acota el resto).
 const MAX_FILAS: usize = 400;
 
@@ -519,6 +526,7 @@ impl Aplicacion {
                                 nombre: nombre.clone(),
                                 codigos: v.marcados.iter().cloned().collect(),
                                 partida: None,
+                                con_partidas: false,
                             });
                             v.marcados.clear();
                         }
@@ -541,6 +549,7 @@ impl Aplicacion {
                                     nombre,
                                     codigos: v.marcados.iter().cloned().collect(),
                                     partida: Some(pt.clone()),
+                                    con_partidas: false,
                                 });
                                 v.marcados.clear();
                             }
@@ -554,6 +563,14 @@ impl Aplicacion {
                     }
                 });
                 ui.separator();
+                let base_abierta = v.base.as_ref().map(|b| (Arc::clone(&b.p), b.nombre()));
+                if partida.is_some() {
+                    ui.label(
+                        RichText::new("Arrastre un concepto (código o resumen) al precio descompuesto de la partida.")
+                            .small()
+                            .weak(),
+                    );
+                }
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     egui::Grid::new("filas_base").striped(true).num_columns(6).show(ui, |ui| {
                         ui.label("");
@@ -572,9 +589,41 @@ impl Aplicacion {
                                     v.marcados.remove(codigo);
                                 }
                             }
-                            ui.monospace(codigo);
+                            let rc = ui.add(
+                                egui::Label::new(RichText::new(codigo).monospace()).sense(egui::Sense::drag()),
+                            );
                             ui.label(unidad);
-                            ui.label(super::corto(resumen, 70)).on_hover_text(resumen);
+                            let rr = ui
+                                .add(egui::Label::new(super::corto(resumen, 70)).sense(egui::Sense::drag()))
+                                .on_hover_text(resumen);
+                            if let Some((origen, nombre)) = &base_abierta {
+                                for r in [&rc, &rr] {
+                                    if r.hovered() {
+                                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                                    }
+                                    if r.drag_started() {
+                                        r.dnd_set_drag_payload(ArrastreBase {
+                                            origen: Arc::clone(origen),
+                                            nombre: nombre.clone(),
+                                            codigo: codigo.clone(),
+                                        });
+                                    }
+                                    if r.dragged() {
+                                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                        if let Some(p) = ui.ctx().pointer_interact_pos() {
+                                            egui::Area::new(egui::Id::new("arrastre_base"))
+                                                .order(egui::Order::Tooltip)
+                                                .fixed_pos(p + egui::vec2(14.0, 6.0))
+                                                .interactable(false)
+                                                .show(ui.ctx(), |ui| {
+                                                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                                                        ui.label(format!("{codigo} · {}", super::corto(resumen, 40)));
+                                                    });
+                                                });
+                                        }
+                                    }
+                                }
+                            }
                             ui.label(nombre_naturaleza(*nat));
                             ui.label(format!("{} €", eur(*precio)));
                             ui.end_row();

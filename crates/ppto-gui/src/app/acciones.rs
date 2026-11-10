@@ -348,7 +348,8 @@ impl Aplicacion {
                     nombre,
                     codigos,
                     partida,
-                } => self.copiar_de_base(&origen, &nombre, &codigos, partida.as_deref()),
+                    con_partidas,
+                } => self.copiar_de_base(&origen, &nombre, &codigos, partida.as_deref(), con_partidas),
                 Accion::PegarFragmento(f, destino) => ppto_core::fragmento::pegar(&mut self.p, &f, &destino).map(|inf| {
                     let mut m = format!("Pegado de «{}» en {destino}: {}", f.obra, inf.pegados.join(", "));
                     if !inf.renombrados.is_empty() {
@@ -401,6 +402,7 @@ impl Aplicacion {
         nombre: &str,
         codigos: &[String],
         partida: Option<&str>,
+        con_partidas: bool,
     ) -> Result<(), ppto_core::ErrorMotor> {
         let copia = self.p.clone();
         let r = (|| {
@@ -414,7 +416,7 @@ impl Aplicacion {
                         .get(c)
                         .is_some_and(|x| x.naturaleza != Naturaleza::Partida);
                     let ya = self.p.concepto(pt)?.descomposicion.iter().any(|l| &l.hijo == c);
-                    if es_recurso && !ya {
+                    if (es_recurso || con_partidas) && !ya && c != pt {
                         self.p.anadir_linea(pt, c, Decimal::ONE)?;
                         lineas += 1;
                     }
