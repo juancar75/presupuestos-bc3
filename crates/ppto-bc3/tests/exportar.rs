@@ -63,6 +63,27 @@ fn ejemplo_suelo_radiante() {
 }
 
 #[test]
+fn partida_excluida_ida_y_vuelta() {
+    // Excluida: factor 0 en el capítulo; conserva medición y precio propio
+    let mut p = suelo_radiante();
+    let pem = p.pem().unwrap();
+    let col = p.precio("SR.COL8").unwrap();
+    p.fijar_excluida("SR.COL8", true).unwrap();
+    assert!(p.pem().unwrap() < pem);
+    assert_eq!(p.precio("SR.COL8").unwrap(), col);
+    let ex = exportar(&p, &OpcionesExportacion::default()).unwrap();
+    let txt = String::from_utf8_lossy(&ex.bytes);
+    assert!(txt.contains("SR.COL8\\0\\"), "{txt}");
+    let q = ida_y_vuelta(&p);
+    assert!(q.conceptos["SR.COL8"].excluida);
+    assert!(!q.conceptos["SR.M2"].excluida);
+    assert_eq!(q.pem().unwrap(), p.pem().unwrap());
+    let v = q.valorar().unwrap();
+    let l = v.lineas.values().flatten().find(|l| l.hijo == "SR.COL8").unwrap();
+    assert!(l.importe.is_zero() && !l.cantidad.is_zero());
+}
+
+#[test]
 fn con_costes_indirectos() {
     let mut p = suelo_radiante();
     p.costes_indirectos = dec!(45);

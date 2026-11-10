@@ -1061,7 +1061,7 @@ fn partidas_sin_precio(p: &Presupuesto, limite: u64) -> Result<String, String> {
     let (mut n, mut total) = (0u64, 0u64);
     for (codigo, q) in &cant {
         let c = &p.conceptos[codigo];
-        if !v.precios.get(codigo).is_none_or(Decimal::is_zero) {
+        if c.excluida || !v.precios.get(codigo).is_none_or(Decimal::is_zero) {
             continue;
         }
         total += 1;

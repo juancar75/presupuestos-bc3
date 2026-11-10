@@ -141,6 +141,8 @@ enum Accion {
     Descuento(String, Vec<Decimal>),
     /// Margen propio de una partida (% sobre su precio; `None` = el general).
     Margen(String, Option<Decimal>),
+    /// Partida excluida de la oferta (sí/no).
+    Excluir(String, bool),
     /// Precio de venta bloqueado de una partida (`None` = desbloquear).
     VentaFija(String, Option<Decimal>),
     /// PVP de tarifa de un recurso ligado a un fabricante.
@@ -410,6 +412,8 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::ReaplicarAceptadas => ("reaplicar propuestas aceptadas".into(), None),
         Accion::Descuento(f, _) => (format!("descuento {f}"), None),
         Accion::Margen(c, _) => (format!("margen de {c}"), None),
+        Accion::Excluir(c, true) => (format!("excluir {c}"), None),
+        Accion::Excluir(c, false) => (format!("incluir {c}"), None),
         Accion::VentaFija(c, _) => (format!("venta bloqueada de {c}"), None),
         Accion::Pvp(c, _) => (format!("PVP de {c}"), None),
         Accion::GrupoTarifa(c, _) => (format!("grupo de {c}"), None),
@@ -619,9 +623,11 @@ impl Aplicacion {
         let n = orden.len();
         let destino = if sin_precio {
             let inicio = actual.map_or(0, |i| i + 1);
-            (0..n)
-                .map(|k| (inicio + k) % n)
-                .find(|&i| self.calc.precios.get(&orden[i].1).is_none_or(|p| p.is_zero()))
+            (0..n).map(|k| (inicio + k) % n).find(|&i| {
+                let h = &orden[i].1;
+                !self.p.conceptos.get(h).is_some_and(|c| c.excluida)
+                    && self.calc.precios.get(h).is_none_or(|p| p.is_zero())
+            })
         } else {
             Some(match actual {
                 None => 0,

@@ -5,6 +5,14 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Partida excluida**: casilla «Excluida» en la pestaña Partida. Conserva su
+  medición y su descompuesto, pero no suma en el capítulo, ni en coste ni en
+  venta, y no cuenta como «sin precio». En el árbol sale tachada. En el PDF y
+  el Excel aparece «EXCLUIDO» en lugar del importe. En el BC3 viaja con
+  factor 0 en el capítulo, así Presto la ve sin importe, y al volver a
+  importarla queda marcada como excluida.
+
 ## [0.1.0-alpha.45] - 2026-11-09
 
 ### Añadido

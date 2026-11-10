@@ -544,7 +544,7 @@ pub fn sin_precio(p: &Presupuesto) -> Vec<String> {
             continue;
         }
         if x.naturaleza == Naturaleza::Partida {
-            if x.descomposicion.is_empty() && x.precio.is_zero() {
+            if x.descomposicion.is_empty() && x.precio.is_zero() && !x.excluida {
                 v.push(c);
             }
             continue;

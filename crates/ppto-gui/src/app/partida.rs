@@ -78,10 +78,25 @@ impl Aplicacion {
             {
                 acciones.push(Accion::BuscarEnBase(hijo.clone()));
             }
+            if c.naturaleza == Naturaleza::Partida {
+                let mut ex = c.excluida;
+                if ui
+                    .checkbox(&mut ex, RichText::new("Excluida").strong())
+                    .on_hover_text(
+                        "Fuera de la oferta: conserva medición y descompuesto, pero no suma en el capítulo                          y en el PDF y el Excel sale «EXCLUIDO» en lugar del importe",
+                    )
+                    .changed()
+                {
+                    acciones.push(Accion::Excluir(hijo.clone(), ex));
+                }
+            }
             if let Some(i) = pos {
                 let sin = orden
                     .iter()
-                    .filter(|(_, h)| self.calc.precios.get(h).is_none_or(|p| p.is_zero()))
+                    .filter(|(_, h)| {
+                        !self.p.conceptos.get(h).is_some_and(|c| c.excluida)
+                            && self.calc.precios.get(h).is_none_or(|p| p.is_zero())
+                    })
                     .count();
                 ui.label(RichText::new(format!("{} de {} · {sin} sin precio", i + 1, orden.len())).weak());
             }

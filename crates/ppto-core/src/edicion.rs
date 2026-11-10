@@ -272,6 +272,20 @@ impl Presupuesto {
 
     /// Margen propio de una partida, en % sobre su precio (`None`: el general
     /// de la obra). Admite de −50 % a 1.000 %.
+    /// Marca o desmarca una partida como excluida de la oferta: conserva
+    /// medición y descompuesto, pero no suma en el capítulo.
+    pub fn fijar_excluida(&mut self, partida: &str, excluida: bool) -> Result<(), ErrorMotor> {
+        let c = self
+            .conceptos
+            .get_mut(partida)
+            .ok_or_else(|| ErrorMotor::ConceptoInexistente(partida.into()))?;
+        if c.naturaleza != Naturaleza::Partida {
+            return Err(ErrorMotor::ValorInvalido(format!("«{partida}» no es una partida")));
+        }
+        c.excluida = excluida;
+        Ok(())
+    }
+
     pub fn fijar_margen(&mut self, partida: &str, margen: Option<Decimal>) -> Result<(), ErrorMotor> {
         if let Some(m) = margen
             && !(Decimal::from(-50)..=Decimal::from(1000)).contains(&m)
