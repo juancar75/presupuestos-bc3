@@ -1170,6 +1170,7 @@ fn bases_de_precios_copiar_mano_de_obra() {
         nombre: "base_sintetica.bc3".into(),
         codigos: vec!["CRP".into()],
         partida: Some("SR.M2".into()),
+        con_partidas: false,
     }]);
     assert_eq!(app.p.precio("CRP").unwrap(), dec!(32.50));
     assert!(app.p.conceptos["SR.M2"].descomposicion.iter().any(|l| l.hijo == "CRP"));
@@ -1180,13 +1181,30 @@ fn bases_de_precios_copiar_mano_de_obra() {
     // Copiar una partida sin colocarla: trae su descompuesto y el PEM no cambia
     let pem = app.p.pem().unwrap();
     app.aplicar(vec![Accion::CopiarDeBase {
-        origen: origen_p,
+        origen: std::sync::Arc::clone(&origen_p),
         nombre: "base_sintetica.bc3".into(),
         codigos: vec!["P.REJ".into()],
         partida: None,
+        con_partidas: false,
     }]);
     assert_eq!(app.p.precio("P.REJ").unwrap(), dec!(72.50));
     assert_eq!(app.p.pem().unwrap(), pem);
+    app.deshacer();
+    // Arrastrada al descompuesto: también una partida entra como línea
+    // (subpartida, cantidad 1); la partida no se añade a sí misma
+    app.aplicar(vec![Accion::CopiarDeBase {
+        origen: origen_p,
+        nombre: "base_sintetica.bc3".into(),
+        codigos: vec!["P.REJ".into()],
+        partida: Some("SR.M2".into()),
+        con_partidas: true,
+    }]);
+    assert!(
+        app.p.conceptos["SR.M2"]
+            .descomposicion
+            .iter()
+            .any(|l| l.hijo == "P.REJ")
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
