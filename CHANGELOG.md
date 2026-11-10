@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.48] - 2026-11-10
+
 ### Añadido
 - **Bases de precios: todas a la vez**. En el desplegable de bases, «Todas a
   la vez (N)» junta todas las de la lista como si fueran una.
