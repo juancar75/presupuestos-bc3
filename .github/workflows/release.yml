@@ -34,7 +34,7 @@ jobs:
           Copy-Item scripts/instalador/* $n
           Copy-Item LICENSE, THIRD-PARTY-NOTICES.md $n
           Compress-Archive -Path $n -DestinationPath "$n.zip"
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             target/release/${{ matrix.exe }}
