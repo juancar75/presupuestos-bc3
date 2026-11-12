@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.57] - 2026-11-12
+
 ### Añadido
 - Descompuesto: selección de varias líneas como en Presto (clic, Mayús+clic para un bloque, Ctrl+clic para sueltas). Ctrl+C las copia y Ctrl+V las pega en otra partida, también en otra ventana del programa; si una línea ya está, pregunta si sumar la cantidad o dejarla. Supr quita las elegidas.
 - Menú con el botón derecho en el código de la línea: copiar, «Copiar a varias partidas…» (lista con filtro y casillas) y quitar. Cada pegado se deshace de una vez.
