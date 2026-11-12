@@ -228,6 +228,7 @@ impl Aplicacion {
                 }
                 Accion::CopiarDescompuestoAnterior => self.copiar_descompuesto_anterior(),
                 Accion::NuevoRecursoTarifa(r) => self.nuevo_recurso_tarifa(&r),
+                Accion::InsertarKit(k, p, q, sub) => self.insertar_kit(&k, &p, q, sub),
                 Accion::PegarLineas(f, d, s) => self.aplicar_pegar_lineas(&f, &d, s),
                 Accion::Alta(t) => {
                     self.abrir_alta(t);

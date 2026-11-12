@@ -214,6 +214,11 @@ impl Aplicacion {
                                         menu = Some(2);
                                         ui.close();
                                     }
+                                    if ui.button(format!("Guardar {n} líneas como kit…")).clicked() {
+                                        menu = Some(4);
+                                        ui.close();
+                                    }
+                                    ui.separator();
                                     if ui.button(format!("Quitar {n} líneas (Supr)")).clicked() {
                                         menu = Some(3);
                                         ui.close();
@@ -395,6 +400,7 @@ impl Aplicacion {
                         self.copiar_lineas(&hijo);
                     }
                     Some(2) => self.abrir_copiar_a(&hijo),
+                    Some(4) => self.abrir_guardar_kit(&hijo),
                     Some(3) => {
                         for x in self.lineas_elegidas(&hijo) {
                             acciones.push(Accion::QuitarLinea(hijo.clone(), x, false));

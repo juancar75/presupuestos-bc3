@@ -26,6 +26,15 @@ pub(super) struct CopiarA {
     pub sumar: bool,
 }
 
+/// Ventana «Guardar como kit».
+pub(super) struct GuardarKit {
+    pub f: Fragmento,
+    pub nombre: String,
+    pub unidad: String,
+    /// Kits que ya hay en la biblioteca (leída al abrir).
+    pub existentes: BTreeSet<String>,
+}
+
 /// Pegado pendiente de contestar (alguna línea ya estaba).
 pub(super) struct PegadoPendiente {
     pub f: Fragmento,
@@ -123,6 +132,94 @@ impl Aplicacion {
             }
             Ok(_) => {}
             Err(e) => self.error(e.to_string()),
+        }
+    }
+
+    /// Abre «Guardar como kit» con las líneas elegidas.
+    pub(super) fn abrir_guardar_kit(&mut self, padre: &str) {
+        let el = self.lineas_elegidas(padre);
+        match ppto_core::fragmento::copiar(&self.p, padre, &el) {
+            Ok(f) if !el.is_empty() => {
+                self.guardar_kit = Some(GuardarKit {
+                    f,
+                    nombre: String::new(),
+                    unidad: "ud".into(),
+                    existentes: self
+                        .ruta_biblioteca
+                        .as_deref()
+                        .map(ppto_biblioteca::Biblioteca::cargar)
+                        .map(|b| b.kits.into_keys().collect())
+                        .unwrap_or_default(),
+                });
+            }
+            Ok(_) => {}
+            Err(e) => self.error(e.to_string()),
+        }
+    }
+
+    pub(super) fn ventana_guardar_kit(&mut self, ctx: &egui::Context) {
+        let Some(mut v) = self.guardar_kit.take() else { return };
+        let mut abierta = true;
+        let mut hecho = false;
+        let existe = v.existentes.contains(v.nombre.trim());
+        egui::Window::new(format!("Guardar {} líneas como kit", v.f.lineas.len()))
+            .open(&mut abierta)
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.label(
+                    RichText::new(
+                        v.f.lineas
+                            .iter()
+                            .map(|l| format!("{} × {}", l.linea.rendimiento.normalize(), l.linea.hijo))
+                            .collect::<Vec<_>>()
+                            .join(" · "),
+                    )
+                    .weak()
+                    .small(),
+                );
+                egui::Grid::new("kit_nuevo").num_columns(2).show(ui, |ui| {
+                    ui.label("Nombre:");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut v.nombre)
+                            .hint_text("p. ej. Toma de fancoil")
+                            .desired_width(300.0),
+                    );
+                    ui.end_row();
+                    ui.label("Unidad:");
+                    ui.add(egui::TextEdit::singleline(&mut v.unidad).desired_width(50.0))
+                        .on_hover_text("Unidad de la subpartida cuando el kit se inserta como subpartida");
+                    ui.end_row();
+                });
+                if existe {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(200, 140, 30),
+                        "Ya hay un kit con ese nombre: se sustituye.",
+                    );
+                }
+                ui.label(
+                    RichText::new(
+                        "Se guarda en la biblioteca compartida, con sus recursos y precios de ahora. \
+                         Para usarlo: «+ Añadir línea…» y busque «kit».",
+                    )
+                    .weak()
+                    .small(),
+                );
+                if ui
+                    .add_enabled(!v.nombre.trim().is_empty(), egui::Button::new("Guardar kit"))
+                    .clicked()
+                {
+                    hecho = true;
+                }
+            });
+        if hecho {
+            let k = ppto_biblioteca::Kit {
+                nombre: v.nombre.trim().to_owned(),
+                unidad: v.unidad.trim().to_owned(),
+                lineas: v.f,
+            };
+            self.guardar_kit(k);
+        } else if abierta {
+            self.guardar_kit = Some(v);
         }
     }
 

@@ -189,6 +189,8 @@ enum Accion {
     /// referencia (y el descuento, si la obra no lo tiene) y se añade como
     /// línea de `en`.
     NuevoRecursoTarifa(Box<RecursoTarifa>),
+    /// Insertar un kit en una partida (cantidad; `true` = como subpartida).
+    InsertarKit(Box<ppto_biblioteca::Kit>, String, Decimal, bool),
     /// Pegar líneas copiadas de un descompuesto en varias partidas.
     PegarLineas(
         Box<ppto_core::fragmento::Fragmento>,
@@ -333,6 +335,7 @@ pub struct Aplicacion {
     lineas_sel: lineas::LineasSel,
     copiar_a: Option<lineas::CopiarA>,
     pegado_pendiente: Option<lineas::PegadoPendiente>,
+    guardar_kit: Option<lineas::GuardarKit>,
     /// Texto para el portapapeles del sistema (se copia al final del fotograma).
     copiar_al_sistema: Option<String>,
     /// Capítulo donde pega Ctrl+V (el último elegido en el árbol).
@@ -448,6 +451,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::NuevoRecurso { codigo, .. } => (format!("nuevo {codigo}"), None),
         Accion::NuevoRecursoTarifa(r) => (format!("nuevo {} de tarifa", r.codigo), None),
         Accion::CopiarDescompuestoAnterior => ("copiar el descompuesto anterior".into(), None),
+        Accion::InsertarKit(k, p, _, _) => (format!("insertar el kit «{}» en {p}", k.nombre), None),
         Accion::PegarLineas(_, d, _) => (format!("pegar líneas en {} partidas", d.len()), None),
         Accion::AnadirLinea(p, h, _) => (format!("añadir {h} a {p}"), None),
         Accion::QuitarLinea(p, h, _) => (format!("quitar {h} de {p}"), None),
@@ -561,6 +565,7 @@ impl Aplicacion {
             lineas_sel: Default::default(),
             copiar_a: None,
             pegado_pendiente: None,
+            guardar_kit: None,
             copiar_al_sistema: None,
             capitulo_activo: None,
             historial: Historial::default(),
@@ -971,6 +976,7 @@ impl Aplicacion {
         self.ventana_sincro(&ctx);
         self.ventana_copiar_a(&ctx, &mut acciones);
         self.ventana_pegado_pendiente(&ctx, &mut acciones);
+        self.ventana_guardar_kit(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_emparejar(&ctx, &mut acciones);
         self.ventana_nuevo(&ctx);
