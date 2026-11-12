@@ -647,3 +647,96 @@ fn ciego_con_cabecera_corrida_se_lee_por_el_contenido() {
     assert_eq!(val.total_excel, dec!(1635));
     assert!(val.sin_precio.is_empty());
 }
+
+/// Listado completo de Presto (Código, Nat, Ud, Resumen, Comentario, N,
+/// Longitud, Anchura, Altura, Parcial, CanPres, PrPres, ImpPres) sin fila de
+/// cabecera, con «Total CÓDIGO» en Parcial y líneas de medición.
+#[test]
+fn listado_completo_sin_cabecera() {
+    let mut wb = Workbook::new();
+    let h = wb.add_worksheet();
+    // (fila, columna, valor): número si empieza por '#'
+    let celdas: Vec<(u32, u16, &str)> = vec![
+        (1, 0, "C1"),
+        (1, 1, "Capítulo"),
+        (1, 3, "INSTALACION SINTETICA"),
+        (1, 10, "#1"),
+        (1, 11, "#0"),
+        (1, 12, "#0"),
+        (2, 0, "C1.1"),
+        (2, 1, "Capítulo"),
+        (2, 3, "EXTINCION"),
+        (2, 10, "#1"),
+        (2, 11, "#0"),
+        (2, 12, "#0"),
+        (3, 0, "P.EXT"),
+        (3, 1, "Partida"),
+        (3, 2, "ud"),
+        (3, 3, "EXTINTOR SINTETICO 6 kg"),
+        (3, 10, "#22"),
+        (3, 11, "#0"),
+        (3, 12, "#0"),
+        (4, 3, "Extintor de polvo sintético."),
+        (5, 9, "Total P.EXT"),
+        (5, 10, "#22"),
+        (5, 11, "#0"),
+        (5, 12, "#0"),
+        (6, 9, "Total C1.1"),
+        (6, 10, "#1"),
+        (7, 0, "C1.2"),
+        (7, 1, "Capítulo"),
+        (7, 3, "VENTILACION"),
+        (7, 10, "#1"),
+        (7, 11, "#0"),
+        (7, 12, "#0"),
+        (8, 0, "P.CON"),
+        (8, 1, "Partida"),
+        (8, 2, "m2"),
+        (8, 3, "CONDUCTO SINTETICO"),
+        (8, 10, "#22"),
+        (8, 11, "#0"),
+        (8, 12, "#0"),
+        (9, 4, "Escalera 1"),
+        (9, 5, "#1"),
+        (9, 6, "#11"),
+        (9, 9, "#11"),
+        (10, 4, "Escalera 2"),
+        (10, 5, "#1"),
+        (10, 6, "#11"),
+        (10, 9, "#11"),
+        (11, 9, "Total P.CON"),
+        (11, 10, "#22"),
+        (11, 11, "#0"),
+        (11, 12, "#0"),
+        (12, 9, "Total C1.2"),
+        (12, 10, "#1"),
+        (13, 9, "Total C1"),
+        (13, 10, "#1"),
+    ];
+    for (i, j, v) in celdas {
+        match v.strip_prefix('#') {
+            Some(n) => h.write_number(i, j, n.parse::<f64>().unwrap()).unwrap(),
+            None => h.write_string(i, j, v).unwrap(),
+        };
+    }
+    let b = wb.save_to_buffer().unwrap();
+    let c = ppto_ciego::leer_bytes(&b, "Memoria sintética").unwrap();
+    let p = &c.presupuesto;
+    let hijos = |k: &str| -> Vec<String> { p.conceptos[k].descomposicion.iter().map(|l| l.hijo.clone()).collect() };
+    assert_eq!(hijos("C1"), vec!["C1.1", "C1.2"], "{:?}", c.incidencias);
+    assert_eq!(hijos("C1.1"), vec!["P.EXT"]);
+    assert_eq!(p.conceptos["C1.2"].descomposicion[0].rendimiento, dec!(22));
+    assert_eq!(p.conceptos["P.CON"].unidad, "m2");
+    assert_eq!(
+        p.conceptos["P.EXT"].texto.as_deref(),
+        Some("Extintor de polvo sintético.")
+    );
+    assert!(c.incidencias.iter().any(|i| i.contains("columnas deducidas")));
+    assert!(
+        !c.incidencias.iter().any(|i| i.contains("sin fila de total")),
+        "{:?}",
+        c.incidencias
+    );
+    let v = ppto_ciego::valorar(&b, &c, p).unwrap();
+    assert_eq!(v.sin_precio.len(), 2);
+}
