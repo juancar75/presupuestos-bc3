@@ -118,6 +118,9 @@ pub struct Fabricante {
     pub recursos: usize,
 }
 
+/// Código de las líneas de ajuste de redondeo (`AJ.REDONDEO`, `AJ.REDONDEO2`…).
+const AJUSTE: &str = "AJ.REDONDEO";
+
 impl Presupuesto {
     /// Descuento general del fabricante (0 si no tiene).
     pub fn descuento(&self, fabricante: &str) -> Decimal {
@@ -447,26 +450,35 @@ impl Presupuesto {
     }
 
     /// Con los descuentos a la vista, el neto ya no se redondea por unidad
-    /// sino sobre el importe de la línea, y una partida puede variar algún
-    /// céntimo. Para que el BC3 valga lo mismo que la obra, se añade antes
-    /// de los medios auxiliares una línea «Ajuste de redondeo» (0,01 € ×
-    /// céntimos) en las partidas que lo necesitan.
+    /// sino sobre el importe de la línea, y Presto calcula la línea de
+    /// descuento con la base redondeada (base/100 a los decimales del
+    /// rendimiento), así que una partida puede variar unos céntimos. Para
+    /// que el BC3 valga lo mismo que la obra se añaden líneas «Ajuste de
+    /// redondeo» (0,01 € × céntimos), una por tramo: delante de cada línea
+    /// porcentual que no es de descuento (accesorios %AC, medios auxiliares)
+    /// y al final. Así cada porcentaje se calcula sobre la misma base que en
+    /// la obra y la partida cuadra al céntimo.
     fn ajustar_redondeo_descuentos(&mut self, original: &Presupuesto, lineas_dto: &std::collections::BTreeSet<String>) {
-        const AJUSTE: &str = "AJ.REDONDEO";
         let Ok(vo) = original.valorar() else { return };
         let un_centimo = Decimal::new(1, 2);
-        // Base (suma de líneas antes del primer porcentaje que no sea descuento)
-        let base = |p: &Presupuesto, lineas: &[crate::presupuesto::LineaValorada]| {
-            lineas
-                .iter()
-                .take_while(|l| {
-                    lineas_dto.contains(&l.hijo)
-                        || p.conceptos
-                            .get(&l.hijo)
-                            .is_none_or(|c| c.naturaleza != Naturaleza::Porcentaje)
-                })
-                .map(|l| l.importe)
-                .sum::<Decimal>()
+        // Línea porcentual que no es de descuento: separa los tramos
+        let corte = |p: &Presupuesto, h: &str| {
+            !lineas_dto.contains(h)
+                && p.conceptos
+                    .get(h)
+                    .is_some_and(|c| c.naturaleza == Naturaleza::Porcentaje)
+        };
+        // Importe de cada tramo (sin las líneas porcentuales que lo cierran)
+        let tramos = |p: &Presupuesto, lineas: &[crate::presupuesto::LineaValorada]| {
+            let mut t = vec![Decimal::ZERO];
+            for l in lineas {
+                if corte(p, &l.hijo) {
+                    t.push(Decimal::ZERO);
+                } else if let Some(x) = t.last_mut() {
+                    *x += l.importe;
+                }
+            }
+            t
         };
         // De abajo arriba: solo se ajusta una partida cuando sus hijas ya cuadran
         for _ in 0..6 {
@@ -486,49 +498,63 @@ impl Presupuesto {
                 let (Some(lo), Some(lq)) = (vo.lineas.get(codigo), vq.lineas.get(codigo)) else {
                     continue;
                 };
-                let a = base(original, lo) - base(self, lq);
-                if !a.is_zero() {
-                    ajustes.push((codigo.clone(), a));
+                let (a, b) = (tramos(original, lo), tramos(self, lq));
+                if a.len() != b.len() {
+                    continue;
+                }
+                let d: Vec<Decimal> = a.iter().zip(&b).map(|(x, y)| x - y).collect();
+                if d.iter().any(|x| !x.is_zero()) {
+                    ajustes.push((codigo.clone(), d));
                 }
             }
             if ajustes.is_empty() {
                 return;
             }
-            if !self.conceptos.contains_key(AJUSTE) {
-                let mut c = Concepto::basico(
-                    AJUSTE,
-                    "€",
-                    "Ajuste de redondeo de descuentos",
-                    Naturaleza::Otros,
-                    un_centimo,
-                );
-                c.texto = Some(
-                    "Céntimos de diferencia entre aplicar el descuento al precio unitario o al importe de la línea."
-                        .into(),
-                );
-                self.conceptos.insert(AJUSTE.into(), c);
-            }
-            for (codigo, a) in ajustes {
-                let Some(c) = self.conceptos.get_mut(&codigo) else {
-                    continue;
-                };
-                let rend = a / un_centimo;
-                if let Some(l) = c.descomposicion.iter_mut().find(|l| l.hijo == AJUSTE) {
-                    l.rendimiento += rend;
-                    continue;
+            for (codigo, d) in ajustes {
+                for (k, a) in d.into_iter().enumerate() {
+                    if a.is_zero() {
+                        continue;
+                    }
+                    let aj = if k == 0 {
+                        AJUSTE.to_owned()
+                    } else {
+                        format!("{AJUSTE}{}", k + 1)
+                    };
+                    if !self.conceptos.contains_key(&aj) {
+                        let mut c = Concepto::basico(
+                            &aj,
+                            "€",
+                            "Ajuste de redondeo de descuentos",
+                            Naturaleza::Otros,
+                            un_centimo,
+                        );
+                        c.texto = Some(
+                            "Céntimos de diferencia entre aplicar el descuento al precio unitario o al importe de la línea."
+                                .into(),
+                        );
+                        self.conceptos.insert(aj.clone(), c);
+                    }
+                    let rend = a / un_centimo;
+                    let me = &*self;
+                    let Some(c) = me.conceptos.get(&codigo) else { continue };
+                    let ya = c.descomposicion.iter().position(|l| l.hijo == aj);
+                    // Delante de la línea porcentual que cierra el tramo k
+                    let pos = c
+                        .descomposicion
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| corte(me, &l.hijo))
+                        .nth(k)
+                        .map_or(c.descomposicion.len(), |(i, _)| i);
+                    let Some(c) = self.conceptos.get_mut(&codigo) else {
+                        continue;
+                    };
+                    if let Some(i) = ya {
+                        c.descomposicion[i].rendimiento += rend;
+                    } else {
+                        c.descomposicion.insert(pos, LineaDescomposicion::new(aj, rend));
+                    }
                 }
-                let pos = c
-                    .descomposicion
-                    .iter()
-                    .position(|l| {
-                        !lineas_dto.contains(&l.hijo)
-                            && original
-                                .conceptos
-                                .get(&l.hijo)
-                                .is_some_and(|h| h.naturaleza == Naturaleza::Porcentaje)
-                    })
-                    .unwrap_or(c.descomposicion.len());
-                c.descomposicion.insert(pos, LineaDescomposicion::new(AJUSTE, rend));
             }
         }
     }
@@ -613,16 +639,19 @@ impl Presupuesto {
         }
         // El ajuste de redondeo de la exportación ya no hace falta: el neto
         // vuelve a redondearse por unidad
-        if n > 0
-            && self
+        if n > 0 {
+            let ajustes: Vec<String> = self
                 .conceptos
-                .get("AJ.REDONDEO")
-                .is_some_and(|c| c.resumen == "Ajuste de redondeo de descuentos")
-        {
+                .values()
+                .filter(|c| c.codigo.starts_with(AJUSTE) && c.resumen == "Ajuste de redondeo de descuentos")
+                .map(|c| c.codigo.clone())
+                .collect();
             for c in self.conceptos.values_mut() {
-                c.descomposicion.retain(|l| l.hijo != "AJ.REDONDEO");
+                c.descomposicion.retain(|l| !ajustes.contains(&l.hijo));
             }
-            self.conceptos.remove("AJ.REDONDEO");
+            for a in ajustes {
+                self.conceptos.remove(&a);
+            }
         }
         if n > 0 {
             avisos.insert(
