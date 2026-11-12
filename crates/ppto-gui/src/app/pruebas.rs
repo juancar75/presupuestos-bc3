@@ -2478,3 +2478,76 @@ fn ciego_que_no_se_lee_no_deja_la_obra_cambiada() {
     assert!(app.ciego.is_none());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Al guardar, la obra pregunta si pasa sus precios a la biblioteca; al
+/// abrir, avisa de los precios distintos de la biblioteca y la obra se
+/// actualiza solo si se acepta.
+#[test]
+fn obra_y_biblioteca_al_guardar_y_al_abrir() {
+    use ppto_core::concepto::Naturaleza;
+    let dir = std::env::temp_dir().join(format!("gui-sincro-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bib = dir.join("biblioteca.ana.json");
+    let mut app = Aplicacion::sin_ventana();
+    app.ruta_biblioteca = Some(bib.clone());
+    app.p
+        .nuevo_recurso("M.SINT", "ud", "Artículo sintético", Naturaleza::Material, dec!(0))
+        .unwrap();
+    app.p.fijar_tarifa_grupo("M.SINT", "FABS", None, dec!(100)).unwrap();
+    app.p.fijar_referencia_tarifa("M.SINT", Some("REF1")).unwrap();
+    app.p.fijar_descuento("FABS", dec!(40)).unwrap();
+    app.fichero = Some(dir.join("obra.sqlite"));
+    app.guardar(false);
+    // La biblioteca no tiene ni el PVP ni el descuento: pregunta subirlos
+    let Some(sincronizar::Sincro::Subir(d)) = &app.sincro else {
+        panic!("sin pregunta al guardar")
+    };
+    assert_eq!(d.len(), 2);
+    let p = app.p.clone();
+    ppto_biblioteca::Biblioteca::modificar(&bib, |b| b.actualizar_con(&p, "Obra sintética", 2026)).unwrap();
+    // Un compañero (otro fichero de la carpeta) sube el PVP más tarde
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let otro = dir.join("biblioteca.beto.json");
+    ppto_biblioteca::Biblioteca::modificar(&otro, |b| {
+        b.cargar_tarifa(
+            "FABS",
+            "2026",
+            2026,
+            BTreeMap::from([(
+                "REF1".into(),
+                ppto_biblioteca::LineaPvp {
+                    descripcion: "Artículo sintético".into(),
+                    unidad: "ud".into(),
+                    pvp: dec!(120),
+                    grupo: None,
+                },
+            )]),
+        )
+    })
+    .unwrap();
+    app.sincro = None;
+    app.tras_abrir();
+    let Some(sincronizar::Sincro::Bajar(d)) = &app.sincro else {
+        panic!("sin aviso al abrir")
+    };
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].biblioteca, Some(dec!(120)));
+    // La ventana se dibuja y, aceptando, la obra pasa a 120 € de PVP
+    let ctx = Context::default();
+    let mut out = ctx.run_ui(RawInput::default(), |ui| {
+        let c = ui.ctx().clone();
+        app.ventana_sincro(&c);
+    });
+    out.textures_delta.clear();
+    assert!(app.sincro.is_some(), "sigue abierta hasta que se contesta");
+    let d = match app.sincro.take() {
+        Some(sincronizar::Sincro::Bajar(d)) => d,
+        _ => unreachable!(),
+    };
+    let acciones = Aplicacion::bajar_de_biblioteca(&d);
+    app.aplicar(acciones);
+    assert_eq!(app.p.conceptos["M.SINT"].tarifa.as_ref().unwrap().pvp, dec!(120));
+    assert_eq!(app.p.precio("M.SINT").unwrap(), dec!(72));
+    let _ = std::fs::remove_dir_all(&dir);
+}

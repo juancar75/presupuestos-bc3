@@ -26,19 +26,53 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+mod compartir;
+pub use compartir::{Diferencia, Sello, ahora, fichero_de, ficheros, usuario};
+
 pub const FICHERO: &str = "biblioteca.json";
 
-/// Ruta de la biblioteca: la carpeta de `biblioteca-ruta.txt` (compartida)
-/// o la carpeta de configuración.
+/// Ruta de la biblioteca propia. Con una carpeta compartida en
+/// `biblioteca-ruta.txt`, el fichero de quien usa el programa en ella
+/// (`biblioteca.<usuario>.json`, ver [`compartir`](crate::Sello)); si no, la
+/// de la carpeta de configuración.
 pub fn ruta() -> Option<PathBuf> {
     let cfg = ppto_propuestas::carpeta_config()?;
-    let carpeta = std::fs::read_to_string(cfg.join("biblioteca-ruta.txt"))
+    let compartida = std::fs::read_to_string(cfg.join("biblioteca-ruta.txt"))
         .ok()
         .map(|s| s.trim().trim_matches('"').to_owned())
         .filter(|s| !s.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or(cfg);
-    Some(carpeta.join(FICHERO))
+        .map(PathBuf::from);
+    Some(match compartida {
+        Some(c) => fichero_de(&c, &usuario()),
+        None => cfg.join(FICHERO),
+    })
+}
+
+/// Comparte la biblioteca en `carpeta` (OneDrive, Teams, NAS…): lo apunta en
+/// `biblioteca-ruta.txt` y, si es la primera vez, copia allí la biblioteca
+/// que había en este ordenador como fichero propio. Devuelve la ruta nueva.
+/// `None` deja de compartir (vuelve a la carpeta de configuración).
+pub fn compartir_en(carpeta: Option<&Path>) -> std::io::Result<PathBuf> {
+    let cfg = ppto_propuestas::carpeta_config()
+        .ok_or_else(|| std::io::Error::other("no se encuentra la carpeta de configuración"))?;
+    std::fs::create_dir_all(&cfg)?;
+    let txt = cfg.join("biblioteca-ruta.txt");
+    let Some(carpeta) = carpeta else {
+        if txt.exists() {
+            std::fs::remove_file(&txt)?;
+        }
+        return Ok(cfg.join(FICHERO));
+    };
+    std::fs::create_dir_all(carpeta)?;
+    let antes = ruta();
+    std::fs::write(&txt, carpeta.display().to_string())?;
+    let nueva = fichero_de(carpeta, &usuario());
+    if !nueva.exists()
+        && let Some(a) = antes.filter(|a| a.exists() && *a != nueva)
+    {
+        std::fs::copy(a, &nueva)?;
+    }
+    Ok(nueva)
 }
 
 /// Fecha de hoy `AAAA-MM-DD` (UTC).
@@ -237,6 +271,9 @@ pub struct Fabricante {
     pub subida_estimada: Option<Decimal>,
     #[serde(default)]
     pub datos: DatosFabricante,
+    /// Último cambio de cada dato (biblioteca compartida).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sellos: BTreeMap<String, Sello>,
 }
 
 impl Fabricante {
@@ -307,6 +344,9 @@ pub struct Biblioteca {
     /// de la base.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub equivalencias: BTreeMap<String, Equivalencia>,
+    /// Último cambio de cada equivalencia (`eq:<clave>`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sellos: BTreeMap<String, Sello>,
 }
 
 /// Partida de una base elegida para una partida medida.
@@ -385,18 +425,28 @@ fn coincidencias(texto: &str, palabras: &[String]) -> usize {
 impl Biblioteca {
     // ------------------------------------------------------------ disco
 
+    /// Lee la biblioteca de `ruta` junto con las demás de su carpeta
+    /// (`biblioteca*.json`, p. ej. las de los compañeros en una carpeta
+    /// compartida): por cada dato, el cambio más reciente.
     pub fn cargar(ruta: &Path) -> Self {
-        std::fs::read_to_string(ruta)
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default()
+        let fuentes: Vec<Self> = ficheros(ruta)
+            .iter()
+            .filter_map(|r| std::fs::read_to_string(r).ok())
+            .filter_map(|t| serde_json::from_str(&t).ok())
+            .collect();
+        if fuentes.is_empty() {
+            return Self::default();
+        }
+        Self::juntar(&fuentes)
     }
 
-    /// Lee, modifica y guarda con el fichero bloqueado. Un fichero que existe
-    /// pero no se puede leer no se sobrescribe.
+    /// Lee (junto con las demás de la carpeta), modifica y guarda en `ruta`
+    /// con el fichero bloqueado, sellando con la fecha, hora y usuario lo que
+    /// cambia. Solo se escribe `ruta`, nunca el fichero de otra persona. Un
+    /// fichero propio que existe pero no se puede leer no se sobrescribe.
     pub fn modificar<R>(ruta: &Path, f: impl FnOnce(&mut Self) -> R) -> std::io::Result<R> {
         ppto_propuestas::con_bloqueo(ruta, || {
-            let mut b: Self = match std::fs::read_to_string(ruta) {
+            let propia: Self = match std::fs::read_to_string(ruta) {
                 Ok(t) if t.trim().is_empty() => Self::default(),
                 Ok(t) => serde_json::from_str(&t).map_err(|e| {
                     std::io::Error::new(
@@ -407,7 +457,24 @@ impl Biblioteca {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
                 Err(e) => return Err(e),
             };
+            let mut fuentes = vec![propia];
+            fuentes.extend(
+                ficheros(ruta)
+                    .iter()
+                    .skip(1)
+                    .filter_map(|r| std::fs::read_to_string(r).ok())
+                    .filter_map(|t| serde_json::from_str(&t).ok()),
+            );
+            let mut b = Self::juntar(&fuentes);
+            let antes = b.clone();
             let r = f(&mut b);
+            b.sellar(
+                &antes,
+                &Sello {
+                    cuando: ahora(),
+                    quien: usuario(),
+                },
+            );
             let t = serde_json::to_string_pretty(&b).map_err(std::io::Error::other)?;
             ppto_propuestas::escribir(ruta, &t)?;
             Ok(r)

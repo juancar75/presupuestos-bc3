@@ -195,8 +195,45 @@ impl Aplicacion {
             .default_height(600.0)
             .resizable(true)
             .show(ctx, |ui| {
+                // Carpeta compartida (dos o más personas actualizando precios)
+                ui.horizontal(|ui| {
+                    match &v.ruta {
+                        Some(r) => ui.label(RichText::new(format!("Fichero: {}", r.display())).small().weak()),
+                        None => ui.label(""),
+                    };
+                    if ui
+                        .small_button("Compartir en una carpeta…")
+                        .on_hover_text(
+                            "Elija una carpeta compartida (OneDrive, Teams, red). Cada persona guarda sus cambios en \
+                             su propio fichero y el programa los junta: de cada precio, gana el cambio más reciente.",
+                        )
+                        .clicked()
+                        && let Some(c) = rfd::FileDialog::new().set_title("Carpeta compartida de la biblioteca").pick_folder()
+                    {
+                        match ppto_biblioteca::compartir_en(Some(&c)) {
+                            Ok(r) => {
+                                v.b = Biblioteca::cargar(&r);
+                                v.ruta = Some(r.clone());
+                                self.ruta_biblioteca = Some(r);
+                                v.mensaje = Some((format!("Biblioteca compartida en {}.", c.display()), false));
+                            }
+                            Err(e) => v.mensaje = Some((format!("No se pudo compartir: {e}"), true)),
+                        }
+                    }
+                });
                 if let Some(r) = &v.ruta {
-                    ui.label(RichText::new(format!("Fichero: {}", r.display())).small().weak());
+                    let otros: Vec<String> = ppto_biblioteca::ficheros(r)
+                        .iter()
+                        .skip(1)
+                        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+                        .collect();
+                    if !otros.is_empty() {
+                        ui.label(
+                            RichText::new(format!("Junta también: {} (gana el cambio más reciente).", otros.join(", ")))
+                                .small()
+                                .weak(),
+                        );
+                    }
                 }
                 // Guardar la obra
                 ui.horizontal(|ui| {
@@ -246,8 +283,8 @@ impl Aplicacion {
                     );
                 }
                 let mut a_tarifa: Option<String> = None;
-                egui::Grid::new("fabricantes_bib").striped(true).num_columns(7).show(ui, |ui| {
-                    for t in ["Fabricante", "Tarifa vigente", "Refs", "Descuentos", "Ofertas", "Subida est.", ""] {
+                egui::Grid::new("fabricantes_bib").striped(true).num_columns(8).show(ui, |ui| {
+                    for t in ["Fabricante", "Tarifa vigente", "Refs", "Descuentos", "Ofertas", "Subida est.", "Último cambio", ""] {
                         ui.label(RichText::new(t).strong());
                     }
                     ui.end_row();
@@ -270,6 +307,7 @@ impl Aplicacion {
                         );
                         ui.label(f.ofertas.len().to_string());
                         ui.label(f.subida_estimada.map_or("—".into(), |s| format!("{} %", num(s, 2))));
+                        ui.label(f.sellos.values().max().map_or("—".into(), |s| format!("{} · {}", s.quien, s.cuando)));
                         if f.vigente().is_some() {
                             if ui
                                 .small_button("Pasar la obra a esta tarifa")

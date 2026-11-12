@@ -127,6 +127,7 @@ impl Aplicacion {
                     "Abierta la revisión {} ({}).",
                     ultima.etiqueta, ultima.creado_en
                 ));
+                self.tras_abrir();
             }
             Ok(_) => self.error("El fichero no contiene ningún presupuesto."),
             Err(e) => self.error(format!("No se pudo abrir: {e}")),
@@ -302,6 +303,7 @@ impl Aplicacion {
                 self.info(format!(
                     "Guardado como revisión {etiqueta}. Las revisiones anteriores no cambian."
                 ));
+                self.tras_guardar();
             }
             Err(e) => self.error(format!("No se pudo guardar: {e}")),
         }
