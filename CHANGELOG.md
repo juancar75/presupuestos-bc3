@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.55] - 2026-11-12
+
 ### Añadido
 - **Carpeta de tarifas** (Biblioteca → «Carpeta de tarifas»): la carpeta
   compartida con los documentos de tarifa de cada fabricante, única fuente
