@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.56] - 2026-11-12
+
 ## [0.1.0-alpha.55] - 2026-11-12
 
 ### Añadido
