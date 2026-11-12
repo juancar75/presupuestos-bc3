@@ -263,6 +263,10 @@ impl Aplicacion {
                 ui.label(
                     RichText::new(format!("confianza {}", prop.confianza.nombre()))
                         .color(color_confianza(prop.confianza)),
+                )
+                .on_hover_text(
+                    "Verde (alta): precios de tarifa, oferta o base. Naranja (media): equivalencias o \
+                     cantidades estimadas, revíselas. Rojo (baja): estimación, compruébela antes de aceptar.",
                 );
             });
             match &sim {
