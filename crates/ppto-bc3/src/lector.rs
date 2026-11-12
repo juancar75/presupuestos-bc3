@@ -568,6 +568,9 @@ impl Lector {
                 match c.tipo.as_str() {
                     "1" => Naturaleza::ManoObra,
                     "2" => Naturaleza::Maquinaria,
+                    // FIEBDC-3 no tiene tipo de subcontrata: se exportan como
+                    // material y se reconocen por el código (SUB.…) o el resumen
+                    "3" if es_subcontrata(codigo, &c.resumen) => Naturaleza::Subcontrata,
                     "3" => Naturaleza::Material,
                     _ => Naturaleza::Otros,
                 }
@@ -1041,4 +1044,11 @@ fn win1252(bytes: &[u8]) -> String {
         .decode_without_bom_handling(bytes)
         .0
         .into_owned()
+}
+
+/// Recurso de tipo 3 que en realidad es una subcontrata: código «SUB.…» o
+/// resumen que empieza por «Subcontrata».
+fn es_subcontrata(codigo: &str, resumen: &str) -> bool {
+    codigo.get(..4).is_some_and(|p| p.eq_ignore_ascii_case("SUB."))
+        || resumen.trim_start().to_lowercase().starts_with("subcontrata")
 }

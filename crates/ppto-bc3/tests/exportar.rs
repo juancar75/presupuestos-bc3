@@ -29,7 +29,11 @@ fn ida_y_vuelta(p: &Presupuesto) -> Presupuesto {
     for (codigo, c) in &p.conceptos {
         let d = &q.conceptos[codigo];
         // FIEBDC-3 no tiene tipo «subcontrata»: sale como material (con aviso)
-        let esperada = if c.naturaleza == Naturaleza::Subcontrata {
+        // y solo se reconoce al volver si el código es SUB.… o el resumen
+        // empieza por «Subcontrata»
+        let reconocible = codigo.to_uppercase().starts_with("SUB.")
+            || c.resumen.trim_start().to_lowercase().starts_with("subcontrata");
+        let esperada = if c.naturaleza == Naturaleza::Subcontrata && !reconocible {
             Naturaleza::Material
         } else {
             c.naturaleza
@@ -173,6 +177,44 @@ fn subcontrata_se_avisa() {
     // Como material (tipo 3): Presto 8.8 no la toma por unidad de obra
     let texto = String::from_utf8_lossy(&ex.bytes);
     assert!(texto.contains("~C|SUB1|m2|Montaje subcontratado|9||3|"), "{texto}");
+}
+
+/// Las subcontratas de las bases (SUB.…, «Subcontrata …») vuelven como
+/// subcontrata al importar el BC3; si no, la partida con material y
+/// subcontrata de mano de obra se marcaba incompleta (naranja).
+#[test]
+fn subcontrata_vuelve_como_subcontrata() {
+    let mut p = suelo_radiante();
+    p.insertar(Concepto::basico(
+        "SUB.CAL",
+        "h",
+        "Calefactor autónomo",
+        Naturaleza::Subcontrata,
+        dec!(34),
+    ))
+    .unwrap();
+    p.insertar(Concepto::basico(
+        "TUB.H",
+        "h",
+        "Subcontrata tuberos",
+        Naturaleza::Subcontrata,
+        dec!(30),
+    ))
+    .unwrap();
+    p.insertar(Concepto::basico(
+        "SUB1",
+        "m2",
+        "Montaje subcontratado",
+        Naturaleza::Subcontrata,
+        dec!(9),
+    ))
+    .unwrap();
+    let ex = exportar(&p, &OpcionesExportacion::default()).unwrap();
+    let q = importar(&ex.bytes).unwrap().presupuesto;
+    assert_eq!(q.conceptos["SUB.CAL"].naturaleza, Naturaleza::Subcontrata);
+    assert_eq!(q.conceptos["TUB.H"].naturaleza, Naturaleza::Subcontrata);
+    // Sin pista en código ni resumen sigue siendo material
+    assert_eq!(q.conceptos["SUB1"].naturaleza, Naturaleza::Material);
 }
 
 /// Con `descuentos_visibles` el material sale a PVP con su línea de
