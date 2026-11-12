@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.52] - 2026-11-12
+
 ### Corregido
 - **Subcontratas al importar un BC3**: FIEBDC-3 no tiene tipo de subcontrata
   y se exportan como material; al volver a leerlas (p. ej. una base de
