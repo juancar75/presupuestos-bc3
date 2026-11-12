@@ -15,6 +15,8 @@ pub(super) enum Hallazgo {
     Tarifa(Box<ArticuloTarifa>),
     /// Línea de una tarifa de subcontrata.
     Subcontrata(ppto_tarifas::Encontrada),
+    /// Kit de la biblioteca: como líneas sueltas (`false`) o como subpartida (`true`).
+    Kit(Box<ppto_biblioteca::Kit>, bool),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -182,7 +184,27 @@ impl Aplicacion {
                 ));
             }
         }
-        // 3. Tarifas de subcontrata
+        // 3. Kits de la biblioteca (solo en partidas)
+        if let Some(b) = bib {
+            for k in b
+                .kits
+                .values()
+                .filter(|k| encaja(&palabras, &format!("kit {}", k.nombre)))
+            {
+                let precio = format!("{} € · kit de {} líneas", eur(k.precio()), k.lineas.lineas.len());
+                v.push((
+                    Hallazgo::Kit(Box::new(k.clone()), false),
+                    format!("KIT  ·  {}  ·  como líneas sueltas", corto(&k.nombre, 50)),
+                    precio.clone(),
+                ));
+                v.push((
+                    Hallazgo::Kit(Box::new(k.clone()), true),
+                    format!("KIT  ·  {}  ·  {}  ·  como subpartida", k.unidad, corto(&k.nombre, 50)),
+                    precio,
+                ));
+            }
+        }
+        // 4. Tarifas de subcontrata
         for e in self.tarifas.buscar(q).into_iter().take(40) {
             if let Some((t, l)) = self.tarifas.linea(e) {
                 v.push((
@@ -200,6 +222,7 @@ impl Aplicacion {
         match h {
             Hallazgo::Obra(c) => Some(Accion::AnadirLinea(padre.to_owned(), c.clone(), q)),
             Hallazgo::Subcontrata(e) => self.accion_tarifa(padre, *e, q),
+            Hallazgo::Kit(k, sub) => Some(Accion::InsertarKit(k.clone(), padre.to_owned(), q, *sub)),
             Hallazgo::Tarifa(a) => {
                 let base: String = a
                     .referencia
@@ -297,5 +320,56 @@ impl Aplicacion {
             lineas.len()
         ));
         Ok(())
+    }
+}
+
+impl Aplicacion {
+    /// Aplica [`Accion::InsertarKit`]: las líneas del kit (× `q`) en `padre`,
+    /// o una subpartida con el kit (la misma si ya se insertó en esta obra).
+    pub(super) fn insertar_kit(
+        &mut self,
+        k: &ppto_biblioteca::Kit,
+        padre: &str,
+        q: Decimal,
+        sub: bool,
+    ) -> Result<(), ppto_core::ErrorMotor> {
+        use ppto_core::fragmento::{SiYaEsta, pegar_como_subpartida, pegar_en_partida};
+        if sub {
+            let ya = self
+                .p
+                .conceptos
+                .values()
+                .find(|c| c.naturaleza == Naturaleza::Partida && c.codigo.starts_with("KIT") && c.resumen == k.nombre)
+                .map(|c| c.codigo.clone());
+            match ya {
+                Some(c) => self.p.anadir_linea(padre, &c, q)?,
+                None => {
+                    let c = self.p.codigo_libre("KIT", 3);
+                    pegar_como_subpartida(&mut self.p, &k.lineas, &c, &k.unidad, &k.nombre, padre, q)?;
+                }
+            }
+        } else {
+            let mut f = k.lineas.clone();
+            for l in &mut f.lineas {
+                l.linea.rendimiento *= q;
+            }
+            pegar_en_partida(&mut self.p, &f, padre, SiYaEsta::Sumar)?;
+        }
+        Ok(())
+    }
+
+    /// Guarda las líneas elegidas de `padre` como kit en la biblioteca.
+    pub(super) fn guardar_kit(&mut self, k: ppto_biblioteca::Kit) {
+        let Some(r) = self.ruta_biblioteca.clone() else {
+            self.error("No se encuentra la biblioteca de precios.".to_owned());
+            return;
+        };
+        let nombre = k.nombre.clone();
+        match ppto_biblioteca::Biblioteca::modificar(&r, |b| b.kits.insert(nombre.clone(), k)) {
+            Ok(_) => self.info(format!(
+                "Kit «{nombre}» guardado en la biblioteca. Al añadir una línea, búsquelo con «kit {nombre}»."
+            )),
+            Err(e) => self.error(format!("No se pudo guardar el kit: {e}")),
+        }
     }
 }

@@ -271,3 +271,28 @@ fn pegar_sin_deshacer(
     p.validar()?;
     Ok(inf)
 }
+
+/// Pega las líneas de `f` dentro de una partida auxiliar nueva `codigo`
+/// (un kit como subpartida) y la cuelga de `destino` con `cantidad`.
+/// Todo o nada.
+pub fn pegar_como_subpartida(
+    p: &mut Presupuesto,
+    f: &Fragmento,
+    codigo: &str,
+    unidad: &str,
+    resumen: &str,
+    destino: &str,
+    cantidad: Decimal,
+) -> Result<InformePegado, ErrorMotor> {
+    let copia = p.clone();
+    let r = (|| {
+        p.nuevo_recurso(codigo, unidad, resumen, Naturaleza::Partida, Decimal::ZERO)?;
+        let inf = pegar_en_partida(p, f, codigo, SiYaEsta::Sumar)?;
+        p.anadir_linea(destino, codigo, cantidad)?;
+        Ok(inf)
+    })();
+    if r.is_err() {
+        *p = copia;
+    }
+    r
+}

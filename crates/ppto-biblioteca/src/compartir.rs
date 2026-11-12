@@ -230,6 +230,12 @@ impl Biblioteca {
                 self.sellos.insert(format!("eq:{k}"), s.clone());
             }
         }
+        let claves: BTreeSet<String> = antes.kits.keys().chain(self.kits.keys()).cloned().collect();
+        for k in claves {
+            if antes.kits.get(&k) != self.kits.get(&k) {
+                self.sellos.insert(format!("kit:{k}"), s.clone());
+            }
+        }
     }
 
     /// Junta varias bibliotecas (la primera, la propia): por cada dato, el
@@ -321,6 +327,37 @@ impl Biblioteca {
                 }
                 if let Some(e) = e {
                     b.equivalencias.insert(clave.to_owned(), e.clone());
+                }
+            }
+        }
+        // Kits
+        let claves: BTreeSet<&str> = fuentes
+            .iter()
+            .flat_map(|f| {
+                f.kits
+                    .keys()
+                    .map(String::as_str)
+                    .chain(f.sellos.keys().filter_map(|k| k.strip_prefix("kit:")))
+            })
+            .collect();
+        for nombre in claves {
+            let sk = format!("kit:{nombre}");
+            let mejor = fuentes
+                .iter()
+                .filter(|f| f.kits.contains_key(nombre) || f.sellos.contains_key(&sk))
+                .fold(None::<(Option<&Sello>, Option<&crate::Kit>)>, |acc, f| {
+                    let s = f.sellos.get(&sk);
+                    match acc {
+                        Some((sa, _)) if s <= sa => acc,
+                        _ => Some((s, f.kits.get(nombre))),
+                    }
+                });
+            if let Some((s, k)) = mejor {
+                if let Some(s) = s {
+                    b.sellos.insert(sk, s.clone());
+                }
+                if let Some(k) = k {
+                    b.kits.insert(nombre.to_owned(), k.clone());
                 }
             }
         }
@@ -636,5 +673,52 @@ mod tests {
             dec!(80),
             "el resto de la tarifa sigue"
         );
+    }
+}
+
+#[cfg(test)]
+mod pruebas_kits {
+    use super::*;
+    use crate::Kit;
+
+    fn kit(nombre: &str) -> Kit {
+        let p = ppto_core::ejemplos::suelo_radiante();
+        let l: Vec<String> = p.conceptos["SR.M2"]
+            .descomposicion
+            .iter()
+            .take(2)
+            .map(|l| l.hijo.clone())
+            .collect();
+        Kit {
+            nombre: nombre.into(),
+            unidad: "ud".into(),
+            lineas: ppto_core::fragmento::copiar(&p, "SR.M2", &l).unwrap(),
+        }
+    }
+
+    #[test]
+    fn kits_se_comparten_y_se_borran() {
+        let s1 = Sello {
+            cuando: "2026-11-12 10:00:00.000".into(),
+            quien: "a".into(),
+        };
+        let s2 = Sello {
+            cuando: "2026-11-12 11:00:00.000".into(),
+            quien: "b".into(),
+        };
+        let mut a = Biblioteca::default();
+        let antes = a.clone();
+        a.kits.insert("Toma fancoil".into(), kit("Toma fancoil"));
+        a.sellar(&antes, &s1);
+        assert!(a.kits["Toma fancoil"].precio() > Decimal::ZERO);
+        // El compañero lo recibe y lo borra más tarde: gana el borrado
+        let mut b = Biblioteca::juntar(&[Biblioteca::default(), a.clone()]);
+        assert!(b.kits.contains_key("Toma fancoil"));
+        let antes = b.clone();
+        b.kits.clear();
+        b.sellar(&antes, &s2);
+        let j = Biblioteca::juntar(&[a, b]);
+        assert!(j.kits.is_empty());
+        assert_eq!(j.sellos["kit:Toma fancoil"].quien, "b");
     }
 }

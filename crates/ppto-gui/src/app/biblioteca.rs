@@ -51,6 +51,59 @@ pub(super) struct VentanaBiblioteca {
 }
 
 impl VentanaBiblioteca {
+    /// Kits guardados (grupos de líneas): ver y borrar.
+    fn seccion_kits(&mut self, ui: &mut egui::Ui) {
+        let mut borrar = None;
+        egui::CollapsingHeader::new(RichText::new(format!("Kits ({})", self.b.kits.len())).strong())
+            .id_salt("kits_bib")
+            .show(ui, |ui| {
+                if self.b.kits.is_empty() {
+                    ui.label(
+                        RichText::new(
+                            "Aún no hay kits. En el descompuesto de una partida, elija varias líneas \
+                             (Mayús/Ctrl+clic), botón derecho → «Guardar como kit…».",
+                        )
+                        .weak(),
+                    );
+                    return;
+                }
+                egui::Grid::new("kits_bib_grid")
+                    .striped(true)
+                    .num_columns(6)
+                    .show(ui, |ui| {
+                        for t in ["Nombre", "Ud", "Líneas", "Precio €", "Último cambio", ""] {
+                            ui.label(RichText::new(t).strong());
+                        }
+                        ui.end_row();
+                        for (n, k) in &self.b.kits {
+                            ui.label(n).on_hover_text(
+                                k.lineas
+                                    .lineas
+                                    .iter()
+                                    .map(|l| format!("{} × {}", l.linea.rendimiento.normalize(), l.linea.hijo))
+                                    .collect::<Vec<_>>()
+                                    .join("\n"),
+                            );
+                            ui.label(&k.unidad);
+                            ui.label(k.lineas.lineas.len().to_string());
+                            ui.label(eur(k.precio()));
+                            ui.label(self.b.sellos.get(&format!("kit:{n}")).map_or(String::new(), |s| {
+                                format!("{} · {}", s.quien, &s.cuando[..16.min(s.cuando.len())])
+                            }));
+                            if ui.small_button("Borrar").clicked() {
+                                borrar = Some(n.clone());
+                            }
+                            ui.end_row();
+                        }
+                    });
+            });
+        if let Some(n) = borrar
+            && self.modificar(|b| b.kits.remove(&n)).is_some()
+        {
+            self.mensaje = Some((format!("Kit «{n}» borrado."), false));
+        }
+    }
+
     pub fn abrir() -> Self {
         let ruta = ppto_biblioteca::ruta();
         let mut v = Self::en(ruta);
@@ -404,6 +457,8 @@ impl Aplicacion {
                 });
                 ui.separator();
                 v.seccion_ofertas(ui);
+                ui.separator();
+                v.seccion_kits(ui);
                 ui.separator();
 
                 // Buscar partidas

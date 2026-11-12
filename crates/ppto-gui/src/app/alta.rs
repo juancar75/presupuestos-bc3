@@ -289,6 +289,7 @@ impl Aplicacion {
                         super::valorar::Hallazgo::Obra(_) => None,
                         super::valorar::Hallazgo::Tarifa(_) => Some(egui::Color32::from_rgb(70, 140, 210)),
                         super::valorar::Hallazgo::Subcontrata(_) => Some(egui::Color32::from_rgb(150, 110, 200)),
+                        super::valorar::Hallazgo::Kit(..) => Some(egui::Color32::from_rgb(60, 160, 110)),
                     };
                     let r = ui.horizontal(|ui| {
                         let r = ui.add(egui::Button::selectable(elegido, txt.as_str()));
@@ -306,6 +307,13 @@ impl Aplicacion {
                              (el de la obra si ya lo tiene). Doble clic: añadir"
                         }
                         super::valorar::Hallazgo::Subcontrata(_) => "Tarifa de subcontrata. Doble clic: añadir",
+                        super::valorar::Hallazgo::Kit(_, false) => {
+                            "Kit de la biblioteca: sus líneas se añaden sueltas a esta partida, multiplicadas por la cantidad"
+                        }
+                        super::valorar::Hallazgo::Kit(_, true) => {
+                            "Kit de la biblioteca: se crea una subpartida con sus líneas (o se usa la que ya está en la obra) \
+                             y se añade con la cantidad"
+                        }
                     });
                     if elegido && (abajo || arriba) {
                         r.scroll_to_me(None);

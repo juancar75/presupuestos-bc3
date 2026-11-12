@@ -2743,3 +2743,66 @@ fn seleccion_y_copia_de_lineas() {
     app.sel = Some((String::new(), a.clone()));
     pintar(&mut app);
 }
+
+#[test]
+fn kits_guardar_buscar_e_insertar() {
+    let mut app = Aplicacion::sin_ventana();
+    let dir = std::env::temp_dir().join(format!("kits-gui-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    app.ruta_biblioteca = Some(dir.join("biblioteca.prueba.json"));
+    // Guardar 2 líneas de SR.M2 como kit (datos sintéticos de la obra de ejemplo)
+    let la: Vec<String> = app.p.conceptos["SR.M2"]
+        .descomposicion
+        .iter()
+        .map(|l| l.hijo.clone())
+        .collect();
+    app.clic_linea("SR.M2", &la[0], egui::Modifiers::NONE);
+    app.clic_linea("SR.M2", &la[1], egui::Modifiers::SHIFT);
+    app.abrir_guardar_kit("SR.M2");
+    let mut v = app.guardar_kit.take().unwrap();
+    v.nombre = "Kit sintético".into();
+    let k = ppto_biblioteca::Kit {
+        nombre: v.nombre,
+        unidad: "ud".into(),
+        lineas: v.f,
+    };
+    app.guardar_kit(k);
+    let b = ppto_biblioteca::Biblioteca::cargar(app.ruta_biblioteca.as_ref().unwrap());
+    assert!(b.kits.contains_key("Kit sintético"));
+    // El buscador lo ofrece de las dos formas
+    let r = app.buscar_todo("kit sintetico", "SR.COL8", Some(&b), false);
+    let kits: Vec<_> = r
+        .iter()
+        .filter(|(h, ..)| matches!(h, valorar::Hallazgo::Kit(..)))
+        .collect();
+    assert_eq!(kits.len(), 2);
+    // Como líneas sueltas × 3
+    let n = app.p.conceptos["SR.COL8"].descomposicion.len();
+    let acc = app.accion_hallazgo(&kits[0].0, "SR.COL8", dec!(3)).unwrap();
+    app.aplicar(vec![acc]);
+    let lin = &app.p.conceptos["SR.COL8"].descomposicion;
+    let ya = la[..2]
+        .iter()
+        .filter(|x| app.p.conceptos["SR.COL8"].descomposicion.iter().any(|l| &l.hijo == *x))
+        .count();
+    assert_eq!(ya, 2);
+    assert!(lin.len() >= n);
+    app.deshacer();
+    assert_eq!(app.p.conceptos["SR.COL8"].descomposicion.len(), n);
+    // Como subpartida ×2, y otra vez: reutiliza la misma subpartida
+    let acc = app.accion_hallazgo(&kits[1].0, "SR.COL8", dec!(2)).unwrap();
+    app.aplicar(vec![acc]);
+    assert_eq!(app.p.conceptos["KIT001"].descomposicion.len(), 2);
+    assert_eq!(app.p.conceptos["KIT001"].resumen, "Kit sintético");
+    let acc = app.accion_hallazgo(&kits[1].0, "SR.M2", dec!(1)).unwrap();
+    app.aplicar(vec![acc]);
+    assert!(!app.p.conceptos.contains_key("KIT002"));
+    assert!(
+        app.p.conceptos["SR.M2"]
+            .descomposicion
+            .iter()
+            .any(|l| l.hijo == "KIT001")
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

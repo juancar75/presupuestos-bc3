@@ -587,3 +587,28 @@ fn copiar_lineas_entre_partidas() {
     // En un capítulo no: es para partidas
     assert!(pegar_en_partida(&mut q, &f, "C01", SiYaEsta::Dejar).is_err());
 }
+
+#[test]
+fn kit_como_subpartida() {
+    use ppto_core::fragmento::{copiar, pegar_como_subpartida};
+    // Kit sintético: las 2 primeras líneas de SR.M2, colgado de SR.COL8 × 2
+    let p = suelo_radiante();
+    let lineas: Vec<String> = p.conceptos["SR.M2"]
+        .descomposicion
+        .iter()
+        .take(2)
+        .map(|l| l.hijo.clone())
+        .collect();
+    let f = copiar(&p, "SR.M2", &lineas).unwrap();
+    let mut q = p.clone();
+    let antes = q.precio("SR.COL8").unwrap();
+    pegar_como_subpartida(&mut q, &f, "KIT.01", "ud", "Kit de prueba", "SR.COL8", dec!(2)).unwrap();
+    assert_eq!(q.conceptos["KIT.01"].descomposicion.len(), 2);
+    let kit = q.precio("KIT.01").unwrap();
+    assert!(kit > dec!(0));
+    assert_eq!(q.precio("SR.COL8").unwrap(), antes + kit * dec!(2));
+    // Código repetido: no toca nada
+    let r = q.clone();
+    assert!(pegar_como_subpartida(&mut q, &f, "KIT.01", "ud", "x", "SR.COL8", dec!(1)).is_err());
+    assert_eq!(q, r);
+}

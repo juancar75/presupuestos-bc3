@@ -345,9 +345,42 @@ pub struct Biblioteca {
     /// de la base.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub equivalencias: BTreeMap<String, Equivalencia>,
-    /// Último cambio de cada equivalencia (`eq:<clave>`).
+    /// Último cambio de cada equivalencia (`eq:<clave>`) y de cada kit
+    /// (`kit:<nombre>`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sellos: BTreeMap<String, Sello>,
+    /// Kits: grupos de líneas de descompuesto que se repiten (p. ej. «Toma
+    /// de fancoil»), por nombre.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub kits: BTreeMap<String, Kit>,
+}
+
+/// Grupo de líneas de descompuesto guardado para reutilizarlo: se inserta
+/// en una partida como líneas sueltas o como subpartida.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Kit {
+    pub nombre: String,
+    /// Unidad de la subpartida al insertarlo como subpartida («ud»).
+    pub unidad: String,
+    /// Las líneas, con sus recursos y precios del momento de guardarlo.
+    pub lineas: ppto_core::fragmento::Fragmento,
+}
+
+impl Kit {
+    /// Precio del kit (suma de cantidad × precio de sus recursos).
+    pub fn precio(&self) -> Decimal {
+        let mut p = Presupuesto::new("kit", "K", "kit");
+        let _ = p.nuevo_recurso("KIT", &self.unidad, &self.nombre, Naturaleza::Partida, Decimal::ZERO);
+        if ppto_core::fragmento::pegar_en_partida(&mut p, &self.lineas, "KIT", ppto_core::fragmento::SiYaEsta::Sumar)
+            .is_err()
+        {
+            return Decimal::ZERO;
+        }
+        p.valorar()
+            .ok()
+            .and_then(|v| v.precios.get("KIT").copied())
+            .unwrap_or_default()
+    }
 }
 
 /// Partida de una base elegida para una partida medida.
