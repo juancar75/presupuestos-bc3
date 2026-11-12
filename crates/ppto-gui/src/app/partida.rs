@@ -174,6 +174,9 @@ impl Aplicacion {
                 // La columna Resumen se lleva el ancho que sobra de la ventana
                 let ancho_resumen = (ui.available_width() - ANCHO_FIJO_DESCOMPUESTO).clamp(160.0, 1000.0);
                 let letras = (ancho_resumen / 7.0) as usize;
+                let elegidas = self.lineas_elegidas(&hijo);
+                let mut clic: Option<(String, egui::Modifiers)> = None;
+                let mut menu: Option<u8> = None;
                 egui::Grid::new("descompuesto")
                     .striped(true)
                     .num_columns(8)
@@ -185,17 +188,46 @@ impl Aplicacion {
                         for l in &lineas {
                             let h = &self.p.conceptos[&l.hijo];
                             let y0 = ui.cursor().top();
-                            if h.naturaleza == Naturaleza::Partida {
-                                if ui
-                                    .link(&h.codigo)
-                                    .on_hover_text("Entrar en la subpartida para ver o editar su descompuesto")
-                                    .clicked()
+                            // Código: clic elige la línea; Mayús+clic un bloque, Ctrl+clic sueltas
+                            let marcada = elegidas.contains(&l.hijo);
+                            ui.horizontal(|ui| {
+                                let r = ui
+                                    .selectable_label(marcada, &h.codigo)
+                                    .on_hover_text(
+                                        "Clic: elegir la línea · Mayús+clic: elegir un bloque · Ctrl+clic: añadir o quitar\n\
+                                         Ctrl+C copia las elegidas, Ctrl+V las pega en otra partida, Supr las quita\n\
+                                         Botón derecho: más opciones",
+                                    );
+                                if r.clicked() {
+                                    clic = Some((l.hijo.clone(), ui.input(|i| i.modifiers)));
+                                }
+                                r.context_menu(|ui| {
+                                    if !marcada {
+                                        clic = Some((l.hijo.clone(), egui::Modifiers::NONE));
+                                    }
+                                    let n = if marcada { elegidas.len() } else { 1 };
+                                    if ui.button(format!("Copiar {n} líneas (Ctrl+C)")).clicked() {
+                                        menu = Some(1);
+                                        ui.close();
+                                    }
+                                    if ui.button(format!("Copiar {n} líneas a varias partidas…")).clicked() {
+                                        menu = Some(2);
+                                        ui.close();
+                                    }
+                                    if ui.button(format!("Quitar {n} líneas (Supr)")).clicked() {
+                                        menu = Some(3);
+                                        ui.close();
+                                    }
+                                });
+                                if h.naturaleza == Naturaleza::Partida
+                                    && ui
+                                        .small_button("→")
+                                        .on_hover_text("Entrar en la subpartida para ver o editar su descompuesto")
+                                        .clicked()
                                 {
                                     acciones.push(Accion::Seleccionar(hijo.clone(), l.hijo.clone()));
                                 }
-                            } else {
-                                ui.label(&h.codigo);
-                            }
+                            });
                             // Unidad y resumen editables en los recursos (una subpartida
                             // se edita entrando en ella).
                             let editable = h.naturaleza != Naturaleza::Partida;
@@ -355,6 +387,21 @@ impl Aplicacion {
                         );
                         ui.end_row();
                     });
+                if let Some((x, m)) = clic {
+                    self.clic_linea(&hijo, &x, m);
+                }
+                match menu {
+                    Some(1) => {
+                        self.copiar_lineas(&hijo);
+                    }
+                    Some(2) => self.abrir_copiar_a(&hijo),
+                    Some(3) => {
+                        for x in self.lineas_elegidas(&hijo) {
+                            acciones.push(Accion::QuitarLinea(hijo.clone(), x, false));
+                        }
+                    }
+                    _ => {}
+                }
                 ui.horizontal(|ui| {
                     if ui
                         .button("+ Añadir línea…")
