@@ -5,6 +5,13 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Corregido
+- **Ciego en Excel sin fila de cabecera**: un listado completo de Presto
+  (Código, Nat, Ud, Resumen, Comentario, N, Longitud, Anchura, Altura,
+  Parcial, CanPres, PrPres, ImpPres) exportado sin la fila de títulos no se
+  reconocía. Ahora se deducen las columnas por su contenido, se leen los
+  «Total CÓDIGO» de la columna Parcial y las líneas de medición.
+
 ## [0.1.0-alpha.50] - 2026-11-12
 
 ### Corregido

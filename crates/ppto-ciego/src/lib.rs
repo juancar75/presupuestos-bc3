@@ -190,15 +190,24 @@ impl Columnas {
             f.get(j)
                 .is_some_and(|v| texto(v).trim().eq_ignore_ascii_case("partida"))
         };
-        if !filas
-            .iter()
-            .any(|f| partida(f) && f.get(j + 3).and_then(decimal).is_some())
-        {
+        let con_cantidad = |k: usize| filas.iter().any(|f| partida(f) && f.get(k).and_then(decimal).is_some());
+        // Listado completo de Presto sin fila de cabecera: Código, Nat, Ud,
+        // Resumen, Comentario, N, Longitud, Anchura, Altura, Parcial, CanPres,
+        // PrPres, ImpPres, con la cantidad de la partida en CanPres (j + 9)
+        // y nada numérico justo detrás del Resumen.
+        let completo = con_cantidad(j + 9) && !con_cantidad(j + 3);
+        if !completo && !con_cantidad(j + 3) {
             return None;
         }
         let primera = filas.iter().position(|f| f.get(j).is_some_and(es_naturaleza))?;
         let col = |k: usize| u32::try_from(k).ok().map(|k| inicio + k);
         let mut c = [None; 13];
+        if completo {
+            for (k, x) in c.iter_mut().enumerate() {
+                *x = col(j - 1 + k);
+            }
+            return Some((Self(c), primera));
+        }
         c[0] = col(j - 1);
         c[1] = col(j);
         c[2] = col(j + 1);
@@ -382,9 +391,17 @@ impl Lector {
     /// Presto) o, en otras exportaciones, «Total CÓDIGO» en la columna Resumen
     /// de una fila sin código ni naturaleza.
     fn total_de(&self, f: &[Data]) -> String {
+        // Un número en Parcial es el parcial de una línea de medición, no un código
+        if matches!(self.valor(f, 9), Data::Float(_) | Data::Int(_)) {
+            return String::new();
+        }
         let parcial = texto(self.valor(f, 9)).trim().to_owned();
         if !parcial.is_empty() {
-            return parcial;
+            // Algunas exportaciones ponen «Total CÓDIGO» también en Parcial
+            return match parcial.strip_prefix("Total ").map(str::trim) {
+                Some(c) if !c.is_empty() && !c.contains(' ') => c.to_owned(),
+                _ => parcial,
+            };
         }
         if !texto(self.valor(f, 0)).trim().is_empty() || !texto(self.valor(f, 1)).trim().is_empty() {
             return String::new();
