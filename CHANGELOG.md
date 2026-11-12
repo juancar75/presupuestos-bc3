@@ -5,6 +5,12 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Corregido
+- **BC3 para Presto antiguo (códigos de 12)**: los recursos con tarifa cuyo
+  código tenía justo 12 caracteres (p. ej. `M.SP.IRT6400`, `M.TRX.VFC250`)
+  salían a neto, sin línea de descuento, porque `<código>%` no cabía. Ahora
+  se acortan para que quepa y se ven PVP y descuento como los demás.
+
 ## [0.1.0-alpha.49] - 2026-11-12
 
 ### Añadido
