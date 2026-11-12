@@ -30,6 +30,7 @@ mod propuestas;
 mod ratio;
 mod recientes;
 mod recuperacion;
+mod sincronizar;
 mod tarifas;
 mod tema;
 mod vistas;
@@ -325,6 +326,10 @@ pub struct Aplicacion {
     recuperacion: recuperacion::Recuperacion,
     /// Últimos presupuestos abiertos o guardados.
     recientes: recientes::Recientes,
+    /// Biblioteca de precios para comparar con la obra al guardar y abrir (`None` en las pruebas).
+    ruta_biblioteca: Option<std::path::PathBuf>,
+    /// Pregunta pendiente obra ↔ biblioteca.
+    sincro: Option<sincronizar::Sincro>,
     /// Ventana de informes (pedidos, mano de obra, coste de obra).
     ventana_informes: Option<informes::VentanaInformes>,
     /// Contradictorios y certificaciones.
@@ -451,6 +456,7 @@ impl Aplicacion {
         app.asistente = asistente::PanelAsistente::en_disco();
         app.recuperacion = recuperacion::Recuperacion::en_disco();
         app.recientes = recientes::Recientes::en_disco();
+        app.ruta_biblioteca = ppto_biblioteca::ruta();
         app.actualizacion = actualizar::Actualizacion::al_arrancar();
         if let Some(r) = tarifas::ruta_tarifas() {
             app.tarifas = ppto_tarifas::Biblioteca::cargar(&r);
@@ -540,6 +546,8 @@ impl Aplicacion {
             f5: std::cell::RefCell::new(None),
             recuperacion: recuperacion::Recuperacion::default(),
             recientes: recientes::Recientes::default(),
+            ruta_biblioteca: None,
+            sincro: None,
             docs: ofertas::CacheDocumentos::default(),
             ventana_comparar: None,
             ventana_legalizacion: None,
@@ -860,6 +868,7 @@ impl Aplicacion {
         self.ventana_clientes(&ctx);
         self.ventana_tarifas(&ctx);
         self.ventana_biblioteca(&ctx);
+        self.ventana_sincro(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_emparejar(&ctx, &mut acciones);
         self.ventana_nuevo(&ctx);

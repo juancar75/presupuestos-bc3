@@ -5,6 +5,25 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Biblioteca de precios compartida entre varias personas**.
+  - Biblioteca → «Compartir en una carpeta…» (OneDrive, Teams, red): cada
+    persona guarda sus cambios en su propio fichero
+    (`biblioteca.<usuario>.json`) y nunca en el de otra, así que no hay
+    copias en conflicto. La primera vez se copia allí la biblioteca local.
+  - Al leer se juntan todos los ficheros de la carpeta: de cada dato
+    (descuento de un grupo, PVP de una referencia, oferta, datos del
+    fabricante, subida estimada, equivalencia) gana el cambio más reciente.
+    Cada cambio lleva fecha, hora y usuario; las partidas se suman.
+  - La ventana de la biblioteca muestra el último cambio de cada fabricante
+    (quién y cuándo).
+  - **Al guardar una obra**, si tiene PVP o descuentos que la biblioteca no
+    tiene o tiene distintos, pregunta si se pasan a la biblioteca (sin
+    tocar el resto de la tarifa).
+  - **Al abrir una obra**, si la biblioteca tiene PVP o descuentos
+    distintos (p. ej. los que ha actualizado un compañero), lo avisa con la
+    lista y quién y cuándo los cambió; la obra cambia solo si se acepta.
+
 ## [0.1.0-alpha.52] - 2026-11-12
 
 ### Corregido
