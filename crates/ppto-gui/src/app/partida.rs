@@ -60,7 +60,7 @@ impl Aplicacion {
             }
             if ui
                 .button("Siguiente sin precio >>")
-                .on_hover_text("Ctrl+Mayús+↓")
+                .on_hover_text("Ctrl+Mayús+↓ (Ctrl+Mayús+↑: la anterior sin precio)")
                 .clicked()
             {
                 acciones.push(Accion::SiguienteSinPrecio);
@@ -356,8 +356,22 @@ impl Aplicacion {
                         ui.end_row();
                     });
                 ui.horizontal(|ui| {
-                    if ui.button("+ Añadir línea…").clicked() {
+                    if ui
+                        .button("+ Añadir línea…")
+                        .on_hover_text(
+                            "Ctrl+L o Insert. Busca en la obra, en las tarifas de la biblioteca y en las de \
+                             subcontrata; ↑/↓ para elegir e Intro para añadir.",
+                        )
+                        .clicked()
+                    {
                         acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
+                    }
+                    if ui
+                        .small_button("Copiar descompuesto anterior")
+                        .on_hover_text("Ctrl+D: añade las líneas de la partida anterior que tenga descompuesto")
+                        .clicked()
+                    {
+                        acciones.push(Accion::CopiarDescompuestoAnterior);
                     }
                     self.boton_pegar_linea(ui, &hijo, acciones);
                 });
@@ -374,8 +388,22 @@ impl Aplicacion {
                 });
                 ui.label(RichText::new("O descompóngala:").weak());
                 ui.horizontal(|ui| {
-                    if ui.button("+ Añadir línea…").clicked() {
+                    if ui
+                        .button("+ Añadir línea…")
+                        .on_hover_text(
+                            "Ctrl+L o Insert. Busca en la obra, en las tarifas de la biblioteca y en las de \
+                             subcontrata; ↑/↓ para elegir e Intro para añadir.",
+                        )
+                        .clicked()
+                    {
                         acciones.push(Accion::Alta(TipoAlta::Linea { padre: hijo.clone() }));
+                    }
+                    if ui
+                        .small_button("Copiar descompuesto anterior")
+                        .on_hover_text("Ctrl+D: añade las líneas de la partida anterior que tenga descompuesto")
+                        .clicked()
+                    {
+                        acciones.push(Accion::CopiarDescompuestoAnterior);
                     }
                     self.boton_pegar_linea(ui, &hijo, acciones);
                 });

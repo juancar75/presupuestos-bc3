@@ -2573,3 +2573,92 @@ fn colores_del_arbol_con_explicacion() {
     app.recalcular();
     assert!(app.explicar_estado("PV").unwrap().contains("EXCLUIDA"));
 }
+
+/// Valorar a mano: el buscador encuentra en la obra y en las tarifas de la
+/// biblioteca; un artículo de tarifa entra con PVP, grupo, referencia y
+/// descuento; Ctrl+D copia el descompuesto anterior; Ctrl+Mayús+↑ va a la
+/// anterior sin precio.
+#[test]
+fn valorar_a_mano_buscador_y_atajos() {
+    use std::collections::BTreeMap;
+    let mut app = Aplicacion::sin_ventana();
+    let mut b = ppto_biblioteca::Biblioteca::default();
+    b.cargar_tarifa(
+        "FABSINT",
+        "2026",
+        2026,
+        BTreeMap::from([(
+            "VFC250".into(),
+            ppto_biblioteca::LineaPvp {
+                descripcion: "Regulador de caudal circular VFC 250".into(),
+                unidad: "ud".into(),
+                pvp: dec!(128),
+                grupo: Some("REG".into()),
+            },
+        )]),
+    );
+    b.fijar_descuento("FABSINT/REG", Some(dec!(50)));
+    // Buscador: palabras sueltas, sin tildes
+    let r = app.buscar_todo("regulador 250", "SR.M2", Some(&b), false);
+    assert_eq!(r.len(), 1, "{r:?}");
+    let valorar::Hallazgo::Tarifa(a) = &r[0].0 else {
+        panic!()
+    };
+    assert_eq!(a.neto(), dec!(64));
+    assert!(r[0].2.contains("64,00"), "{}", r[0].2);
+    assert!(
+        !app.buscar_todo("colector", "SR.M2", Some(&b), false).is_empty(),
+        "y en la obra"
+    );
+    // Añadirlo: material con su tarifa y el descuento de la biblioteca
+    let acc = app.accion_hallazgo(&r[0].0, "SR.COL8", dec!(2)).unwrap();
+    app.aplicar(vec![acc]);
+    let m = &app.p.conceptos["M.VFC250"];
+    assert_eq!(m.tarifa.as_ref().unwrap().pvp, dec!(128));
+    assert_eq!(app.p.precio("M.VFC250").unwrap(), dec!(64));
+    assert!(
+        app.p.conceptos["SR.COL8"]
+            .descomposicion
+            .iter()
+            .any(|l| l.hijo == "M.VFC250")
+    );
+    // Ya en la obra: el buscador no lo repite como tarifa
+    assert!(
+        app.buscar_todo("vfc", "SR.M2", Some(&b), false)
+            .iter()
+            .all(|(h, _, _)| !matches!(h, valorar::Hallazgo::Tarifa(_)))
+    );
+    // Ctrl+D: partida nueva sin precio toma el descompuesto de la anterior
+    app.aplicar(vec![Accion::NuevaPartida {
+        capitulo: "C01".into(),
+        codigo: "P9".into(),
+        unidad: "ud".into(),
+        resumen: "Sin precio".into(),
+    }]);
+    app.aplicar(vec![Accion::Seleccionar("C01".into(), "P9".into())]);
+    app.aplicar(vec![Accion::CopiarDescompuestoAnterior]);
+    assert_eq!(
+        app.p.conceptos["P9"].descomposicion.len(),
+        app.p.conceptos["SR.COL8"].descomposicion.len()
+    );
+    app.deshacer();
+    assert!(app.p.conceptos["P9"].descomposicion.is_empty(), "con deshacer");
+    // Anterior sin precio desde la primera: da la vuelta hasta P9
+    app.aplicar(vec![Accion::Seleccionar("C01".into(), "SR.M2".into())]);
+    app.aplicar(vec![Accion::AnteriorSinPrecio]);
+    assert_eq!(app.sel, Some(("C01".into(), "P9".into())));
+    // La ventana de alta con el buscador se dibuja
+    app.abrir_alta(TipoAlta::Linea { padre: "P9".into() });
+    if let Some(x) = app.alta.as_mut() {
+        x.bib = Some(std::sync::Arc::new(b));
+        x.buscar = "vfc".into();
+    }
+    let ctx = Context::default();
+    let mut acc = Vec::new();
+    let mut out = ctx.run_ui(RawInput::default(), |ui| {
+        let c = ui.ctx().clone();
+        app.ventana_alta(&c, &mut acc);
+    });
+    out.textures_delta.clear();
+    assert!(app.alta.is_some());
+}
