@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+pub mod carpeta;
 mod compartir;
 pub use compartir::{Diferencia, Sello, ahora, fichero_de, ficheros, usuario};
 

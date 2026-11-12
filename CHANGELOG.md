@@ -5,6 +5,19 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Carpeta de tarifas** (Biblioteca → «Carpeta de tarifas»): la carpeta
+  compartida con los documentos de tarifa de cada fabricante, única fuente
+  de los PVP.
+  - El programa pide la carpeta y explica cómo deben estar los ficheros: una
+    carpeta por fabricante (en mayúsculas, como en los materiales) y cada
+    tarifa en PDF o Excel con el nombre empezando por su fecha `AAAA-MM`
+    («KOOLAIR\\2026-05 Tarifa KOOLAIR.pdf»); la más reciente es la vigente.
+  - «Añadir tarifa…»: se elige el fabricante, la fecha y el fichero, y se
+    copia a su carpeta con el nombre correcto (sin sobrescribir).
+  - Lista la tarifa vigente de cada fabricante (con botón para abrirla) y
+    avisa de los ficheros que no siguen las normas.
+
 ## [0.1.0-alpha.54] - 2026-11-12
 
 ### Añadido

@@ -43,12 +43,28 @@ pub(super) struct VentanaBiblioteca {
     datos_de: String,
     datos: DatosFabricante,
     mensaje: Option<(String, bool)>,
+    // Carpeta de tarifas (documentos de cada fabricante)
+    tar_carpeta: Option<PathBuf>,
+    tar: ppto_biblioteca::carpeta::Carpeta,
+    tar_fab: String,
+    tar_fecha: String,
 }
 
 impl VentanaBiblioteca {
     pub fn abrir() -> Self {
         let ruta = ppto_biblioteca::ruta();
-        Self::en(ruta)
+        let mut v = Self::en(ruta);
+        v.tar_carpeta = ppto_biblioteca::carpeta::ruta_carpeta();
+        v.releer_tarifas();
+        v
+    }
+
+    fn releer_tarifas(&mut self) {
+        self.tar = self
+            .tar_carpeta
+            .as_deref()
+            .map(ppto_biblioteca::carpeta::explorar)
+            .unwrap_or_default();
     }
 
     /// Ventana sobre un fichero concreto (`None`: sin disco, para pruebas).
@@ -72,6 +88,10 @@ impl VentanaBiblioteca {
             datos_de: String::new(),
             datos: DatosFabricante::default(),
             mensaje: None,
+            tar_carpeta: None,
+            tar: Default::default(),
+            tar_fab: String::new(),
+            tar_fecha: hoy().get(..7).unwrap_or_default().to_owned(),
         }
     }
 
@@ -235,6 +255,7 @@ impl Aplicacion {
                         );
                     }
                 }
+                self.carpeta_tarifas(ui, &mut v);
                 // Guardar la obra
                 ui.horizontal(|ui| {
                     ui.label(format!("{} partidas guardadas.", v.b.partidas.len()));
@@ -590,5 +611,147 @@ impl VentanaBiblioteca {
                     }
                 }
             });
+    }
+}
+
+impl Aplicacion {
+    /// Carpeta de tarifas: dónde está, cómo deben estar los ficheros, qué
+    /// tarifa está vigente de cada fabricante y «Añadir tarifa…».
+    fn carpeta_tarifas(&mut self, ui: &mut egui::Ui, v: &mut VentanaBiblioteca) {
+        use ppto_biblioteca::carpeta;
+        egui::CollapsingHeader::new(RichText::new("Carpeta de tarifas (documentos de cada fabricante)").strong())
+            .default_open(v.tar_carpeta.is_none())
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    match &v.tar_carpeta {
+                        Some(c) => {
+                            ui.label(format!("Carpeta: {}", c.display()));
+                            if ui.small_button("Abrir").clicked() {
+                                super::asistente::abrir_en_sistema(c);
+                            }
+                        }
+                        None => {
+                            ui.label(
+                                RichText::new(
+                                    "Elija la carpeta compartida donde estarán las tarifas (p. ej. OneDrive\\Tarifas).",
+                                )
+                                .color(NARANJA),
+                            );
+                        }
+                    }
+                    if ui.small_button("Elegir carpeta…").clicked()
+                        && let Some(c) = rfd::FileDialog::new().set_title("Carpeta de tarifas").pick_folder()
+                    {
+                        match carpeta::fijar_carpeta(&c) {
+                            Ok(()) => {
+                                v.tar_carpeta = Some(c);
+                                v.releer_tarifas();
+                            }
+                            Err(e) => v.mensaje = Some((format!("No se pudo guardar la carpeta: {e}"), true)),
+                        }
+                    }
+                    if v.tar_carpeta.is_some() && ui.small_button("⟳ Releer").clicked() {
+                        v.releer_tarifas();
+                    }
+                });
+                egui::CollapsingHeader::new("¿Cómo deben estar los ficheros?")
+                    .default_open(v.tar_carpeta.is_none() || v.tar.fabricantes.is_empty())
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(carpeta::NORMAS).small());
+                        ui.label(
+                            RichText::new("Ejemplo:  Tarifas\\KOOLAIR\\2026-05 Tarifa KOOLAIR.pdf")
+                                .small()
+                                .monospace(),
+                        );
+                    });
+                let Some(c) = v.tar_carpeta.clone() else { return };
+                // Añadir tarifa
+                ui.horizontal(|ui| {
+                    ui.label("Fabricante:");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut v.tar_fab)
+                            .desired_width(160.0)
+                            .hint_text("KOOLAIR"),
+                    );
+                    ui.label("Fecha de la tarifa:");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut v.tar_fecha)
+                            .desired_width(70.0)
+                            .hint_text("AAAA-MM"),
+                    );
+                    let listo = !v.tar_fab.trim().is_empty() && carpeta::fecha_del_nombre(v.tar_fecha.trim()).is_some();
+                    if ui
+                        .add_enabled(listo, egui::Button::new("Añadir tarifa…"))
+                        .on_hover_text(
+                            "Elija el PDF o Excel del fabricante: se copia a su carpeta con el nombre correcto",
+                        )
+                        .on_disabled_hover_text("Escriba el fabricante y la fecha de la tarifa (AAAA-MM)")
+                        .clicked()
+                        && let Some(f) = rfd::FileDialog::new()
+                            .set_title(format!("Tarifa de {}", v.tar_fab.trim()))
+                            .add_filter("Tarifa (PDF o Excel)", &carpeta::EXTENSIONES)
+                            .pick_file()
+                    {
+                        match carpeta::anadir(&c, &v.tar_fab, &v.tar_fecha, &f) {
+                            Ok(r) => {
+                                v.mensaje = Some((format!("Tarifa añadida: {}", r.display()), false));
+                                v.releer_tarifas();
+                            }
+                            Err(e) => v.mensaje = Some((format!("No se pudo añadir: {e}"), true)),
+                        }
+                    }
+                });
+                // Lo que hay
+                if v.tar.fabricantes.is_empty() {
+                    ui.label(RichText::new("Todavía no hay tarifas en la carpeta.").weak());
+                } else {
+                    egui::Grid::new("carpeta_tarifas")
+                        .striped(true)
+                        .num_columns(4)
+                        .show(ui, |ui| {
+                            for t in ["Fabricante", "Vigente", "Anteriores", ""] {
+                                ui.label(RichText::new(t).strong());
+                            }
+                            ui.end_row();
+                            for (fab, docs) in &v.tar.fabricantes {
+                                ui.label(fab);
+                                let d = &docs[0];
+                                let nombre = d
+                                    .ruta
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default();
+                                ui.label(nombre);
+                                ui.label(if docs.len() > 1 {
+                                    (docs.len() - 1).to_string()
+                                } else {
+                                    "—".into()
+                                });
+                                if ui.small_button("🖹 Abrir").clicked() {
+                                    super::asistente::abrir_en_sistema(&d.ruta);
+                                }
+                                ui.end_row();
+                            }
+                        });
+                }
+                if !v.tar.mal.is_empty() {
+                    ui.label(
+                        RichText::new(format!(
+                            "{} ficheros no siguen las normas (no se usan):",
+                            v.tar.mal.len()
+                        ))
+                        .color(NARANJA),
+                    );
+                    for (p, motivo) in v.tar.mal.iter().take(12) {
+                        let rel = p.strip_prefix(&c).unwrap_or(p);
+                        ui.label(
+                            RichText::new(format!("  • {} — {motivo}", rel.display()))
+                                .small()
+                                .color(NARANJA),
+                        );
+                    }
+                }
+            });
+        ui.separator();
     }
 }
