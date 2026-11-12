@@ -431,3 +431,70 @@ fn ida_y_vuelta_de_aleatorios() {
         assert!(r.is_ok(), "semilla {s}");
     }
 }
+
+/// Línea frigorífica sintética con varios descuentos repartidos antes y
+/// después de un porcentaje de accesorios (%AC30) y medios auxiliares: el
+/// BC3 con descuentos a la vista vale lo mismo que la obra en cada partida y
+/// en el PEM, con un ajuste por tramo, y al importarlo los ajustes se quitan.
+#[test]
+fn descuentos_visibles_cuadran_con_porcentajes_intermedios() {
+    use ppto_core::LineaDescomposicion;
+    let mut p = Presupuesto::new("tramos", "OBRA", "Obra");
+    for (c, pvp) in [
+        ("M.TUBO", dec!(0)),
+        ("M.COQ", dec!(0)),
+        ("M.CABLE", dec!(0)),
+        ("M.BAND", dec!(0)),
+    ] {
+        p.insertar(Concepto::basico(c, "m", c, Naturaleza::Material, pvp))
+            .unwrap();
+    }
+    p.insertar(Concepto::basico(
+        "MO.OF",
+        "h",
+        "Oficial",
+        Naturaleza::ManoObra,
+        dec!(30),
+    ))
+    .unwrap();
+    p.insertar(Concepto::porcentaje("%AC30", "Accesorios")).unwrap();
+    p.insertar(Concepto::porcentaje("%MA", "Medios auxiliares")).unwrap();
+    p.insertar(Concepto::partida(
+        "LF",
+        "m",
+        "Línea frigorífica",
+        vec![
+            LineaDescomposicion::new("M.TUBO", dec!(1)),
+            LineaDescomposicion::new("%AC30", dec!(30)),
+            LineaDescomposicion::new("M.COQ", dec!(1.1)),
+            LineaDescomposicion::new("M.CABLE", dec!(0.5)),
+            LineaDescomposicion::new("M.BAND", dec!(0.15)),
+            LineaDescomposicion::new("MO.OF", dec!(0.384)),
+            LineaDescomposicion::new("%MA", dec!(2)),
+        ],
+    ))
+    .unwrap();
+    p.nuevo_capitulo("OBRA", "C1", "Clima").unwrap();
+    p.anadir_linea("C1", "LF", dec!(296)).unwrap();
+    p.fijar_tarifa("M.TUBO", "FABA", dec!(15.37)).unwrap();
+    p.fijar_tarifa("M.COQ", "FABB", dec!(1.99)).unwrap();
+    p.fijar_tarifa("M.CABLE", "FABC", dec!(4.333)).unwrap();
+    p.fijar_tarifa("M.BAND", "FABD", dec!(56.53)).unwrap();
+    p.fijar_descuento("FABA", dec!(60)).unwrap();
+    p.fijar_descuento("FABB", dec!(75)).unwrap();
+    p.fijar_descuento("FABC", dec!(60)).unwrap();
+    p.fijar_descuento("FABD", dec!(75)).unwrap();
+    let pem = p.pem().unwrap();
+
+    let (q, _) = p.con_descuentos_visibles();
+    assert_eq!(q.precio("LF").unwrap(), p.precio("LF").unwrap());
+    assert_eq!(q.pem().unwrap(), pem);
+    let o = OpcionesExportacion {
+        descuentos_visibles: true,
+        ..Default::default()
+    };
+    let ex = exportar(&p, &o).unwrap();
+    let r = importar(&ex.bytes).unwrap().presupuesto;
+    assert_eq!(r.pem().unwrap(), pem);
+    assert!(!r.conceptos.keys().any(|k| k.starts_with("AJ.REDONDEO")));
+}

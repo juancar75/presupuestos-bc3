@@ -6,6 +6,13 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Corregido
+- **BC3 con descuentos a la vista: cuadra al céntimo con la obra en Presto**.
+  Presto calcula cada línea de descuento con la base redondeada y, cuando
+  había un porcentaje intermedio (accesorios %AC30) antes de otros recursos
+  con descuento, el ajuste de redondeo solo cubría el primer tramo: en la
+  una obra real el BC3 salía unos 90 € por debajo. Ahora hay un ajuste por tramo
+  (`AJ.REDONDEO`, `AJ.REDONDEO2`…), delante de cada porcentaje, y el PEM del
+  BC3 es el de la obra. Al importarlo, los ajustes se quitan.
 - **BC3 para Presto antiguo (códigos de 12)**: los recursos con tarifa cuyo
   código tenía justo 12 caracteres (p. ej. `M.SP.IRT6400`, `M.TRX.VFC250`)
   salían a neto, sin línea de descuento, porque `<código>%` no cabía. Ahora
