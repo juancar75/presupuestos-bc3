@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.51] - 2026-11-12
+
 ### Corregido
 - **Ciego en Excel sin fila de cabecera**: un listado completo de Presto
   (Código, Nat, Ud, Resumen, Comentario, N, Longitud, Anchura, Altura,
