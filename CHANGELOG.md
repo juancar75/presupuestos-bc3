@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.49] - 2026-11-12
+
 ### Añadido
 - **Presupuestos recientes**. El programa recuerda los 10 últimos
   presupuestos abiertos o guardados.
