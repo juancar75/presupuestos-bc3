@@ -2551,3 +2551,25 @@ fn obra_y_biblioteca_al_guardar_y_al_abrir() {
     assert_eq!(app.p.precio("M.SINT").unwrap(), dec!(72));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Los colores del árbol explican qué significan al pasar el ratón.
+#[test]
+fn colores_del_arbol_con_explicacion() {
+    use ppto_core::concepto::Naturaleza;
+    let mut app = Aplicacion::sin_ventana();
+    let raiz = app.p.raiz.clone();
+    app.p.nuevo_capitulo(&raiz, "CX", "Capítulo sintético").unwrap();
+    app.p.nueva_partida("CX", "PX", "ud", "Partida sintética").unwrap();
+    app.p
+        .nuevo_recurso("M.X", "ud", "Material", Naturaleza::Material, dec!(10))
+        .unwrap();
+    app.p.anadir_linea("PX", "M.X", dec!(1)).unwrap();
+    app.p.nueva_partida("CX", "PV", "ud", "Partida vacía").unwrap();
+    app.recalcular();
+    assert!(app.explicar_estado("PX").unwrap().starts_with("Naranja"));
+    assert!(app.explicar_estado("PV").unwrap().starts_with("Rojo"));
+    assert!(app.explicar_estado("CX").unwrap().contains("dentro hay partidas"));
+    app.p.fijar_excluida("PV", true).unwrap();
+    app.recalcular();
+    assert!(app.explicar_estado("PV").unwrap().contains("EXCLUIDA"));
+}

@@ -39,6 +39,25 @@ impl Aplicacion {
         }
     }
 
+    /// Qué significa el color (o el tachado) de un capítulo o partida del
+    /// árbol, para el texto emergente al pasar el ratón.
+    pub(super) fn explicar_estado(&self, codigo: &str) -> Option<String> {
+        use ppto_core::valoracion::Estado;
+        let c = self.p.conceptos.get(codigo)?;
+        if c.excluida {
+            return Some("Tachada: partida EXCLUIDA (fuera de la oferta: importe 0 y sale como «EXCLUIDO»).".into());
+        }
+        let cap = c.naturaleza == Naturaleza::Capitulo;
+        Some(match self.calc.estados.get(codigo)? {
+            Estado::Valorada => return None,
+            Estado::SinPrecio if cap => "Rojo: dentro hay partidas sin valorar (precio 0 €).".into(),
+            Estado::SinPrecio => "Rojo: sin valorar (precio 0 €). Póngale descompuesto o acepte una propuesta.".into(),
+            _ if cap => "Naranja: dentro hay partidas incompletas (material sin mano de obra o al revés).".into(),
+            Estado::SoloMaterial => "Naranja: incompleta. Tiene material pero no mano de obra ni subcontrata.".into(),
+            Estado::SoloManoObra => "Naranja: incompleta. Tiene mano de obra pero no material.".into(),
+        })
+    }
+
     /// Recuento de lo que falta, encima del árbol.
     pub(super) fn leyenda_estados(&self, ui: &mut Ui) {
         use ppto_core::valoracion::Estado;
@@ -61,11 +80,24 @@ impl Aplicacion {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             if rojas > 0 {
-                ui.label(RichText::new(format!("■ {rojas} sin valorar")).color(COLOR_SIN_VALORAR).small());
+                ui.label(
+                    RichText::new(format!("■ {rojas} sin valorar"))
+                        .color(COLOR_SIN_VALORAR)
+                        .small(),
+                )
+                .on_hover_text("Rojo: partidas con precio 0 € (y los capítulos que las contienen)");
             }
             if naranjas > 0 {
-                ui.label(RichText::new(format!("■ {naranjas} incompletas")).color(COLOR_INCOMPLETA).small())
-                    .on_hover_text("Con mano de obra pero sin material, o con material sin mano de obra (las subcontratadas no se marcan)");
+                ui.label(
+                    RichText::new(format!("■ {naranjas} incompletas"))
+                        .color(COLOR_INCOMPLETA)
+                        .small(),
+                )
+                .on_hover_text(
+                    "Naranja: con mano de obra pero sin material, o con material sin mano de obra \
+                         (una subcontrata cuenta como mano de obra; las legalizaciones y servicios solo \
+                         de horas también salen en naranja)",
+                );
             }
         });
     }
@@ -170,6 +202,10 @@ impl Aplicacion {
                 )
                 .wrap_mode(egui::TextWrapMode::Truncate),
             );
+            let r = match self.explicar_estado(&hijo) {
+                Some(t) => r.on_hover_text(t),
+                None => r,
+            };
             ui.label(
                 RichText::new(format!("    en {cap} · {} €/{}", eur(precio), c.unidad))
                     .weak()
@@ -208,17 +244,20 @@ impl Aplicacion {
                 }
                 let (_, cabecera, cuerpo) = estado
                     .show_header(ui, |ui| {
-                        ui.add(
-                            egui::Button::new(
-                                self.color_estado(
+                        let r =
+                            ui.add(
+                                egui::Button::new(self.color_estado(
                                     RichText::new(format!("{}  {}", c.codigo, c.resumen)).strong(),
                                     &l.hijo,
-                                ),
-                            )
-                            .frame(false)
-                            .wrap_mode(egui::TextWrapMode::Truncate)
-                            .sense(egui::Sense::click_and_drag()),
-                        )
+                                ))
+                                .frame(false)
+                                .wrap_mode(egui::TextWrapMode::Truncate)
+                                .sense(egui::Sense::click_and_drag()),
+                            );
+                        match self.explicar_estado(&l.hijo) {
+                            Some(t) => r.on_hover_text(t),
+                            None => r,
+                        }
                     })
                     .body(|ui| {
                         ui.label(RichText::new(format!("{} €", eur(l.importe))).weak());
@@ -369,9 +408,9 @@ impl Aplicacion {
                     .wrap_mode(egui::TextWrapMode::Truncate)
                     .sense(egui::Sense::click_and_drag()),
                 );
-                let r = match self.calc.estados.get(&l.hijo) {
-                    Some(e) if *e != ppto_core::valoracion::Estado::Valorada => r.on_hover_text(e.texto()),
-                    _ => r,
+                let r = match self.explicar_estado(&l.hijo) {
+                    Some(t) => r.on_hover_text(t),
+                    None => r,
                 };
                 if r.hovered() {
                     self.f5.replace(Some(Accion::Insertar(

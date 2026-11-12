@@ -5,6 +5,11 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Qué significa cada color**, al pasar el ratón: en el árbol (partidas y
+  capítulos en rojo, naranja o tachados), en la búsqueda, en el recuento
+  «sin valorar / incompletas» y en la confianza de las propuestas de la IA.
+
 ## [0.1.0-alpha.53] - 2026-11-12
 
 ### Añadido
