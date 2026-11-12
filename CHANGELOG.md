@@ -10,7 +10,7 @@ versionado [semántico](https://semver.org/lang/es/).
   Presto calcula cada línea de descuento con la base redondeada y, cuando
   había un porcentaje intermedio (accesorios %AC30) antes de otros recursos
   con descuento, el ajuste de redondeo solo cubría el primer tramo: en la
-  obra Uber el BC3 salía 93,28 € por debajo. Ahora hay un ajuste por tramo
+  una obra real el BC3 salía unos 90 € por debajo. Ahora hay un ajuste por tramo
   (`AJ.REDONDEO`, `AJ.REDONDEO2`…), delante de cada porcentaje, y el PEM del
   BC3 es el de la obra. Al importarlo, los ajustes se quitan.
 - **BC3 para Presto antiguo (códigos de 12)**: los recursos con tarifa cuyo
