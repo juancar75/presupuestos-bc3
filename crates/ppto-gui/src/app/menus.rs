@@ -270,6 +270,7 @@ impl Aplicacion {
             ui.close();
             self.dialogo_abrir();
         }
+        self.menu_recientes(ui);
         if ui
             .button("Abrir en otra ventana…")
             .on_hover_text(

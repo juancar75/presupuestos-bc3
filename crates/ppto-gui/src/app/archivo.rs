@@ -72,10 +72,11 @@ impl Aplicacion {
     }
 
     pub(super) fn dialogo_abrir(&mut self) {
-        if let Some(ruta) = rfd::FileDialog::new()
-            .add_filter("Presupuesto (SQLite)", &["sqlite", "db"])
-            .pick_file()
-        {
+        let mut d = rfd::FileDialog::new().add_filter("Presupuesto (SQLite)", &["sqlite", "db"]);
+        if let Some(c) = self.recientes.carpeta() {
+            d = d.set_directory(c);
+        }
+        if let Some(ruta) = d.pick_file() {
             self.abrir(ruta);
         }
     }
@@ -83,6 +84,11 @@ impl Aplicacion {
     /// Abre una obra; si otra persona (u otra ventana) la tiene abierta,
     /// primero pregunta.
     pub(super) fn abrir(&mut self, ruta: PathBuf) {
+        if !ruta.exists() {
+            self.recientes.quitar(&ruta);
+            self.error(format!("Ya no existe {} (se quita de los recientes).", ruta.display()));
+            return;
+        }
         if let Some(o) = ppto_db::bloqueo::ocupada(&ruta) {
             self.confirmar_abrir = Some((ruta, o));
             return;
@@ -103,6 +109,7 @@ impl Aplicacion {
             };
             Ok((revs, ultima, p))
         })();
+        let ruta_reciente = ruta.clone();
         match r {
             Ok((revs, Some(ultima), Some((p, datos)))) => {
                 self.p = p;
@@ -115,6 +122,7 @@ impl Aplicacion {
                 self.sel = None;
                 self.ofertas.clear();
                 self.recalcular();
+                self.recientes.anotar(&ruta_reciente);
                 self.info(format!(
                     "Abierta la revisión {} ({}).",
                     ultima.etiqueta, ultima.creado_en
@@ -285,6 +293,7 @@ impl Aplicacion {
         match r {
             Ok((pid, rev, etiqueta, revs)) => {
                 self.notas_revision.clear();
+                self.recientes.anotar(&ruta);
                 self.fichero = Some(ruta);
                 self.presupuesto_id = Some(pid);
                 self.revision_actual = Some(rev);

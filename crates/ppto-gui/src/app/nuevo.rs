@@ -173,6 +173,8 @@ impl Aplicacion {
         };
         let mut abierta = true;
         let mut elegido: Option<Inicio> = None;
+        let mut reciente: Option<std::path::PathBuf> = None;
+        let rutas = self.recientes.rutas.clone();
         egui::Window::new("Nuevo presupuesto")
             .open(&mut abierta)
             .collapsible(false)
@@ -181,12 +183,19 @@ impl Aplicacion {
             .show(ctx, |ui| {
                 if estado.elegidas.is_empty() {
                     paso_especialidades(ui, &mut estado, &mut elegido);
+                    if !rutas.is_empty() {
+                        ui.separator();
+                        ui.label(RichText::new("…o sigue con uno reciente").strong());
+                        super::recientes::lista(ui, &rutas[..rutas.len().min(5)], &mut reciente);
+                    }
                 } else {
                     paso_origen(ui, &mut estado, &mut elegido);
                 }
             });
-        self.asistente_nuevo = (abierta && elegido.is_none()).then_some(estado);
-        if let Some(i) = elegido {
+        self.asistente_nuevo = (abierta && elegido.is_none() && reciente.is_none()).then_some(estado);
+        if let Some(r) = reciente {
+            self.abrir(r);
+        } else if let Some(i) = elegido {
             self.empezar(i);
         }
     }

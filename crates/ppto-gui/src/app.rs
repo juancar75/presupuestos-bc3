@@ -28,6 +28,7 @@ mod pdf;
 mod pestanas;
 mod propuestas;
 mod ratio;
+mod recientes;
 mod recuperacion;
 mod tarifas;
 mod tema;
@@ -322,6 +323,8 @@ pub struct Aplicacion {
     f5: std::cell::RefCell<Option<Accion>>,
     /// Guardado automático (copia de recuperación).
     recuperacion: recuperacion::Recuperacion,
+    /// Últimos presupuestos abiertos o guardados.
+    recientes: recientes::Recientes,
     /// Ventana de informes (pedidos, mano de obra, coste de obra).
     ventana_informes: Option<informes::VentanaInformes>,
     /// Contradictorios y certificaciones.
@@ -447,6 +450,7 @@ impl Aplicacion {
         app.enlace = propuestas::Enlace::en_disco();
         app.asistente = asistente::PanelAsistente::en_disco();
         app.recuperacion = recuperacion::Recuperacion::en_disco();
+        app.recientes = recientes::Recientes::en_disco();
         app.actualizacion = actualizar::Actualizacion::al_arrancar();
         if let Some(r) = tarifas::ruta_tarifas() {
             app.tarifas = ppto_tarifas::Biblioteca::cargar(&r);
@@ -535,6 +539,7 @@ impl Aplicacion {
             confirmar_abrir: None,
             f5: std::cell::RefCell::new(None),
             recuperacion: recuperacion::Recuperacion::default(),
+            recientes: recientes::Recientes::default(),
             docs: ofertas::CacheDocumentos::default(),
             ventana_comparar: None,
             ventana_legalizacion: None,

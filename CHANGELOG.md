@@ -5,6 +5,15 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Presupuestos recientes**. El programa recuerda los 10 últimos
+  presupuestos abiertos o guardados.
+  - Archivo → «Abrir reciente» los lista (nombre y carpeta; el que ya no
+    existe sale en gris) y permite vaciar la lista.
+  - La ventana «Nuevo presupuesto» ofrece los 5 últimos para seguir con uno.
+  - «Abrir…» empieza en la carpeta del último.
+  - Se guardan en `recientes.json` de la carpeta de configuración.
+
 ## [0.1.0-alpha.48] - 2026-11-10
 
 ### Añadido
