@@ -20,15 +20,27 @@ impl Presupuesto {
     /// mediciones. Devuelve un aviso por código renombrado.
     pub fn con_codigos_cortos(&self, max: usize) -> (Presupuesto, Vec<String>) {
         let max = max.max(4);
-        let largos: Vec<&String> = self.conceptos.keys().filter(|c| c.chars().count() > max).collect();
+        // Un recurso con tarifa puede llevar línea de descuento `<código>%`:
+        // con `max` caracteres justos, la línea no cabría y se exportaría a
+        // neto (p. ej. `M.SP.IRT6400` con 12), así que también se acorta.
+        let largo = |c: &crate::concepto::Concepto| {
+            let n = c.codigo.chars().count();
+            n > max || (n == max && c.tarifa.is_some() && !c.codigo.contains(['%', '&']))
+        };
+        let largos: Vec<&String> = self
+            .conceptos
+            .values()
+            .filter(|c| largo(c))
+            .map(|c| &c.codigo)
+            .collect();
         if largos.is_empty() {
             return (self.clone(), Vec::new());
         }
         let mut usados: BTreeSet<String> = self
             .conceptos
-            .keys()
-            .filter(|c| c.chars().count() <= max)
-            .cloned()
+            .values()
+            .filter(|c| !largo(c))
+            .map(|c| c.codigo.clone())
             .collect();
         let mut mapa: BTreeMap<String, String> = BTreeMap::new();
         let mut avisos = Vec::new();
@@ -102,4 +114,39 @@ fn libre(base: &str, n: usize, usados: &BTreeSet<String>) -> String {
         i += 1;
     }
     nuevo
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Presupuesto;
+    use crate::concepto::{Naturaleza, PrecioTarifa};
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn recurso_con_tarifa_de_longitud_justa_deja_sitio_al_descuento() {
+        let mut p = Presupuesto::new("Prueba", "OBRA", "Obra");
+        p.nuevo_capitulo("OBRA", "C1", "Capítulo").unwrap();
+        p.nueva_partida("C1", "P1", "ud", "Partida").unwrap();
+        p.nuevo_recurso("M.SINT.12345", "ud", "Equipo sintético", Naturaleza::Material, dec!(50))
+            .unwrap();
+        p.nuevo_recurso("M.SINT.SINTA", "ud", "Sin tarifa", Naturaleza::Material, dec!(5))
+            .unwrap();
+        p.conceptos.get_mut("M.SINT.12345").unwrap().tarifa = Some(PrecioTarifa {
+            fabricante: "FAB".into(),
+            grupo: None,
+            pvp: dec!(100),
+            referencia: None,
+        });
+        p.descuentos.insert("FAB".into(), dec!(50));
+        p.anadir_linea("P1", "M.SINT.12345", dec!(1)).unwrap();
+        p.anadir_linea("P1", "M.SINT.SINTA", dec!(1)).unwrap();
+        let (q, avisos) = p.con_codigos_cortos(12);
+        assert_eq!(avisos.len(), 1, "{avisos:?}");
+        assert!(q.conceptos.contains_key("M.SINT.SINTA"), "sin tarifa no cambia");
+        assert!(!q.conceptos.contains_key("M.SINT.12345"));
+        let (v, avisos) = q.con_descuentos_visibles_hasta(12);
+        assert!(avisos.is_empty(), "{avisos:?}");
+        assert!(v.conceptos.keys().any(|k| k.ends_with('%') && k.chars().count() <= 12));
+        assert_eq!(v.precio("P1").unwrap(), p.precio("P1").unwrap());
+    }
 }
