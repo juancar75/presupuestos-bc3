@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.58] - 2026-11-12
+
 ### Añadido
 - Kits: grupos de líneas de descompuesto que se repiten (p. ej. «Toma de fancoil»). Se guardan desde el descompuesto (elegir líneas, botón derecho → «Guardar como kit…») en la biblioteca compartida, con quién y cuándo.
 - Al añadir una línea, el buscador ofrece los kits («kit …») de dos formas: como líneas sueltas (multiplicadas por la cantidad) o como subpartida (se crea una vez por obra y se reutiliza).
