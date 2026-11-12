@@ -544,3 +544,46 @@ fn cambiar_el_tipo_de_un_recurso_y_pegar_la_linea_en_otra_partida() {
     p.copiar_linea("P1", "R1", "P2").unwrap();
     assert_eq!(p.lineas_valoradas("P2").unwrap()[0].importe, dec!(60.00));
 }
+
+/// Copiar varias líneas del descompuesto de una partida y pegarlas en otra
+/// partida (también de otra obra): las nuevas se añaden; las que ya estaban
+/// se dejan o se suman, según se pida.
+#[test]
+fn copiar_lineas_entre_partidas() {
+    use ppto_core::fragmento::{Fragmento, SiYaEsta, copiar, pegar_en_partida};
+    let p = suelo_radiante();
+    let lineas: Vec<String> = p.conceptos["SR.M2"]
+        .descomposicion
+        .iter()
+        .take(3)
+        .map(|l| l.hijo.clone())
+        .collect();
+    let f = copiar(&p, "SR.M2", &lineas).unwrap();
+    assert!(f.de_partida);
+    let f = Fragmento::de_texto(&f.a_texto()).unwrap();
+    // En otra partida de la misma obra
+    let mut q = p.clone();
+    let antes = q.conceptos["SR.COL8"].descomposicion.len();
+    let inf = pegar_en_partida(&mut q, &f, "SR.COL8", SiYaEsta::Dejar).unwrap();
+    assert_eq!(inf.pegados.len(), 3);
+    assert_eq!(q.conceptos["SR.COL8"].descomposicion.len(), antes + 3);
+    // Otra vez: «dejar» no duplica; «sumar» suma la cantidad
+    let r1 = q.conceptos["SR.COL8"]
+        .descomposicion
+        .iter()
+        .find(|l| l.hijo == lineas[0])
+        .unwrap()
+        .rendimiento;
+    pegar_en_partida(&mut q, &f, "SR.COL8", SiYaEsta::Dejar).unwrap();
+    assert_eq!(q.conceptos["SR.COL8"].descomposicion.len(), antes + 3);
+    pegar_en_partida(&mut q, &f, "SR.COL8", SiYaEsta::Sumar).unwrap();
+    let r2 = q.conceptos["SR.COL8"]
+        .descomposicion
+        .iter()
+        .find(|l| l.hijo == lineas[0])
+        .unwrap()
+        .rendimiento;
+    assert_eq!(r2, r1 * dec!(2));
+    // En un capítulo no: es para partidas
+    assert!(pegar_en_partida(&mut q, &f, "C01", SiYaEsta::Dejar).is_err());
+}

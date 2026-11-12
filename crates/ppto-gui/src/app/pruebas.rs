@@ -2662,3 +2662,84 @@ fn valorar_a_mano_buscador_y_atajos() {
     out.textures_delta.clear();
     assert!(app.alta.is_some());
 }
+
+#[test]
+fn seleccion_y_copia_de_lineas() {
+    use ppto_core::fragmento::{Fragmento, SiYaEsta};
+    let mut app = Aplicacion::sin_ventana();
+    // Dos partidas con descompuesto de la obra de ejemplo
+    let orden = app.orden_partidas();
+    let con: Vec<String> = orden
+        .iter()
+        .map(|(_, h)| h.clone())
+        .filter(|h| app.p.conceptos[h].descomposicion.len() >= 2)
+        .collect();
+    assert!(con.len() >= 2);
+    let (a, b) = (con[0].clone(), con[1].clone());
+    let la: Vec<String> = app.p.conceptos[&a]
+        .descomposicion
+        .iter()
+        .map(|l| l.hijo.clone())
+        .collect();
+    // Clic en la primera y Mayús+clic en la segunda: un bloque de dos
+    app.clic_linea(&a, &la[0], egui::Modifiers::NONE);
+    app.clic_linea(&a, &la[1], egui::Modifiers::SHIFT);
+    assert_eq!(app.lineas_elegidas(&a), la[..2].to_vec());
+    // Ctrl+clic quita una
+    app.clic_linea(&a, &la[0], egui::Modifiers::CTRL);
+    assert_eq!(app.lineas_elegidas(&a), vec![la[1].clone()]);
+    assert!(app.lineas_elegidas(&b).is_empty(), "la selección es de una partida");
+    app.clic_linea(&a, &la[1], egui::Modifiers::NONE);
+    app.clic_linea(&a, &la[0], egui::Modifiers::SHIFT);
+    assert!(app.copiar_lineas(&a));
+    let f = Fragmento::de_texto(app.copiar_al_sistema.as_deref().unwrap()).unwrap();
+    assert!(f.de_partida);
+    let antes = app.p.conceptos[&b].descomposicion.len();
+    let ya = la[..2]
+        .iter()
+        .filter(|x| app.p.conceptos[&b].descomposicion.iter().any(|l| &l.hijo == *x))
+        .count();
+    let mut acciones = Vec::new();
+    app.pegar_lineas(f.clone(), vec![b.clone()], &mut acciones);
+    if ya > 0 {
+        assert!(app.pegado_pendiente.is_some(), "pregunta si ya estaban");
+        app.pegado_pendiente = None;
+        acciones.push(Accion::PegarLineas(
+            Box::new(f.clone()),
+            vec![b.clone()],
+            SiYaEsta::Dejar,
+        ));
+    }
+    app.aplicar(acciones);
+    assert_eq!(app.p.conceptos[&b].descomposicion.len(), antes + 2 - ya);
+    app.deshacer();
+    assert_eq!(
+        app.p.conceptos[&b].descomposicion.len(),
+        antes,
+        "un solo paso de deshacer"
+    );
+    // «Copiar a varias partidas»: se pinta y pega en todas las marcadas
+    app.abrir_copiar_a(&a);
+    let ctx = Context::default();
+    let mut acc = Vec::new();
+    for _ in 0..2 {
+        let mut o = ctx.run_ui(RawInput::default(), |ui| {
+            let c = ui.ctx().clone();
+            app.ventana_copiar_a(&c, &mut acc);
+        });
+        o.textures_delta.clear();
+    }
+    assert!(app.copiar_a.is_some());
+    // Quitar con el menú (Supr): las dos líneas elegidas
+    let n = app.p.conceptos[&a].descomposicion.len();
+    let quitar: Vec<Accion> = app
+        .lineas_elegidas(&a)
+        .into_iter()
+        .map(|x| Accion::QuitarLinea(a.clone(), x, false))
+        .collect();
+    app.aplicar(quitar);
+    assert_eq!(app.p.conceptos[&a].descomposicion.len(), n - 2);
+    // Se pinta la pestaña con selección sin fallar
+    app.sel = Some((String::new(), a.clone()));
+    pintar(&mut app);
+}

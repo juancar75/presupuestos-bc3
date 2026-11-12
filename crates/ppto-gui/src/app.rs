@@ -18,6 +18,7 @@ mod emparejar;
 mod ficha;
 mod informes;
 mod legalizacion;
+mod lineas;
 mod menus;
 mod modelo;
 mod nuevo;
@@ -188,6 +189,12 @@ enum Accion {
     /// referencia (y el descuento, si la obra no lo tiene) y se añade como
     /// línea de `en`.
     NuevoRecursoTarifa(Box<RecursoTarifa>),
+    /// Pegar líneas copiadas de un descompuesto en varias partidas.
+    PegarLineas(
+        Box<ppto_core::fragmento::Fragmento>,
+        Vec<String>,
+        ppto_core::fragmento::SiYaEsta,
+    ),
     /// Contradictorios y certificaciones.
     Obra(obra::OpObra),
 }
@@ -322,6 +329,10 @@ pub struct Aplicacion {
     portapapeles: Option<(String, String, bool)>,
     /// Línea del descompuesto copiada: (partida, recurso).
     linea_copiada: Option<(String, String)>,
+    /// Líneas elegidas en el descompuesto (Mayús/Ctrl + clic).
+    lineas_sel: lineas::LineasSel,
+    copiar_a: Option<lineas::CopiarA>,
+    pegado_pendiente: Option<lineas::PegadoPendiente>,
     /// Texto para el portapapeles del sistema (se copia al final del fotograma).
     copiar_al_sistema: Option<String>,
     /// Capítulo donde pega Ctrl+V (el último elegido en el árbol).
@@ -437,6 +448,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::NuevoRecurso { codigo, .. } => (format!("nuevo {codigo}"), None),
         Accion::NuevoRecursoTarifa(r) => (format!("nuevo {} de tarifa", r.codigo), None),
         Accion::CopiarDescompuestoAnterior => ("copiar el descompuesto anterior".into(), None),
+        Accion::PegarLineas(_, d, _) => (format!("pegar líneas en {} partidas", d.len()), None),
         Accion::AnadirLinea(p, h, _) => (format!("añadir {h} a {p}"), None),
         Accion::QuitarLinea(p, h, _) => (format!("quitar {h} de {p}"), None),
         Accion::Mover(p, h, _) => (format!("mover {h} en {p}"), None),
@@ -546,6 +558,9 @@ impl Aplicacion {
             desplazar_arbol: false,
             portapapeles: None,
             linea_copiada: None,
+            lineas_sel: Default::default(),
+            copiar_a: None,
+            pegado_pendiente: None,
             copiar_al_sistema: None,
             capitulo_activo: None,
             historial: Historial::default(),
@@ -616,11 +631,41 @@ impl Aplicacion {
                 }
                 (copiar, pegado)
             });
-            if copiar && let Some((p, h)) = self.sel.clone() {
+            // En la pestaña Partida, con líneas elegidas: copiar esas líneas
+            let partida = self
+                .sel
+                .as_ref()
+                .filter(|_| self.pestana == Pestana::Partida)
+                .map(|(_, h)| h.clone())
+                .filter(|h| {
+                    self.p
+                        .conceptos
+                        .get(h)
+                        .is_some_and(|c| c.naturaleza == Naturaleza::Partida)
+                });
+            let lineas = copiar && partida.as_deref().is_some_and(|h| self.copiar_lineas(h));
+            if copiar
+                && !lineas
+                && let Some((p, h)) = self.sel.clone()
+            {
                 acciones.push(Accion::Portapapeles(Some((p, h, false))));
+            }
+            // Supr: quitar las líneas elegidas
+            if let Some(h) = &partida
+                && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Delete))
+            {
+                for x in self.lineas_elegidas(h) {
+                    acciones.push(Accion::QuitarLinea(h.clone(), x, false));
+                }
             }
             if let Some(t) = pegado {
                 match ppto_core::fragmento::Fragmento::de_texto(&t) {
+                    Some(f) if f.de_partida => match partida {
+                        Some(h) => self.pegar_lineas(f, vec![h], acciones),
+                        None => {
+                            self.info("Son líneas de un descompuesto: abra la partida donde pegarlas y pulse Ctrl+V.")
+                        }
+                    },
                     Some(f) => {
                         let destino = self
                             .capitulo_activo
@@ -924,6 +969,8 @@ impl Aplicacion {
         self.ventana_tarifas(&ctx);
         self.ventana_biblioteca(&ctx);
         self.ventana_sincro(&ctx);
+        self.ventana_copiar_a(&ctx, &mut acciones);
+        self.ventana_pegado_pendiente(&ctx, &mut acciones);
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_emparejar(&ctx, &mut acciones);
         self.ventana_nuevo(&ctx);

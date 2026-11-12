@@ -45,6 +45,10 @@ pub struct Fragmento {
     /// Escalones de los descuentos encadenados copiados.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub descuentos_encadenados: BTreeMap<String, Vec<Decimal>>,
+    /// Líneas del descompuesto de una partida (se pegan en otra partida,
+    /// no en un capítulo).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub de_partida: bool,
 }
 
 /// Resultado de pegar.
@@ -125,6 +129,7 @@ pub fn copiar(p: &Presupuesto, padre: &str, hijos: &[String]) -> Result<Fragment
         }
     }
     Ok(Fragmento {
+        de_partida: cap.naturaleza != Naturaleza::Capitulo,
         obra: p.conceptos.get(&p.raiz).map(|c| c.resumen.clone()).unwrap_or_default(),
         conceptos,
         lineas,
@@ -137,16 +142,53 @@ pub fn copiar(p: &Presupuesto, padre: &str, hijos: &[String]) -> Result<Fragment
 /// Pega el fragmento al final del capítulo `destino`. Todo o nada.
 pub fn pegar(p: &mut Presupuesto, f: &Fragmento, destino: &str) -> Result<InformePegado, ErrorMotor> {
     let copia = p.clone();
-    let r = pegar_sin_deshacer(p, f, destino);
+    let r = pegar_sin_deshacer(p, f, destino, None);
     if r.is_err() {
         *p = copia;
     }
     r
 }
 
-fn pegar_sin_deshacer(p: &mut Presupuesto, f: &Fragmento, destino: &str) -> Result<InformePegado, ErrorMotor> {
-    if p.concepto(destino)?.naturaleza != Naturaleza::Capitulo {
-        return Err(ErrorMotor::ValorInvalido(format!("«{destino}» no es un capítulo")));
+/// Qué hacer al pegar líneas en una partida que ya tiene ese concepto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SiYaEsta {
+    /// Se deja la línea que había.
+    Dejar,
+    /// Se suma la cantidad pegada a la que había.
+    Sumar,
+}
+
+/// Pega las líneas del fragmento (copiadas del descompuesto de una partida)
+/// al final del descompuesto de la partida `destino`. Todo o nada.
+pub fn pegar_en_partida(
+    p: &mut Presupuesto,
+    f: &Fragmento,
+    destino: &str,
+    si_ya: SiYaEsta,
+) -> Result<InformePegado, ErrorMotor> {
+    let copia = p.clone();
+    let r = pegar_sin_deshacer(p, f, destino, Some(si_ya));
+    if r.is_err() {
+        *p = copia;
+    }
+    r
+}
+
+fn pegar_sin_deshacer(
+    p: &mut Presupuesto,
+    f: &Fragmento,
+    destino: &str,
+    en_partida: Option<SiYaEsta>,
+) -> Result<InformePegado, ErrorMotor> {
+    let nat = p.concepto(destino)?.naturaleza;
+    match en_partida {
+        None if nat != Naturaleza::Capitulo => {
+            return Err(ErrorMotor::ValorInvalido(format!("«{destino}» no es un capítulo")));
+        }
+        Some(_) if nat != Naturaleza::Partida => {
+            return Err(ErrorMotor::ValorInvalido(format!("«{destino}» no es una partida")));
+        }
+        _ => {}
     }
     let mut inf = InformePegado::default();
     // 1. Qué entra, qué se reutiliza y qué se renombra
@@ -200,9 +242,22 @@ fn pegar_sin_deshacer(p: &mut Presupuesto, f: &Fragmento, destino: &str) -> Resu
             }
         }
     }
-    // 3. Líneas en el capítulo de destino
+    // 3. Líneas en el capítulo (o la partida) de destino
     for l in &f.lineas {
         let hijo = n(&l.linea.hijo);
+        if hijo == destino {
+            continue;
+        }
+        if let Some(si_ya) = en_partida
+            && let Some(i) = p.concepto(destino)?.descomposicion.iter().position(|x| x.hijo == hijo)
+        {
+            if si_ya == SiYaEsta::Sumar {
+                let x = &mut p.concepto_mut(destino)?.descomposicion[i];
+                x.rendimiento += l.linea.rendimiento;
+                inf.pegados.push(hijo);
+            }
+            continue;
+        }
         p.anadir_linea(destino, &hijo, l.linea.rendimiento)?;
         if let Some(x) = p.concepto_mut(destino)?.descomposicion.last_mut() {
             x.factor = l.linea.factor;
