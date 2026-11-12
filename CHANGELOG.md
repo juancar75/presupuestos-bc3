@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.50] - 2026-11-12
+
 ### Corregido
 - **BC3 con descuentos a la vista: cuadra al céntimo con la obra en Presto**.
   Presto calcula cada línea de descuento con la base redondeada y, cuando
