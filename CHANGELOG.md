@@ -6,6 +6,20 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Valorar a mano más rápido**.
+  - «+ Añadir línea» (también **Ctrl+L** o **Insert**) abre un buscador
+    único: lo que ya está en la obra, los artículos de las tarifas de la
+    biblioteca de precios (con PVP − descuento = neto y la tarifa de la que
+    sale) y las tarifas de subcontrata. Busca por palabras sueltas y sin
+    tildes («vfc 250»); **↑/↓** para elegir, **Intro** o doble clic para
+    añadir. Un artículo de tarifa entra como material con su PVP, grupo,
+    referencia y descuento (el de la obra si ya lo tiene).
+  - **Ctrl+D** o «Copiar descompuesto anterior»: añade a la partida las
+    líneas de la partida anterior con descompuesto.
+  - **Ctrl+Mayús+↑**: partida anterior sin precio (Ctrl+Mayús+↓, la
+    siguiente).
+
+### Añadido
 - **Carpeta de tarifas** (Biblioteca → «Carpeta de tarifas»): la carpeta
   compartida con los documentos de tarifa de cada fabricante, única fuente
   de los PVP.

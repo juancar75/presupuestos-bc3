@@ -25,12 +25,17 @@ pub(super) struct Alta {
     pub naturaleza: Naturaleza,
     pub precio: String,
     pub buscar: String,
-    pub elegido: Option<String>,
     /// Línea: tomar el recurso de una tarifa de subcontrata.
     pub de_tarifa: bool,
     pub tarifa_elegida: Option<ppto_tarifas::Encontrada>,
     /// Insertar encima de esta línea (F5) en vez de al final.
     pub antes: Option<String>,
+    /// Biblioteca de precios para el buscador (se lee al abrir la ventana).
+    pub bib: Option<std::sync::Arc<ppto_biblioteca::Biblioteca>>,
+    /// Lo elegido en el buscador.
+    pub hallazgo: Option<super::valorar::Hallazgo>,
+    /// Poner el cursor en el buscador al abrir.
+    pub foco: bool,
 }
 
 const NATURALEZAS: [Naturaleza; 7] = [
@@ -65,11 +70,21 @@ impl Aplicacion {
             naturaleza: Naturaleza::ManoObra,
             precio: "0".into(),
             buscar: String::new(),
-            elegido: None,
             de_tarifa: false,
             tarifa_elegida: None,
             antes: None,
+            bib: None,
+            hallazgo: None,
+            foco: true,
         });
+        if let Some(a) = self.alta.as_mut()
+            && matches!(a.tipo, TipoAlta::Linea { .. })
+        {
+            a.bib = self
+                .ruta_biblioteca
+                .as_deref()
+                .map(|r| std::sync::Arc::new(ppto_biblioteca::Biblioteca::cargar(r)));
+        }
     }
 
     pub(super) fn ventana_alta(&mut self, ctx: &egui::Context, acciones: &mut Vec<Accion>) {
@@ -162,7 +177,8 @@ impl Aplicacion {
         } else {
             ui.horizontal(|ui| {
                 if ui
-                    .selectable_label(!a.nuevo && !a.de_tarifa, "Concepto existente")
+                    .selectable_label(!a.nuevo && !a.de_tarifa, "Buscar")
+                    .on_hover_text("En la obra, en las tarifas de la biblioteca de precios y en las de subcontrata")
                     .clicked()
                 {
                     (a.nuevo, a.de_tarifa) = (false, false);
@@ -183,11 +199,6 @@ impl Aplicacion {
         if a.de_tarifa && !en_capitulo {
             return self.form_linea_tarifa(ui, a, padre, acciones);
         }
-        let usados: Vec<&str> = self.p.conceptos[padre]
-            .descomposicion
-            .iter()
-            .map(|l| l.hijo.as_str())
-            .collect();
         if a.nuevo {
             ui.horizontal(|ui| {
                 ui.label("Tipo");
@@ -226,34 +237,96 @@ impl Aplicacion {
             }
             campo(ui, "Resumen", &mut a.resumen, 380.0);
         } else {
-            campo(ui, "Buscar", &mut a.buscar, 300.0);
-            let filtro = sin_tildes(&a.buscar);
-            let candidatos: Vec<_> = self
-                .p
-                .conceptos
-                .values()
-                .filter(|c| c.naturaleza != Naturaleza::Capitulo && c.codigo != padre)
-                .filter(|c| !en_capitulo || c.naturaleza == Naturaleza::Partida)
-                .filter(|c| !usados.contains(&c.codigo.as_str()))
-                .filter(|c| filtro.is_empty() || sin_tildes(&format!("{} {}", c.codigo, c.resumen)).contains(&filtro))
-                .take(200)
-                .collect();
-            egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-                for c in candidatos {
-                    let precio = self.calc.precios.get(&c.codigo).copied().unwrap_or(c.precio);
-                    let txt = format!(
-                        "{}  ·  {}  ·  {}  ·  {} €",
-                        c.codigo,
-                        c.unidad,
-                        super::corto(&c.resumen, 50),
-                        eur(precio)
-                    );
-                    let elegido = a.elegido.as_deref() == Some(c.codigo.as_str());
-                    if ui.add(egui::Button::selectable(elegido, txt)).clicked() {
-                        a.elegido = Some(c.codigo.clone());
+            // Buscador único: obra, tarifas de la biblioteca y de subcontrata.
+            // ↑/↓ para elegir, Intro para añadir.
+            let mut intro = false;
+            ui.horizontal(|ui| {
+                ui.add_sized([130.0, 20.0], egui::Label::new("Buscar"));
+                let r = ui.add(
+                    egui::TextEdit::singleline(&mut a.buscar)
+                        .desired_width(340.0)
+                        .hint_text("p. ej. «vfc 250», «cobre 3/8», «oficial»"),
+                );
+                if std::mem::take(&mut a.foco) {
+                    r.request_focus();
+                }
+                if r.changed() {
+                    a.hallazgo = None;
+                }
+                intro = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            });
+            let res = self.buscar_todo(&a.buscar, padre, a.bib.as_deref(), en_capitulo);
+            let (abajo, arriba) =
+                ui.input(|i| (i.key_pressed(egui::Key::ArrowDown), i.key_pressed(egui::Key::ArrowUp)));
+            let pos = a
+                .hallazgo
+                .as_ref()
+                .and_then(|h| res.iter().position(|(x, _, _)| x == h));
+            if (abajo || arriba) && !res.is_empty() {
+                let i = match (pos, abajo) {
+                    (None, _) => 0,
+                    (Some(i), true) => (i + 1).min(res.len() - 1),
+                    (Some(i), false) => i.saturating_sub(1),
+                };
+                a.hallazgo = Some(res[i].0.clone());
+            }
+            if a.hallazgo.is_none() && intro && !res.is_empty() {
+                a.hallazgo = Some(res[0].0.clone());
+            }
+            if a.bib.is_none() && !a.buscar.trim().is_empty() {
+                ui.label(
+                    RichText::new(
+                        "Sin biblioteca de precios: solo se busca en la obra y en las tarifas de subcontrata.",
+                    )
+                    .weak()
+                    .small(),
+                );
+            }
+            egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                for (h, txt, precio) in res.iter().take(200) {
+                    let elegido = a.hallazgo.as_ref() == Some(h);
+                    let color = match h {
+                        super::valorar::Hallazgo::Obra(_) => None,
+                        super::valorar::Hallazgo::Tarifa(_) => Some(egui::Color32::from_rgb(70, 140, 210)),
+                        super::valorar::Hallazgo::Subcontrata(_) => Some(egui::Color32::from_rgb(150, 110, 200)),
+                    };
+                    let r = ui.horizontal(|ui| {
+                        let r = ui.add(egui::Button::selectable(elegido, txt.as_str()));
+                        let mut p = RichText::new(precio.as_str()).small();
+                        if let Some(c) = color {
+                            p = p.color(c);
+                        }
+                        ui.label(p);
+                        r
+                    });
+                    let r = r.inner.on_hover_text(match h {
+                        super::valorar::Hallazgo::Obra(_) => "Ya está en la obra: se añade tal cual",
+                        super::valorar::Hallazgo::Tarifa(_) => {
+                            "Tarifa de fabricante de la biblioteca: se crea el material con su PVP y el descuento \
+                             (el de la obra si ya lo tiene). Doble clic: añadir"
+                        }
+                        super::valorar::Hallazgo::Subcontrata(_) => "Tarifa de subcontrata. Doble clic: añadir",
+                    });
+                    if elegido && (abajo || arriba) {
+                        r.scroll_to_me(None);
+                    }
+                    if r.clicked() {
+                        a.hallazgo = Some(h.clone());
+                    }
+                    if r.double_clicked() {
+                        a.hallazgo = Some(h.clone());
+                        intro = true;
                     }
                 }
             });
+            if intro
+                && let Some(h) = &a.hallazgo
+                && let Some(q) = leer(&a.cantidad)
+                && let Some(acc) = self.accion_hallazgo(h, padre, q)
+            {
+                acciones.push(acc);
+                return true;
+            }
         }
         ui.separator();
         let etiqueta = if a.naturaleza == Naturaleza::Porcentaje && a.nuevo {
@@ -268,7 +341,7 @@ impl Aplicacion {
         } else {
             Some(Decimal::ZERO)
         };
-        let listo = cantidad.is_some() && precio.is_some() && (a.nuevo || a.elegido.is_some());
+        let listo = cantidad.is_some() && precio.is_some() && (a.nuevo || a.hallazgo.is_some());
         if cantidad.is_none() || precio.is_none() {
             ui.label(
                 RichText::new("Número no válido (use coma decimal: 1,25).").color(egui::Color32::from_rgb(220, 80, 60)),
@@ -286,8 +359,12 @@ impl Aplicacion {
                     en: padre.to_owned(),
                     cantidad,
                 });
-            } else if let Some(h) = &a.elegido {
-                acciones.push(Accion::AnadirLinea(padre.to_owned(), h.clone(), cantidad));
+            } else if let Some(acc) = a
+                .hallazgo
+                .as_ref()
+                .and_then(|h| self.accion_hallazgo(h, padre, cantidad))
+            {
+                acciones.push(acc);
             }
             return true;
         }
@@ -384,18 +461,4 @@ fn campo(ui: &mut egui::Ui, etiqueta: &str, valor: &mut String, ancho: f32) {
         ui.add_sized([130.0, 20.0], egui::Label::new(etiqueta));
         ui.add(egui::TextEdit::singleline(valor).desired_width(ancho));
     });
-}
-
-fn sin_tildes(s: &str) -> String {
-    s.to_lowercase()
-        .chars()
-        .map(|c| match c {
-            'á' | 'à' | 'ä' => 'a',
-            'é' | 'è' | 'ë' => 'e',
-            'í' | 'ì' | 'ï' => 'i',
-            'ó' | 'ò' | 'ö' => 'o',
-            'ú' | 'ù' | 'ü' => 'u',
-            c => c,
-        })
-        .collect()
 }

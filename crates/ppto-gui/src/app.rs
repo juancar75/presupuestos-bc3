@@ -33,6 +33,7 @@ mod recuperacion;
 mod sincronizar;
 mod tarifas;
 mod tema;
+mod valorar;
 mod vistas;
 
 use crate::celdas::Edicion;
@@ -179,8 +180,32 @@ enum Accion {
     /// Ir a la partida anterior (-1) o siguiente (+1) del presupuesto.
     Navegar(i32),
     SiguienteSinPrecio,
+    AnteriorSinPrecio,
+    /// Añadir a la partida elegida las líneas de la partida anterior que
+    /// tenga descompuesto (Ctrl+D).
+    CopiarDescompuestoAnterior,
+    /// Material de una tarifa de la biblioteca: se crea con su PVP, grupo y
+    /// referencia (y el descuento, si la obra no lo tiene) y se añade como
+    /// línea de `en`.
+    NuevoRecursoTarifa(Box<RecursoTarifa>),
     /// Contradictorios y certificaciones.
     Obra(obra::OpObra),
+}
+
+/// Material de tarifa para [`Accion::NuevoRecursoTarifa`].
+#[derive(Debug, Clone, PartialEq)]
+struct RecursoTarifa {
+    codigo: String,
+    unidad: String,
+    resumen: String,
+    fabricante: String,
+    grupo: Option<String>,
+    referencia: String,
+    pvp: Decimal,
+    /// Descuento de la biblioteca (clave «FAB/GRUPO» y escalones).
+    descuento: Option<(String, Vec<Decimal>)>,
+    en: String,
+    cantidad: Decimal,
 }
 
 /// Partida sin valorar (árbol).
@@ -410,6 +435,8 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::NuevoCapitulo { codigo, .. } => (format!("nuevo capítulo {codigo}"), None),
         Accion::NuevaPartida { codigo, .. } => (format!("nueva partida {codigo}"), None),
         Accion::NuevoRecurso { codigo, .. } => (format!("nuevo {codigo}"), None),
+        Accion::NuevoRecursoTarifa(r) => (format!("nuevo {} de tarifa", r.codigo), None),
+        Accion::CopiarDescompuestoAnterior => ("copiar el descompuesto anterior".into(), None),
         Accion::AnadirLinea(p, h, _) => (format!("añadir {h} a {p}"), None),
         Accion::QuitarLinea(p, h, _) => (format!("quitar {h} de {p}"), None),
         Accion::Mover(p, h, _) => (format!("mover {h} en {p}"), None),
@@ -639,8 +666,13 @@ impl Aplicacion {
         let actual = self.sel.as_ref().and_then(|s| orden.iter().position(|x| x == s));
         let n = orden.len();
         let destino = if sin_precio {
-            let inicio = actual.map_or(0, |i| i + 1);
-            (0..n).map(|k| (inicio + k) % n).find(|&i| {
+            // Hacia delante o hacia atrás (d < 0), dando la vuelta
+            let paso = |k: usize| match (actual, d < 0) {
+                (None, _) => k % n,
+                (Some(i), false) => (i + 1 + k) % n,
+                (Some(i), true) => (i + n - 1 - (k % n)) % n,
+            };
+            (0..n).map(paso).find(|&i| {
                 let h = &orden[i].1;
                 !self.p.conceptos.get(h).is_some_and(|c| c.excluida)
                     && self.calc.precios.get(h).is_none_or(|p| p.is_zero())
@@ -795,12 +827,20 @@ impl Aplicacion {
             self.enfocar_buscar = true;
         }
         // Ctrl+↓ / Ctrl+↑: partida siguiente / anterior; Ctrl+Mayús+↓: siguiente sin precio
-        let (sin_precio, bajar, subir) = ui.ctx().input_mut(|i| {
-            let sin_precio = i.consume_key(egui::Modifiers::CTRL | egui::Modifiers::SHIFT, egui::Key::ArrowDown);
+        // Ctrl+Mayús+↑: anterior sin precio; Ctrl+D: copiar el descompuesto de
+        // la partida anterior; Ctrl+L o Insert: añadir línea
+        let (sin_precio, bajar, subir, sin_precio_atras, copiar_anterior, linea) = ui.ctx().input_mut(|i| {
+            let cs = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+            let sin_precio = i.consume_key(cs, egui::Key::ArrowDown);
+            let atras = i.consume_key(cs, egui::Key::ArrowUp);
             (
                 sin_precio,
                 i.consume_key(egui::Modifiers::CTRL, egui::Key::ArrowDown),
                 i.consume_key(egui::Modifiers::CTRL, egui::Key::ArrowUp),
+                atras,
+                i.consume_key(egui::Modifiers::CTRL, egui::Key::D),
+                i.consume_key(egui::Modifiers::CTRL, egui::Key::L)
+                    || (self.alta.is_none() && i.consume_key(egui::Modifiers::NONE, egui::Key::Insert)),
             )
         });
         if sin_precio {
@@ -808,8 +848,23 @@ impl Aplicacion {
         } else if bajar {
             acciones.push(Accion::Navegar(1));
         }
-        if subir {
+        if sin_precio_atras {
+            acciones.push(Accion::AnteriorSinPrecio);
+        } else if subir {
             acciones.push(Accion::Navegar(-1));
+        }
+        if copiar_anterior {
+            acciones.push(Accion::CopiarDescompuestoAnterior);
+        }
+        if linea
+            && let Some((_, h)) = &self.sel
+            && self
+                .p
+                .conceptos
+                .get(h)
+                .is_some_and(|c| c.naturaleza == Naturaleza::Partida)
+        {
+            acciones.push(Accion::Alta(TipoAlta::Linea { padre: h.clone() }));
         }
         egui::Panel::top("barra").show(ui, |ui| {
             ui.add_space(4.0);

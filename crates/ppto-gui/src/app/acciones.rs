@@ -14,6 +14,7 @@ impl Aplicacion {
                         Accion::Seleccionar(..)
                             | Accion::Navegar(_)
                             | Accion::SiguienteSinPrecio
+                            | Accion::AnteriorSinPrecio
                             | Accion::CapituloActivo(_)
                     ) {
                         self.historial.grupo = None;
@@ -221,6 +222,12 @@ impl Aplicacion {
                     self.navegar(1, true);
                     continue;
                 }
+                Accion::AnteriorSinPrecio => {
+                    self.navegar(-1, true);
+                    continue;
+                }
+                Accion::CopiarDescompuestoAnterior => self.copiar_descompuesto_anterior(),
+                Accion::NuevoRecursoTarifa(r) => self.nuevo_recurso_tarifa(&r),
                 Accion::Alta(t) => {
                     self.abrir_alta(t);
                     continue;
