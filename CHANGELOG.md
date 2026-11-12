@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.53] - 2026-11-12
+
 ### Añadido
 - **Biblioteca de precios compartida entre varias personas**.
   - Biblioteca → «Compartir en una carpeta…» (OneDrive, Teams, red): cada
