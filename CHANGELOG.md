@@ -5,6 +5,14 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Corregido
+- **Subcontratas al importar un BC3**: FIEBDC-3 no tiene tipo de subcontrata
+  y se exportan como material; al volver a leerlas (p. ej. una base de
+  precios en BC3) quedaban como material y la partida con material y
+  subcontrata de mano de obra salía en naranja («falta mano de obra»). Ahora
+  un recurso de tipo 3 con código `SUB.…` o resumen «Subcontrata…» se lee
+  como subcontrata.
+
 ## [0.1.0-alpha.51] - 2026-11-12
 
 ### Corregido
