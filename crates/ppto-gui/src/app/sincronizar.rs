@@ -59,6 +59,79 @@ impl Aplicacion {
         }
     }
 
+    /// Recursos que acaban de entrar en la obra (de una base, un kit, otra
+    /// obra…): sus PVP con los de la biblioteca y, si la obra no tiene
+    /// descuento para su fabricante, el de la biblioteca. Los que ya
+    /// estaban en la obra no se tocan. Devuelve el aviso, si cambia algo.
+    pub(super) fn al_dia_nuevos(&mut self, antes: &std::collections::BTreeSet<String>) -> Option<String> {
+        use ppto_core::descuentos::{clave, normalizar};
+        let b = Biblioteca::cargar(self.ruta_biblioteca.as_ref()?);
+        let nuevos: Vec<(String, ppto_core::PrecioTarifa, Option<String>)> = self
+            .p
+            .conceptos
+            .values()
+            .filter(|c| !antes.contains(&c.codigo))
+            .filter_map(|c| Some((c.codigo.clone(), c.tarifa.clone()?, Presupuesto::referencia_tarifa(c))))
+            .collect();
+        if nuevos.is_empty() {
+            return None;
+        }
+        // Descuentos que faltan en la obra
+        let mut dtos = Vec::new();
+        for (_, t, _) in &nuevos {
+            let fab = normalizar(&t.fabricante);
+            let Some(f) = b.fabricante(&fab) else { continue };
+            let tiene = |p: &Presupuesto, k: &str| p.descuentos.contains_key(k);
+            let g = t
+                .grupo
+                .as_deref()
+                .map(normalizar)
+                .filter(|g| f.descuentos.contains_key(g));
+            let (k, gb) = match &g {
+                Some(g) => (clave(&fab, Some(g)), g.clone()),
+                None => (fab.clone(), String::new()),
+            };
+            if tiene(&self.p, &k) || (g.is_some() && tiene(&self.p, &fab) && !f.descuentos.contains_key(&gb)) {
+                continue;
+            }
+            let Some(d) = f.descuentos.get(&gb) else { continue };
+            let cadena = f.cadenas.get(&gb).cloned().unwrap_or_else(|| vec![*d]);
+            if self.p.fijar_descuento_encadenado(&k, &cadena).is_ok() {
+                dtos.push(format!(
+                    "{k} {} %",
+                    ppto_core::descuentos::texto_cadena(&cadena).replace('.', ",")
+                ));
+            }
+        }
+        // PVP de la biblioteca
+        let mut n = 0;
+        for (codigo, t, r) in &nuevos {
+            let Some(r) = r else { continue };
+            let pvp = b
+                .fabricante(&t.fabricante)
+                .and_then(|f| f.tarifas.iter().rev().find(|x| x.lineas.contains_key(r)))
+                .map(|x| x.lineas[r].pvp);
+            if let Some(pvp) = pvp.filter(|v| *v != t.pvp)
+                && self
+                    .p
+                    .fijar_tarifa_grupo(codigo, &t.fabricante, t.grupo.as_deref(), pvp)
+                    .is_ok()
+            {
+                n += 1;
+            }
+        }
+        (n > 0 || !dtos.is_empty()).then(|| {
+            let mut m = String::from("Al día con la biblioteca:");
+            if n > 0 {
+                m += &format!(" {n} PVP");
+            }
+            if !dtos.is_empty() {
+                m += &format!("{} descuento {}", if n > 0 { ";" } else { "" }, dtos.join(", "));
+            }
+            m + "."
+        })
+    }
+
     /// Acciones para poner en la obra los precios de la biblioteca.
     pub(super) fn bajar_de_biblioteca(d: &[Diferencia]) -> Vec<Accion> {
         let mut pvps: BTreeMap<String, BTreeMap<String, Decimal>> = BTreeMap::new();
