@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.59] - 2026-11-13
+
 ### Añadido
 - 🖹 en los materiales con tarifa (descompuesto): abre la tarifa del fabricante de la carpeta de tarifas en la página donde aparece su referencia (con Edge o Chrome; si no, con el visor del sistema). Busca de la vigente a la más antigua; «E22» no casa con «E220» y da igual «ICTF-41» que «ICTF41».
 - El texto de cada PDF se lee la primera vez y se guarda al lado (`<tarifa>.paginas.json`); se vuelve a leer solo si el PDF cambia.
