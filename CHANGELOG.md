@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.60] - 2026-11-13
+
 ### Cambiado
 - Lo que entra en la obra desde una base de precios, otra obra (Ctrl+V), un kit o «Emparejar» se pone al día con la biblioteca: los recursos nuevos con tarifa y referencia toman el PVP de la biblioteca y, si la obra no tiene descuento para su fabricante, el de la biblioteca. Los recursos que ya estaban en la obra no cambian. Se deshace junto con la copia.
 
