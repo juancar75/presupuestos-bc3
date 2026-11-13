@@ -22,6 +22,16 @@ impl Aplicacion {
                     false
                 }
             };
+            // Lo que trae recursos de fuera: se ponen al día con la biblioteca
+            let antes: Option<std::collections::BTreeSet<String>> = matches!(
+                a,
+                Accion::CopiarDeBase { .. }
+                    | Accion::AsignarDeBase { .. }
+                    | Accion::PegarFragmento(..)
+                    | Accion::PegarLineas(..)
+                    | Accion::InsertarKit(..)
+            )
+            .then(|| self.p.conceptos.keys().cloned().collect());
             let r = match a {
                 Accion::Seleccionar(padre, hijo) => {
                     self.capitulo_activo = Some(padre.clone());
@@ -390,6 +400,17 @@ impl Aplicacion {
                     self.avisos = av;
                 }),
             };
+            let r = r.map(|()| {
+                if let Some(antes) = &antes
+                    && let Some(m) = self.al_dia_nuevos(antes)
+                {
+                    let previo = self.mensaje.as_ref().filter(|(_, e)| !e).map(|(t, _)| t.clone());
+                    self.info(match previo {
+                        Some(p) => format!("{p} {m}"),
+                        None => m,
+                    });
+                }
+            });
             match r {
                 Ok(()) => self.marcar_cambio(),
                 Err(e) => {

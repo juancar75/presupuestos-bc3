@@ -2806,3 +2806,72 @@ fn kits_guardar_buscar_e_insertar() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Lo que entra en la obra desde una base trae el PVP de la biblioteca y,
+/// si la obra no lo tiene, su descuento; lo que ya estaba no cambia.
+#[test]
+fn lo_que_viene_de_una_base_se_pone_al_dia_con_la_biblioteca() {
+    use ppto_core::concepto::Naturaleza;
+    let dir = std::env::temp_dir().join(format!("gui-aldia-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bib = dir.join("biblioteca.ana.json");
+    ppto_biblioteca::Biblioteca::modificar(&bib, |b| {
+        b.cargar_tarifa(
+            "FABS",
+            "2026",
+            2026,
+            BTreeMap::from([(
+                "REF1".into(),
+                ppto_biblioteca::LineaPvp {
+                    descripcion: "Artículo sintético".into(),
+                    unidad: "ud".into(),
+                    pvp: dec!(120),
+                    grupo: None,
+                },
+            )]),
+        );
+        b.fijar_descuento("FABS", Some(dec!(25)));
+    })
+    .unwrap();
+    // Base sintética con el artículo a un PVP viejo
+    let mut base = Presupuesto::new("base", "B", "Base sintética");
+    base.nuevo_recurso("M.SINT", "ud", "Artículo sintético", Naturaleza::Material, dec!(0))
+        .unwrap();
+    base.fijar_tarifa_grupo("M.SINT", "FABS", None, dec!(100)).unwrap();
+    base.fijar_referencia_tarifa("M.SINT", Some("REF1")).unwrap();
+    let mut app = Aplicacion::sin_ventana();
+    app.ruta_biblioteca = Some(bib.clone());
+    app.aplicar(vec![Accion::CopiarDeBase {
+        origen: std::sync::Arc::new(base.clone()),
+        nombre: "base_sintetica.bc3".into(),
+        codigos: vec!["M.SINT".into()],
+        partida: Some("SR.M2".into()),
+        con_partidas: false,
+    }]);
+    let t = app.p.conceptos["M.SINT"].tarifa.clone().unwrap();
+    assert_eq!(t.pvp, dec!(120), "PVP de la biblioteca");
+    assert_eq!(
+        app.p.descuentos.get("FABS"),
+        Some(&dec!(25)),
+        "descuento de la biblioteca"
+    );
+    assert_eq!(app.p.precio("M.SINT").unwrap(), dec!(90));
+    assert!(app.mensaje.as_ref().unwrap().0.contains("Al día con la biblioteca"));
+    // Un solo deshacer quita la copia y la puesta al día
+    app.deshacer();
+    assert!(!app.p.conceptos.contains_key("M.SINT"));
+    assert!(!app.p.descuentos.contains_key("FABS"));
+    // Si la obra ya tiene su descuento, se respeta
+    app.p.fijar_descuento("FABS", dec!(40)).unwrap();
+    app.aplicar(vec![Accion::CopiarDeBase {
+        origen: std::sync::Arc::new(base),
+        nombre: "base_sintetica.bc3".into(),
+        codigos: vec!["M.SINT".into()],
+        partida: Some("SR.M2".into()),
+        con_partidas: false,
+    }]);
+    assert_eq!(app.p.descuentos.get("FABS"), Some(&dec!(40)));
+    assert_eq!(app.p.precio("M.SINT").unwrap(), dec!(72));
+    let _ = std::fs::remove_dir_all(&dir);
+}
