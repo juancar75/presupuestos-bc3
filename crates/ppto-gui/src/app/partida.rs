@@ -177,6 +177,8 @@ impl Aplicacion {
                 let elegidas = self.lineas_elegidas(&hijo);
                 let mut clic: Option<(String, egui::Modifiers)> = None;
                 let mut menu: Option<u8> = None;
+                let con_tarifa = self.fabricantes_con_tarifa();
+                let mut abrir: Option<(String, Option<String>)> = None;
                 egui::Grid::new("descompuesto")
                     .striped(true)
                     .num_columns(8)
@@ -277,16 +279,34 @@ impl Aplicacion {
                                     let d = self.p.texto_descuento(&k).replace('.', ",");
                                     ui.vertical(|ui| {
                                         campo_resumen(ui, acciones);
-                                        ui.label(
-                                            RichText::new(format!(
-                                                "PVP {} € − {} % {}",
-                                                num(t.pvp, dec.precio),
-                                                if d.is_empty() { "0".into() } else { d },
-                                                k
-                                            ))
-                                            .small()
-                                            .weak(),
-                                        );
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                RichText::new(format!(
+                                                    "PVP {} € − {} % {}",
+                                                    num(t.pvp, dec.precio),
+                                                    if d.is_empty() { "0".into() } else { d },
+                                                    k
+                                                ))
+                                                .small()
+                                                .weak(),
+                                            );
+                                            let r = Presupuesto::referencia_tarifa(h);
+                                            if con_tarifa
+                                                .contains(&ppto_biblioteca::carpeta::nombre_carpeta(&t.fabricante))
+                                                && ui
+                                                    .small_button("🖹")
+                                                    .on_hover_text(match &r {
+                                                        Some(r) => format!(
+                                                            "Abrir la tarifa de {} en la página de {r}",
+                                                            t.fabricante
+                                                        ),
+                                                        None => format!("Abrir la tarifa vigente de {}", t.fabricante),
+                                                    })
+                                                    .clicked()
+                                            {
+                                                abrir = Some((t.fabricante.clone(), r));
+                                            }
+                                        });
                                     });
                                 }
                                 None => campo_resumen(ui, acciones),
@@ -392,6 +412,9 @@ impl Aplicacion {
                         );
                         ui.end_row();
                     });
+                if let Some((f, r)) = abrir {
+                    self.abrir_tarifa(f, r);
+                }
                 if let Some((x, m)) = clic {
                     self.clic_linea(&hijo, &x, m);
                 }

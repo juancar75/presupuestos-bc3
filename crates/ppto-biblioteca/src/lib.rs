@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 
 pub mod carpeta;
 mod compartir;
+pub mod indice;
 pub use compartir::{Diferencia, Sello, ahora, fichero_de, ficheros, usuario};
 
 pub const FICHERO: &str = "biblioteca.json";

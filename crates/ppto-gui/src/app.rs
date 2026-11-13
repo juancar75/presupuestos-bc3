@@ -32,6 +32,7 @@ mod ratio;
 mod recientes;
 mod recuperacion;
 mod sincronizar;
+mod tarifa_doc;
 mod tarifas;
 mod tema;
 mod valorar;
@@ -336,6 +337,10 @@ pub struct Aplicacion {
     copiar_a: Option<lineas::CopiarA>,
     pegado_pendiente: Option<lineas::PegadoPendiente>,
     guardar_kit: Option<lineas::GuardarKit>,
+    /// Fabricantes con tarifa en la carpeta (y cuándo se leyó).
+    carpeta_tarifas: Option<(std::time::Instant, std::collections::BTreeSet<String>)>,
+    /// Búsqueda de una referencia en las tarifas, en segundo plano.
+    abriendo_tarifa: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Texto para el portapapeles del sistema (se copia al final del fotograma).
     copiar_al_sistema: Option<String>,
     /// Capítulo donde pega Ctrl+V (el último elegido en el árbol).
@@ -566,6 +571,8 @@ impl Aplicacion {
             copiar_a: None,
             pegado_pendiente: None,
             guardar_kit: None,
+            carpeta_tarifas: None,
+            abriendo_tarifa: None,
             copiar_al_sistema: None,
             capitulo_activo: None,
             historial: Historial::default(),
@@ -977,6 +984,7 @@ impl Aplicacion {
         self.ventana_copiar_a(&ctx, &mut acciones);
         self.ventana_pegado_pendiente(&ctx, &mut acciones);
         self.ventana_guardar_kit(&ctx);
+        self.sondear_tarifa(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_emparejar(&ctx, &mut acciones);
         self.ventana_nuevo(&ctx);
