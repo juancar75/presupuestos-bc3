@@ -3548,7 +3548,9 @@ dependencies = [
 name = "ppto-biblioteca"
 version = "0.1.0-alpha.58"
 dependencies = [
+ "pdf-extract",
  "ppto-core",
+ "ppto-pdf",
  "ppto-propuestas",
  "rust_decimal",
  "rust_decimal_macros",
