@@ -1773,11 +1773,10 @@ fn gg_bi_iva_y_ciego_se_guardan_con_la_obra() {
 
 #[test]
 fn se_pintan_las_ventanas_sin_pruebas() {
-    // Legalización, tarifas de subcontratas, Subcontratar (ratio) y
-    // Recursos (dificultad y descuentos): que se abran y se pinten sin
-    // romperse con el ejemplo.
+    // Tarifas de subcontratas, Subcontratar (ratio) y Recursos (dificultad
+    // y descuentos): que se abran y se pinten sin romperse con el ejemplo.
+    // (La legalización es otra aplicación: ver `legalizacion_*`.)
     let mut app = Aplicacion::sin_ventana();
-    app.ventana_legalizacion = Some(legalizacion::VentanaLegalizacion::abrir(&app.p));
     app.abrir_tarifas();
     let ctx = Context::default();
     for _ in 0..3 {
@@ -1793,8 +1792,43 @@ fn se_pintan_las_ventanas_sin_pruebas() {
         });
         out.textures_delta.clear();
     }
-    assert!(app.ventana_legalizacion.is_some());
+    assert!(app.ventana_legalizacion.is_none());
     assert!(app.ventana_tarifas.is_some());
+}
+
+#[test]
+fn legalizacion_aplica_la_respuesta_y_se_deshace() {
+    use ppto_legalizacion::{Baremo, Disciplina, Documento, Expediente, Respuesta, calcular, codigo_partida};
+    let mut app = Aplicacion::sin_ventana();
+    let antes = app.p.clone();
+    let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
+    e.potencia_calor_kw = dec!(20);
+    let c = calcular(&Baremo::ejemplo(2026), &e);
+    // Lo que devolvería la aplicación `legalizacion`, pasado por el JSON.
+    let dir = std::env::temp_dir().join(format!("gui-leg-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let ruta = dir.join("respuesta.json");
+    Respuesta::nueva(Disciplina::Rite, c.clone()).guardar(&ruta).unwrap();
+    app.aplicar_legalizacion(Respuesta::cargar(&ruta).unwrap());
+    let codigo = codigo_partida(Disciplina::Rite);
+    assert!(app.p.conceptos.contains_key(&codigo));
+    assert!(app.mensaje.as_ref().is_some_and(|(_, error)| !error));
+    app.deshacer();
+    assert_eq!(app.p, antes);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn legalizacion_sin_ejecutable_avisa_y_no_abre_nada() {
+    // En las pruebas no hay `legalizacion` junto al ejecutable de test.
+    let mut app = Aplicacion::sin_ventana();
+    app.abrir_legalizacion();
+    assert!(app.ventana_legalizacion.is_none());
+    assert!(
+        app.mensaje
+            .as_ref()
+            .is_some_and(|(m, error)| *error && m.contains("legalizacion"))
+    );
 }
 
 #[test]

@@ -48,10 +48,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          cargo build --release -p ppto-cli -p ppto-gui -p ppto-mcp
+          cargo build --release -p ppto-cli -p ppto-gui -p ppto-mcp -p ppto-legalizacion-app
           $n = "presupuestos-bc3-prueba-windows"
           New-Item -ItemType Directory $n | Out-Null
-          Copy-Item target/release/ppto-gui.exe, target/release/ppto-mcp.exe, target/release/ppto.exe $n
+          Copy-Item target/release/ppto-gui.exe, target/release/legalizacion.exe, target/release/ppto-mcp.exe, target/release/ppto.exe $n
           Copy-Item scripts/instalador/* $n
           Copy-Item LICENSE, THIRD-PARTY-NOTICES.md $n
       - name: Guardar el paquete de prueba
