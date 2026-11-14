@@ -3661,6 +3661,20 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "ppto-legalizacion-app"
+version = "0.1.0-alpha.60"
+dependencies = [
+ "eframe",
+ "ppto-bc3",
+ "ppto-biblioteca",
+ "ppto-core",
+ "ppto-legalizacion",
+ "rfd",
+ "rust_decimal",
 ]
 
 [[package]]

@@ -5,6 +5,9 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Cambiado
+- **Legalización como aplicación independiente** (`legalizacion.exe`, ADR-0008). «Legalización…» abre el cálculo en otra ventana con la obra cargada; al crear la partida esa ventana se cierra y la partida entra en la obra (se puede deshacer). También se usa sola: abre un BC3, crea el capítulo `LEG` y guarda otro BC3. El instalador y la release incluyen el nuevo ejecutable.
+
 ## [0.1.0-alpha.60] - 2026-11-13
 
 ### Cambiado

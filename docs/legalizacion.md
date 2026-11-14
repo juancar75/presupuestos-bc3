@@ -1,6 +1,17 @@
 # Legalización
 
-La ventana **Legalización…** (legalización as-built: proyectos y memorias sobre la instalación ejecutada) añade al presupuesto de la instaladora una
+La legalización es una **aplicación aparte**, `legalizacion` (`legalizacion.exe`
+en Windows, instalada junto a `ppto-gui`), con su propia ventana
+([ADR-0008](adr/0008-legalizacion-aplicacion-independiente.md)):
+
+- **Desde el presupuesto**: menú «Legalización…». Se abre en otra ventana con
+  la obra cargada; al pulsar «Crear la partida» se cierra y la partida entra
+  en la obra (se puede deshacer). Si se cierra sin crearla, la obra no cambia.
+- **Sola**: abrir `legalizacion` (o `legalizacion obra.bc3`). «Abrir BC3…»,
+  calcular, «Crear la partida» y «Guardar BC3…» para llevarla a Presto o al
+  presupuestador.
+
+El formulario (legalización as-built: proyectos y memorias sobre la instalación ejecutada) añade al presupuesto de la instaladora una
 partida por disciplina (`LEG-RITE`, `LEG-PCI`) en el capítulo `LEG`, con
 **todos los costes en el descompuesto**. Volver a crearla la sustituye (y se
 puede deshacer).
