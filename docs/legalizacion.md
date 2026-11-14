@@ -43,8 +43,10 @@ revisar):
 | Potencia de calor y frío | kW del texto de unidades exteriores, bombas de calor, enfriadoras, calderas, roof-top y splits, por su medición (no las unidades interiores) |
 | Circuitos RSIF y modelos | unidades exteriores y enfriadoras, y partidas distintas |
 | Refrigerante | el más exigente nombrado (R-32/R-454B → A2L; R-410A, R-744 → L1; R-717 → L2; R-290 → L3) |
-| Instalación frigorífica | centrales, unidades condensadoras, cámaras y murales; kW eléctricos de compresores si vienen |
+| Instalación frigorífica | centrales, unidades condensadoras, cámaras y murales; kW eléctricos de compresores si vienen. Solo entonces se propone **registro frigorífico** aparte |
+| Primario frigorífico (RITE) | climatización con refrigerante (VRF, split…) sin instalación frigorífica propia: se marca el primario del expediente RITE (EICI «con primario») y **no** se propone registro IF, que se cobraría dos veces (Orden CM de 31/03/2025) |
 | Sistemas PCI, BIE y detección | extintores, BIE, detección, alarma, hidrantes, columna seca, rociadores, abastecimiento, extinción automática, control de humos y señalización |
+| Instalaciones PCI (EICI) | las **casillas** del apartado 8.2 de la solicitud PCI: cuentan todos los sistemas leídos **menos extintores y señalización**, que no tienen casilla |
 
 No se leen el uso del DB SI 4, la superficie, las viviendas, las revisiones
 de arquitectura, las visitas ni los km.

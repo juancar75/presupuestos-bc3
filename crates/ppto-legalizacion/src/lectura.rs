@@ -60,10 +60,12 @@ impl Lectura {
     }
 
     /// Registro frigorífico que corresponde a lo leído (memoria A2L o L1 en
-    /// nivel 1; proyecto en nivel 2), si hay instalación frigorífica o
-    /// refrigerante A2L.
+    /// nivel 1; proyecto en nivel 2), solo si hay instalación frigorífica
+    /// propia (cámaras, murales, centrales). El circuito de refrigerante de
+    /// la climatización (VRF, split) es el primario del expediente RITE, no
+    /// un registro aparte (Orden CM de 31/03/2025).
     pub fn registro_if(&self) -> Option<RegistroIf> {
-        if !self.frigorifica && self.refrigerante != Some(Refrigerante::A2l) {
+        if !self.frigorifica {
             return None;
         }
         let nivel2 = self.if_kw_sistema > Decimal::from(30)
@@ -77,6 +79,15 @@ impl Lectura {
         } else {
             RegistroIf::MemoriaL1
         })
+    }
+
+    /// Instalaciones PCI que cuentan para la EICI: las casillas del apartado
+    /// 8.2 de la solicitud. Extintores y señalización no tienen casilla.
+    pub fn casillas_pci(&self) -> u32 {
+        self.sistemas_pci
+            .iter()
+            .filter(|s| !SIN_CASILLA_PCI.contains(s))
+            .count() as u32
     }
 
     /// Copia en el expediente los datos leídos (los no leídos se dejan).
@@ -104,8 +115,9 @@ impl Lectura {
             e.if_kw_total = self.if_kw_total;
         }
         e.atmosfera_artificial |= self.atmosfera_artificial;
-        if !self.sistemas_pci.is_empty() {
-            e.instalaciones_pci = self.sistemas_pci.len() as u32;
+        let casillas = self.casillas_pci();
+        if casillas > 0 {
+            e.instalaciones_pci = casillas;
         }
         e.pci_bie |= self.bie > 0;
         e.pci_deteccion |= self.deteccion;
@@ -277,6 +289,10 @@ const FRIGORIFICA_EQUIPO: &[&str] = &[
     "equipo frigorifico",
     "compresor",
 ];
+
+/// Sistemas leídos que no tienen casilla en la solicitud PCI (apartado 8.2)
+/// y por tanto no cuentan como instalación para la EICI.
+const SIN_CASILLA_PCI: &[&str] = &["extintores", "señalización"];
 
 /// Sistemas del RIPCI (anexo I) y sus palabras clave.
 const SISTEMAS_PCI: &[(&str, &[&str])] = &[
@@ -836,6 +852,17 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
         }
     }
     l.modelos = modelos.len() as u32;
+    // Climatización con refrigerante (VRF, split…) sin instalación
+    // frigorífica propia: su circuito es el primario del expediente RITE.
+    if l.circuitos > 0 && l.refrigerante.is_some() && !l.frigorifica && !l.primario_frio {
+        l.primario_frio = true;
+        pista(
+            &mut l,
+            "Circuito primario frigorífico (equipos con refrigerante): va en el expediente RITE".into(),
+            String::new(),
+            false,
+        );
+    }
     l.deteccion = sistemas.contains("detección");
     l.sistemas_pci = SISTEMAS_PCI
         .iter()
@@ -951,12 +978,61 @@ mod tests {
         assert!(l.deteccion);
     }
 
+    /// Oficina con VRF R-32 y sin frío comercial (caso de la Orden CM de
+    /// 31/03/2025: el primario va dentro del expediente RITE).
+    fn oficina_vrf() -> Presupuesto {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Oficina de prueba");
+        p.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN").unwrap();
+        partida(
+            &mut p,
+            "C01",
+            "E01",
+            "Ud. Unidad exterior VRF bomba de calor R-32, potencia frigorífica 20 kW, calorífica 22,4 kW",
+            dec!(1),
+        );
+        partida(&mut p, "C01", "E02", "Ud. Unidad interior conductos 5,6 kW", dec!(4));
+        p
+    }
+
+    #[test]
+    fn vrf_sin_frio_comercial_es_primario_rite_sin_registro_if() {
+        let l = leer_presupuesto(&oficina_vrf());
+        assert_eq!(l.refrigerante, Some(Refrigerante::A2l));
+        assert!(!l.frigorifica);
+        assert!(l.primario_frio);
+        assert_eq!(l.registro_if(), None);
+        let mut e = Expediente::nuevo(Disciplina::Rite, crate::Documento::Memoria, dec!(50000));
+        l.rellenar(&mut e);
+        assert!(e.primario_frio);
+        assert_eq!(e.registro_if, None);
+    }
+
+    #[test]
+    fn solo_extintores_y_senalizacion_no_cambian_las_instalaciones() {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Local");
+        p.nuevo_capitulo("OBRA", "C03", "PROTECCIÓN CONTRA INCENDIOS").unwrap();
+        partida(&mut p, "C03", "P01", "Ud. Extintor de polvo ABC 6 kg", dec!(3));
+        partida(
+            &mut p,
+            "C03",
+            "P02",
+            "Ud. Señal fotoluminiscente de evacuación",
+            dec!(6),
+        );
+        let l = leer_presupuesto(&p);
+        assert_eq!(l.casillas_pci(), 0);
+        let mut e = Expediente::nuevo(Disciplina::Pci, crate::Documento::Memoria, dec!(5000));
+        l.rellenar(&mut e);
+        assert_eq!(e.instalaciones_pci, 1);
+    }
+
     #[test]
     fn rellena_y_avisa() {
         let l = leer_presupuesto(&supermercado());
         let mut e = Expediente::nuevo(Disciplina::Pci, crate::Documento::Memoria, dec!(50000));
         l.rellenar(&mut e);
-        assert_eq!(e.instalaciones_pci, 5);
+        // Extintores y señalización no tienen casilla en la solicitud: 3.
+        assert_eq!(e.instalaciones_pci, 3);
         assert!(e.pci_bie && e.pci_deteccion);
         assert!(e.avisos_documentacion()[0].contains("exige proyecto"));
     }
