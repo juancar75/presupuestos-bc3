@@ -5,6 +5,11 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Corregido
+- **Legalización: el primario de la climatización ya no se cobra dos veces.** Un VRF o split con refrigerante sin frío comercial se lee como circuito primario del expediente RITE (EICI «con primario») y ya no propone además registro frigorífico con su EICI y tasa (Orden CM de 31/03/2025). Si se marcan las dos cosas a mano, aviso.
+- **Legalización PCI: instalaciones según las casillas de la solicitud.** Extintores y señalización no tienen casilla en el apartado 8.2 y ya no cuentan para la EICI (p. ej. extintores + BIE + detección + pulsadores + señalización = 3, no 5).
+- Etiqueta del registro frigorífico «memoria nivel 2 (L1)» → «memoria nivel 1 (L1)».
+
 ## [0.1.0-alpha.60] - 2026-11-13
 
 ### Cambiado

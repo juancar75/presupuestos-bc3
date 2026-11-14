@@ -268,7 +268,7 @@ pub struct Baremo {
     pub horas_calc_deteccion: Decimal,
     pub horas_justif_rite: Horas,
     /// Memorias PCI: horas propias (sin datos, las de memoria) y horas por
-    /// cada instalación (extintores, BIE, detección, alarma…).
+    /// cada instalación (BIE, detección, alarma… las casillas de la solicitud).
     pub horas_memoria_pci: Horas,
     pub horas_pci_instalacion: Decimal,
     /// RSIF: horas fijas, que cubren hasta `rsif_circuitos_base` circuitos;
@@ -800,7 +800,9 @@ pub struct Expediente {
     pub sala_maquinas: bool,
     /// RITE: circuito primario frigorífico.
     pub primario_frio: bool,
-    /// PCI: nº de instalaciones (extintores, BIE, detección…).
+    /// PCI: nº de instalaciones = casillas marcadas en el apartado 8.2 de la
+    /// solicitud (BIE, detección, pulsadores…; extintores y señalización no
+    /// tienen casilla).
     pub instalaciones_pci: u32,
     /// PCI: superficie (m²) para la EICI de proyecto.
     pub superficie: Decimal,
@@ -952,6 +954,11 @@ impl Expediente {
                 ),
                 _ => {}
             }
+        }
+        if self.disciplina == Disciplina::Rite && self.primario_frio && self.registro_if.is_some() {
+            a.push(
+                "Frigorífica: el primario de la climatización se tramita en el expediente RITE (tarifa EICI «con primario»); el registro IF aparte es solo para una instalación frigorífica propia (cámaras, murales, centrales). Compruebe que no se cobra dos veces.".into(),
+            );
         }
         if let Some(reg) = self.registro_if {
             let mut nivel2 = Vec::new();
@@ -1419,7 +1426,7 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
         {
             let (txt, eici) = match nivel {
                 RegistroIf::MemoriaA2l => ("memoria nivel 1 (A2L)", b.eici_if_memoria_a2l),
-                RegistroIf::MemoriaL1 => ("memoria nivel 2 (L1)", b.eici_if_memoria_l1),
+                RegistroIf::MemoriaL1 => ("memoria nivel 1 (L1)", b.eici_if_memoria_l1),
                 RegistroIf::Proyecto => ("proyecto nivel 2 sin sala", b.eici_if_proyecto),
                 RegistroIf::ProyectoConSala => ("proyecto nivel 2 con sala", b.eici_if_proyecto_sala),
             };
@@ -2288,6 +2295,15 @@ mod tests {
             redondear(horas(&calcular(&bp, &e), "Justificación RSIF"), 2),
             dec!(11.25)
         );
+    }
+
+    #[test]
+    fn avisa_si_primario_rite_y_registro_if_a_la_vez() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
+        e.primario_frio = true;
+        assert!(!e.avisos_documentacion().iter().any(|a| a.contains("cobra dos veces")));
+        e.registro_if = Some(RegistroIf::MemoriaA2l);
+        assert!(e.avisos_documentacion().iter().any(|a| a.contains("cobra dos veces")));
     }
 
     #[test]
