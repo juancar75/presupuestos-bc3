@@ -43,7 +43,9 @@ fn ruta_datos_obra() -> Option<PathBuf> {
     carpeta_config().map(|c| c.join("datos_obra.json"))
 }
 
-type DatosObras = std::collections::BTreeMap<String, [String; 4]>;
+/// Por obra: título, dirección, cliente, referencia y «a la atención de»
+/// (los ficheros antiguos tienen 4 campos).
+type DatosObras = std::collections::BTreeMap<String, Vec<String>>;
 
 fn leer_datos_obras() -> DatosObras {
     ruta_datos_obra()
@@ -57,11 +59,12 @@ fn guardar_datos_obra(clave: &str, o: &OpcionesPdf) -> std::io::Result<()> {
         return Ok(());
     };
     let mut todas = leer_datos_obras();
-    let d = [
+    let d = vec![
         o.titulo.clone(),
         o.direccion.clone(),
         o.cliente.clone(),
         o.referencia.clone(),
+        o.atencion.clone(),
     ];
     if d.iter().all(String::is_empty) {
         todas.remove(clave);
@@ -122,11 +125,13 @@ impl Aplicacion {
         let datos = guardados
             .remove(&self.clave_obra())
             .or_else(|| guardados.remove(&format!("nombre:{}", self.p.nombre)));
-        if let Some([t, d, c, r]) = datos {
-            obra.titulo = t;
-            obra.direccion = d;
-            obra.cliente = c;
-            obra.referencia = r;
+        if let Some(d) = datos {
+            let campo = |i: usize| d.get(i).cloned().unwrap_or_default();
+            obra.titulo = campo(0);
+            obra.direccion = campo(1);
+            obra.cliente = campo(2);
+            obra.referencia = campo(3);
+            obra.atencion = campo(4);
         }
         let mut v = VentanaPdf {
             perfiles,
@@ -335,6 +340,9 @@ impl Aplicacion {
                                             let c = &lista.lista[i];
                                             if ui.selectable_label(false, &c.nombre).clicked() {
                                                 o.cliente = c.nombre.clone();
+                                                if o.atencion.trim().is_empty() {
+                                                    o.atencion = c.contacto.clone();
+                                                }
                                             }
                                         }
                                         if lista.lista.is_empty() {
@@ -370,6 +378,12 @@ impl Aplicacion {
                                 }
                             });
                             ui.end_row();
+                            fila(
+                                ui,
+                                "A la atención de",
+                                &mut o.atencion,
+                                "Persona de contacto del cliente",
+                            );
                             fila(ui, "Referencia", &mut o.referencia, &raiz);
                             fila(ui, "Revisión", &mut o.revision, "R0");
                             fila(ui, "Fecha", &mut o.fecha, "");
@@ -432,7 +446,7 @@ impl Aplicacion {
     /// Clave de la obra para sus datos del PDF: el presupuesto guardado o,
     /// si aún no se ha guardado, su nombre.
     /// Opciones del PDF con el perfil activo y los datos guardados de la obra
-    /// (título, dirección, cliente, referencia).
+    /// (título, dirección, cliente, referencia, a la atención de).
     pub(super) fn opciones_pdf_obra(&self) -> OpcionesPdf {
         let perfiles = ruta_perfiles().map(|r| Perfiles::cargar(&r)).unwrap_or_default();
         let mut o = OpcionesPdf {
@@ -440,14 +454,16 @@ impl Aplicacion {
             ..OpcionesPdf::default()
         };
         let mut guardados = leer_datos_obras();
-        if let Some([t, d, c, r]) = guardados
+        if let Some(d) = guardados
             .remove(&self.clave_obra())
             .or_else(|| guardados.remove(&format!("nombre:{}", self.p.nombre)))
         {
-            o.titulo = t;
-            o.direccion = d;
-            o.cliente = c;
-            o.referencia = r;
+            let campo = |i: usize| d.get(i).cloned().unwrap_or_default();
+            o.titulo = campo(0);
+            o.direccion = campo(1);
+            o.cliente = campo(2);
+            o.referencia = campo(3);
+            o.atencion = campo(4);
         }
         if o.titulo.trim().is_empty() {
             o.titulo = self.p.conceptos[&self.p.raiz].resumen.clone();
