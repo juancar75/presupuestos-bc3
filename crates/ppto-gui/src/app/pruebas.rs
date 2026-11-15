@@ -2572,6 +2572,11 @@ fn colores_del_arbol_con_explicacion() {
     app.p.fijar_excluida("PV", true).unwrap();
     app.recalcular();
     assert!(app.explicar_estado("PV").unwrap().contains("EXCLUIDA"));
+    // Incluida: también tachada, con su rótulo; excluye a «excluida».
+    app.p.fijar_incluida("PV", true).unwrap();
+    app.recalcular();
+    assert!(app.explicar_estado("PV").unwrap().contains("INCLUIDA"));
+    assert!(!app.p.conceptos["PV"].excluida);
 }
 
 /// Valorar a mano: el buscador encuentra en la obra y en las tarifas de la

@@ -197,8 +197,8 @@ impl Escritor {
                     let (factor, rend) = if hijo.naturaleza == Naturaleza::Porcentaje {
                         // FIEBDC-3: el porcentaje viaja en fracción (3 % → 0.03)
                         (Decimal::ONE, l.cantidad() / Decimal::ONE_HUNDRED)
-                    } else if hijo.excluida && c.naturaleza == Naturaleza::Capitulo {
-                        // Partida excluida: factor 0 en el capítulo, así Presto
+                    } else if hijo.fuera_de_importe() && c.naturaleza == Naturaleza::Capitulo {
+                        // Partida excluida o incluida: factor 0 en el capítulo, así Presto
                         // la ve con su medición y precio pero importe cero
                         (Decimal::ZERO, l.rendimiento)
                     } else {

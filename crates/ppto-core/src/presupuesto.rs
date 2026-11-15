@@ -447,8 +447,8 @@ impl Presupuesto {
                     cantidad,
                     // Excluida: se mantiene la medición, pero ni precio ni importe
                     // en el capítulo (así no suma en coste, venta ni pedidos)
-                    precio: if hijo.excluida { Decimal::ZERO } else { precio },
-                    importe: if hijo.excluida {
+                    precio: if hijo.fuera_de_importe() { Decimal::ZERO } else { precio },
+                    importe: if hijo.fuera_de_importe() {
                         Decimal::ZERO
                     } else {
                         redondear(cantidad * precio, d.importe)

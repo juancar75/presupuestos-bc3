@@ -283,6 +283,27 @@ impl Presupuesto {
             return Err(ErrorMotor::ValorInvalido(format!("«{partida}» no es una partida")));
         }
         c.excluida = excluida;
+        if excluida {
+            c.incluida = false;
+        }
+        Ok(())
+    }
+
+    /// Marca o desmarca una partida como incluida en otra: conserva
+    /// medición y descompuesto, pero no suma en el capítulo y sale como
+    /// «INCLUIDO». Excluida e incluida son excluyentes.
+    pub fn fijar_incluida(&mut self, partida: &str, incluida: bool) -> Result<(), ErrorMotor> {
+        let c = self
+            .conceptos
+            .get_mut(partida)
+            .ok_or_else(|| ErrorMotor::ConceptoInexistente(partida.into()))?;
+        if c.naturaleza != Naturaleza::Partida {
+            return Err(ErrorMotor::ValorInvalido(format!("«{partida}» no es una partida")));
+        }
+        c.incluida = incluida;
+        if incluida {
+            c.excluida = false;
+        }
         Ok(())
     }
 

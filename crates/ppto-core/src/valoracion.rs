@@ -52,7 +52,7 @@ pub fn estado(p: &Presupuesto, partida: &str) -> Estado {
     let Ok(c) = p.concepto(partida) else {
         return Estado::SinPrecio;
     };
-    if c.excluida {
+    if c.fuera_de_importe() {
         // Fuera de la oferta: no falta nada
         return Estado::Valorada;
     }

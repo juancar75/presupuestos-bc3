@@ -95,6 +95,11 @@ pub struct Concepto {
     /// pero su importe en el capítulo es cero y sale como «EXCLUIDO».
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub excluida: bool,
+    /// Partida incluida en otra: se ve con su medición, pero su importe en
+    /// el capítulo es cero y sale como «INCLUIDO» (su coste va en otra
+    /// partida, p. ej. una legalización de un expediente único).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub incluida: bool,
 }
 
 /// Procedencia del precio de un recurso: la oferta que lo justifica.
@@ -184,6 +189,7 @@ impl Concepto {
             margen: None,
             venta_fija: None,
             excluida: false,
+            incluida: false,
             origen: None,
         }
     }
@@ -206,6 +212,7 @@ impl Concepto {
             margen: None,
             venta_fija: None,
             excluida: false,
+            incluida: false,
             origen: None,
         }
     }
@@ -223,11 +230,30 @@ impl Concepto {
             margen: None,
             venta_fija: None,
             excluida: false,
+            incluida: false,
             origen: None,
         }
     }
 
     pub fn porcentaje(codigo: impl Into<String>, resumen: impl Into<String>) -> Self {
         Self::basico(codigo, "%", resumen, Naturaleza::Porcentaje, Decimal::ZERO)
+    }
+}
+
+impl Concepto {
+    /// La partida no suma en el capítulo: excluida o incluida en otra.
+    pub fn fuera_de_importe(&self) -> bool {
+        self.excluida || self.incluida
+    }
+
+    /// Rótulo que sale en lugar del importe («EXCLUIDO» o «INCLUIDO»).
+    pub fn rotulo_sin_importe(&self) -> Option<&'static str> {
+        if self.incluida {
+            Some("INCLUIDO")
+        } else if self.excluida {
+            Some("EXCLUIDO")
+        } else {
+            None
+        }
     }
 }

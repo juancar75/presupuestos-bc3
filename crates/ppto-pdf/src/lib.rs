@@ -455,8 +455,8 @@ impl Ctx<'_> {
             "resumen": c.resumen,
             "texto": c.texto.clone().unwrap_or_default(),
             "cantidad": cant(l.cantidad, dec.medicion),
-            "precio": if c.excluida { String::new() } else { eur(l.precio) },
-            "importe": if c.excluida { "EXCLUIDO".to_owned() } else { eur(l.importe) },
+            "precio": if c.fuera_de_importe() { String::new() } else { eur(l.precio) },
+            "importe": c.rotulo_sin_importe().map_or_else(|| eur(l.importe), str::to_owned),
             "mediciones": mediciones,
         }))
     }

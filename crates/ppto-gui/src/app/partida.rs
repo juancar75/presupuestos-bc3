@@ -89,12 +89,22 @@ impl Aplicacion {
                 {
                     acciones.push(Accion::Excluir(hijo.clone(), ex));
                 }
+                let mut inc = c.incluida;
+                if ui
+                    .checkbox(&mut inc, RichText::new("Incluida").strong())
+                    .on_hover_text(
+                        "Incluida en otra partida: conserva medición y descompuesto, pero no suma en el capítulo y en el PDF y el Excel sale «INCLUIDO» en lugar del importe",
+                    )
+                    .changed()
+                {
+                    acciones.push(Accion::Incluir(hijo.clone(), inc));
+                }
             }
             if let Some(i) = pos {
                 let sin = orden
                     .iter()
                     .filter(|(_, h)| {
-                        !self.p.conceptos.get(h).is_some_and(|c| c.excluida)
+                        !self.p.conceptos.get(h).is_some_and(|c| c.fuera_de_importe())
                             && self.calc.precios.get(h).is_none_or(|p| p.is_zero())
                     })
                     .count();
