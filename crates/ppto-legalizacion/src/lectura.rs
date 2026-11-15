@@ -7,7 +7,7 @@
 //! técnico lo revise. Lo que no está en las mediciones (uso del DB SI 4,
 //! superficie, viviendas, revisiones, visitas) no se toca.
 
-use crate::{CAPITULO, Disciplina, Expediente, Refrigerante, RegistroIf};
+use crate::{CAPITULO, Disciplina, Expediente, Refrigerante};
 use ppto_core::formato::num;
 use ppto_core::{Naturaleza, Presupuesto};
 use rust_decimal::Decimal;
@@ -38,11 +38,11 @@ pub struct Lectura {
     pub primario_frio: bool,
     pub sala_maquinas: bool,
     pub refrigerante: Option<Refrigerante>,
-    // Instalación frigorífica (cámaras, murales, centrales)
-    pub frigorifica: bool,
-    pub if_kw_sistema: Decimal,
-    pub if_kw_total: Decimal,
-    pub atmosfera_artificial: bool,
+    /// Equipos con circuito frigorífico hecho en obra (split, bibloc, VRF):
+    /// los monobloc y compactos no cuentan (circuito sellado de fábrica).
+    pub equipos_partidos: u32,
+    /// Hay producción de ACS (alcance RITE «ACS» del trabajo base).
+    pub acs: bool,
     // PCI
     pub sistemas_pci: Vec<&'static str>,
     pub bie: u32,
@@ -59,24 +59,13 @@ impl Lectura {
         self.pistas.is_empty()
     }
 
-    /// Registro frigorífico que corresponde a lo leído (memoria A2L o L1 en
-    /// nivel 1; proyecto en nivel 2), si hay instalación frigorífica o
-    /// refrigerante A2L.
-    pub fn registro_if(&self) -> Option<RegistroIf> {
-        if !self.frigorifica && self.refrigerante != Some(Refrigerante::A2l) {
-            return None;
-        }
-        let nivel2 = self.if_kw_sistema > Decimal::from(30)
-            || self.if_kw_total > Decimal::from(100)
-            || self.atmosfera_artificial
-            || matches!(self.refrigerante, Some(Refrigerante::L2 | Refrigerante::L3));
-        Some(if nivel2 {
-            RegistroIf::Proyecto
-        } else if self.refrigerante == Some(Refrigerante::A2l) {
-            RegistroIf::MemoriaA2l
-        } else {
-            RegistroIf::MemoriaL1
-        })
+    /// Instalaciones PCI que cuentan para la EICI: las casillas del apartado
+    /// 8.2 de la solicitud. Extintores y señalización no tienen casilla.
+    pub fn casillas_pci(&self) -> u32 {
+        self.sistemas_pci
+            .iter()
+            .filter(|s| !SIN_CASILLA_PCI.contains(s))
+            .count() as u32
     }
 
     /// Copia en el expediente los datos leídos (los no leídos se dejan).
@@ -96,17 +85,15 @@ impl Lectura {
         if let Some(r) = self.refrigerante {
             e.refrigerante = r;
         }
-        if let Some(r) = self.registro_if() {
-            e.registro_if = Some(r);
+        let casillas = self.casillas_pci();
+        if casillas > 0 {
+            e.instalaciones_pci = casillas;
         }
-        if !self.if_kw_sistema.is_zero() {
-            e.if_kw_sistema = self.if_kw_sistema;
-            e.if_kw_total = self.if_kw_total;
+        if e.disciplina == Disciplina::Rite {
+            e.rite_acs |= self.acs;
         }
-        e.atmosfera_artificial |= self.atmosfera_artificial;
-        if !self.sistemas_pci.is_empty() {
-            e.instalaciones_pci = self.sistemas_pci.len() as u32;
-        }
+        e.pci_extincion |= self.sistemas_pci.iter().any(|s| SISTEMAS_EXTINCION.contains(s));
+        e.pci_control_humos |= self.sistemas_pci.contains(&"control de humos");
         e.pci_bie |= self.bie > 0;
         e.pci_deteccion |= self.deteccion;
         e.presion_diferencial |= self.presion_diferencial;
@@ -252,30 +239,31 @@ fn generador(t: &str) -> Option<Generador> {
     None
 }
 
-const FRIGORIFICA: &[&str] = &[
-    "central frigorifica",
-    "central de compresores",
-    "grupo de compresores",
-    "unidad condensadora",
-    "condensador remoto",
-    "camara frigorifica",
-    "camara de conservacion",
-    "camara de congelacion",
-    "camara de refrigeracion",
-    "mueble frigorifico",
-    "mural frigorifico",
-    "murales frigorificos",
-    "vitrina frigorifica",
-    "isla de congelados",
-    "equipo frigorifico",
+/// Equipos con el circuito frigorífico sellado de fábrica: no tienen
+/// circuito primario en obra.
+const COMPACTO: &[&str] = &[
+    "monobloc",
+    "monobloque",
+    "compacto",
+    "compacta",
+    "roof-top",
+    "rooftop",
+    "enfriadora",
 ];
-const FRIGORIFICA_EQUIPO: &[&str] = &[
-    "central frigorifica",
-    "central de compresores",
-    "grupo de compresores",
-    "unidad condensadora",
-    "equipo frigorifico",
-    "compresor",
+
+/// Sistemas leídos que no tienen casilla en la solicitud PCI (apartado 8.2)
+/// y por tanto no cuentan como instalación para la EICI.
+const SIN_CASILLA_PCI: &[&str] = &["extintores", "señalización"];
+
+/// Sistemas de extinción (alcance PCI «extinción» del trabajo base).
+const SISTEMAS_EXTINCION: &[&str] = &[
+    "extintores",
+    "BIE",
+    "hidrantes",
+    "columna seca",
+    "rociadores",
+    "abastecimiento de agua",
+    "extinción automática",
 ];
 
 /// Sistemas del RIPCI (anexo I) y sus palabras clave.
@@ -326,6 +314,13 @@ const SISTEMAS_PCI: &[(&str, &[&str])] = &[
             "sobrepresion",
             "presion diferencial",
             "exutorio",
+            "scteh",
+            "ventilacion de garaje",
+            "ventilacion del garaje",
+            "extraccion de garaje",
+            "extraccion del garaje",
+            "jet fan",
+            "jetfan",
         ],
     ),
     (
@@ -563,16 +558,6 @@ fn frio_calor(t: &str, g: Generador) -> Option<(Decimal, Decimal)> {
     Some((frio.unwrap_or_default(), calor.unwrap_or_default()))
 }
 
-/// Potencia de compresores de un equipo frigorífico: la eléctrica si viene,
-/// si no la primera que aparezca (y se marca para revisar).
-fn kw_frigorifica(t: &str) -> Option<(Decimal, bool)> {
-    let v = potencias(t);
-    if let Some(e) = v.iter().find(|(_, r)| *r == Some(Rotulo::Electrica)) {
-        return Some((e.0, true));
-    }
-    v.first().map(|x| (x.0, false))
-}
-
 /// Partida medida en la obra: cantidad total (producto de los rendimientos
 /// de los capítulos por los que cuelga) y textos.
 struct Medida {
@@ -710,6 +695,19 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
                 );
             }
         }
+        let acs = alguna(
+            &t,
+            &[
+                "agua caliente sanitaria",
+                "interacumulador",
+                "acumulador de acs",
+                "deposito de acs",
+            ],
+        ) || t.split(|c: char| !c.is_alphanumeric()).any(|w| w == "acs");
+        if acs && !l.acs {
+            l.acs = true;
+            pista(&mut l, "Producción de ACS".into(), fuente(&m), true);
+        }
         if t.contains("sala de maquinas") && !l.sala_maquinas {
             l.sala_maquinas = true;
             pista(&mut l, "Sala de máquinas".into(), fuente(&m), false);
@@ -718,50 +716,8 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
             l.primario_frio = true;
             pista(&mut l, "Circuito primario frigorífico".into(), fuente(&m), false);
         }
-        if alguna(
-            &t,
-            &["atmosfera controlada", "atmosfera artificial", "camara de maduracion"],
-        ) && !l.atmosfera_artificial
-        {
-            l.atmosfera_artificial = true;
-            pista(&mut l, "Cámaras de atmósfera artificial".into(), fuente(&m), false);
-        }
-
-        // Instalación frigorífica.
-        let es_if = alguna(&t, FRIGORIFICA);
-        if es_if {
-            if !l.frigorifica {
-                pista(&mut l, "Instalación frigorífica".into(), fuente(&m), true);
-            }
-            l.frigorifica = true;
-            if equipo && alguna(&r, FRIGORIFICA_EQUIPO) {
-                let leido = kw_frigorifica(&normalizar(&m.resumen)).or_else(|| kw_frigorifica(&normalizar(&m.texto)));
-                if let Some((kw, electrica)) = leido {
-                    l.if_kw_sistema = l.if_kw_sistema.max(kw);
-                    l.if_kw_total += kw * m.cantidad;
-                    pista(
-                        &mut l,
-                        format!(
-                            "Frigorífica: {} kW por equipo{}",
-                            cant(kw),
-                            if electrica {
-                                " (eléctrica)"
-                            } else {
-                                " (¿frigorífica? el RSIF usa la eléctrica de compresores)"
-                            }
-                        ),
-                        fuente(&m),
-                        electrica,
-                    );
-                }
-            }
-        }
-
         // Generadores RITE.
-        if equipo
-            && !es_if
-            && let Some(g) = generador(&r)
-        {
+        if equipo && let Some(g) = generador(&r) {
             let leido = frio_calor(&normalizar(&m.resumen), g)
                 .or_else(|| frio_calor(&normalizar(&m.texto), g))
                 .or_else(|| {
@@ -805,6 +761,11 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
                 l.circuitos += entero(m.cantidad);
                 modelos.insert(m.codigo.clone());
             }
+            // Bomba de calor con líneas de refrigerante en obra.
+            let con_refrigerante = g != Generador::Calor || alguna(&t, &["bomba de calor", "aerotermi"]);
+            if con_refrigerante && !alguna(&t, COMPACTO) {
+                l.equipos_partidos += entero(m.cantidad);
+            }
         }
 
         // PCI (por el resumen: el texto largo menciona de todo).
@@ -836,6 +797,19 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
         }
     }
     l.modelos = modelos.len() as u32;
+    // Split, bibloc o VRF con refrigerante: el circuito hecho en obra es el
+    // primario del expediente RITE (Orden CM de 31/03/2025). Los monobloc y
+    // compactos no tienen primario.
+    if l.equipos_partidos > 0 && l.refrigerante.is_some() && !l.primario_frio {
+        l.primario_frio = true;
+        let n = l.equipos_partidos;
+        pista(
+            &mut l,
+            format!("Circuito primario frigorífico ({n} equipos partidos con refrigerante): va en el expediente RITE"),
+            String::new(),
+            false,
+        );
+    }
     l.deteccion = sistemas.contains("detección");
     l.sistemas_pci = SISTEMAS_PCI
         .iter()
@@ -887,11 +861,10 @@ mod tests {
         p.anadir_linea(cap, codigo, n).unwrap();
     }
 
-    /// Supermercado sintético: clima VRF con R-32, frío comercial con CO₂ y PCI.
+    /// Local comercial sintético: clima VRF y split con R-32, y PCI.
     fn supermercado() -> Presupuesto {
         let mut p = Presupuesto::new("sintético", "OBRA", "Supermercado de prueba");
         p.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN").unwrap();
-        p.nuevo_capitulo("OBRA", "C02", "REFRIGERACIÓN COMERCIAL").unwrap();
         p.nuevo_capitulo("OBRA", "C03", "PROTECCIÓN CONTRA INCENDIOS").unwrap();
         partida(
             &mut p,
@@ -909,20 +882,6 @@ mod tests {
             dec!(120),
         );
         partida(&mut p, "C01", "E04", "Ud. Split pared 3,5 kW R-32", dec!(1));
-        partida(
-            &mut p,
-            "C02",
-            "F01",
-            "Ud. Central frigorífica de compresores R-744, potencia absorbida 18 kW, potencia frigorífica 45 kW",
-            dec!(1),
-        );
-        partida(
-            &mut p,
-            "C02",
-            "F02",
-            "Ud. Cámara frigorífica de conservación 20 m²",
-            dec!(1),
-        );
         partida(&mut p, "C03", "P01", "Ud. Extintor de polvo ABC 6 kg", dec!(10));
         partida(&mut p, "C03", "P02", "Ud. BIE 25 mm con manguera de 20 m", dec!(4));
         partida(&mut p, "C03", "P03", "Ud. Señal fotoluminiscente de BIE", dec!(4));
@@ -934,15 +893,15 @@ mod tests {
     #[test]
     fn lee_supermercado() {
         let l = leer_presupuesto(&supermercado());
-        assert_eq!(l.capitulos_rite, ["C01", "C02"]);
+        assert_eq!(l.capitulos_rite, ["C01"]);
         assert_eq!(l.capitulos_pci, ["C03"]);
         assert_eq!(l.potencia_frio, dec!(59.5));
         assert_eq!(l.potencia_calor, dec!(66.5));
         assert_eq!((l.circuitos, l.modelos), (3, 2));
         assert_eq!(l.refrigerante, Some(Refrigerante::A2l));
-        assert!(l.frigorifica);
-        assert_eq!((l.if_kw_sistema, l.if_kw_total), (dec!(18), dec!(18)));
-        assert_eq!(l.registro_if(), Some(RegistroIf::MemoriaA2l));
+        // VRF ×2 + split: circuitos en obra → primario del expediente RITE.
+        assert_eq!(l.equipos_partidos, 3);
+        assert!(l.primario_frio);
         assert_eq!(
             l.sistemas_pci,
             ["extintores", "BIE", "detección", "alarma", "señalización"]
@@ -951,12 +910,147 @@ mod tests {
         assert!(l.deteccion);
     }
 
+    /// Oficina con VRF R-32 (caso de la Orden CM de 31/03/2025: el primario
+    /// va dentro del expediente RITE).
+    fn oficina_vrf() -> Presupuesto {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Oficina de prueba");
+        p.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN").unwrap();
+        partida(
+            &mut p,
+            "C01",
+            "E01",
+            "Ud. Unidad exterior VRF bomba de calor R-32, potencia frigorífica 20 kW, calorífica 22,4 kW",
+            dec!(1),
+        );
+        partida(&mut p, "C01", "E02", "Ud. Unidad interior conductos 5,6 kW", dec!(4));
+        p
+    }
+
+    #[test]
+    fn vrf_es_primario_rite() {
+        let l = leer_presupuesto(&oficina_vrf());
+        assert_eq!(l.refrigerante, Some(Refrigerante::A2l));
+        assert!(l.primario_frio);
+        let mut e = Expediente::nuevo(Disciplina::Rite, crate::Documento::Memoria, dec!(50000));
+        l.rellenar(&mut e);
+        assert!(e.primario_frio);
+    }
+
+    #[test]
+    fn monobloc_y_compactos_no_tienen_primario() {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Viviendas");
+        p.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN Y ACS").unwrap();
+        partida(
+            &mut p,
+            "C01",
+            "E01",
+            "Ud. Bomba de calor aerotermia monobloc R-290, potencia calorífica 9 kW",
+            dec!(24),
+        );
+        partida(
+            &mut p,
+            "C01",
+            "E02",
+            "Ud. Equipo compacto roof-top R-32, potencia frigorífica 30 kW, calorífica 32 kW",
+            dec!(1),
+        );
+        let l = leer_presupuesto(&p);
+        assert_eq!(l.refrigerante, Some(Refrigerante::L3));
+        assert_eq!(l.equipos_partidos, 0);
+        assert!(!l.primario_frio);
+
+        // Multisplit: líneas de refrigerante en obra → primario.
+        let mut m = Presupuesto::new("sintético", "OBRA", "Local");
+        m.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN").unwrap();
+        partida(
+            &mut m,
+            "C01",
+            "E01",
+            "Ud. Unidad exterior multisplit 1x3 R-32, potencia frigorífica 8 kW, calorífica 9,4 kW",
+            dec!(2),
+        );
+        let l = leer_presupuesto(&m);
+        assert_eq!(l.equipos_partidos, 2);
+        assert!(l.primario_frio);
+
+        // La misma aerotermia en bibloc sí lleva primario.
+        let mut q = Presupuesto::new("sintético", "OBRA", "Viviendas");
+        q.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN Y ACS").unwrap();
+        partida(
+            &mut q,
+            "C01",
+            "E01",
+            "Ud. Bomba de calor aerotermia bibloc R-32, potencia calorífica 9 kW",
+            dec!(24),
+        );
+        let l = leer_presupuesto(&q);
+        assert_eq!(l.equipos_partidos, 24);
+        assert!(l.primario_frio);
+    }
+
+    #[test]
+    fn alcances_acs_y_extincion() {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Viviendas");
+        p.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN Y ACS").unwrap();
+        partida(&mut p, "C01", "E01", "Ud. Interacumulador de ACS 200 l", dec!(1));
+        let l = leer_presupuesto(&p);
+        assert!(l.acs);
+        let mut e = Expediente::nuevo(Disciplina::Rite, crate::Documento::Memoria, dec!(9000));
+        l.rellenar(&mut e);
+        assert!(e.rite_acs && e.rite_clima);
+
+        let l = leer_presupuesto(&supermercado());
+        let mut e = Expediente::nuevo(Disciplina::Pci, crate::Documento::Memoria, dec!(50000));
+        l.rellenar(&mut e);
+        assert!(e.pci_extincion && e.pci_deteccion);
+        assert!(!e.rite_acs);
+    }
+
+    #[test]
+    fn garaje_con_ventilacion_scteh_es_control_de_humos() {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Garaje");
+        p.nuevo_capitulo("OBRA", "C04", "VENTILACIÓN DE GARAJE").unwrap();
+        partida(
+            &mut p,
+            "C04",
+            "V01",
+            "Ud. Ventilador jet fan para ventilación de garaje F400 2h",
+            dec!(6),
+        );
+        let l = leer_presupuesto(&p);
+        assert!(l.sistemas_pci.contains(&"control de humos"));
+        let mut e = Expediente::nuevo(Disciplina::Pci, crate::Documento::Proyecto, dec!(60000));
+        l.rellenar(&mut e);
+        assert!(e.pci_control_humos);
+        assert_eq!(e.instalaciones_pci, 1);
+    }
+
+    #[test]
+    fn solo_extintores_y_senalizacion_no_cambian_las_instalaciones() {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Local");
+        p.nuevo_capitulo("OBRA", "C03", "PROTECCIÓN CONTRA INCENDIOS").unwrap();
+        partida(&mut p, "C03", "P01", "Ud. Extintor de polvo ABC 6 kg", dec!(3));
+        partida(
+            &mut p,
+            "C03",
+            "P02",
+            "Ud. Señal fotoluminiscente de evacuación",
+            dec!(6),
+        );
+        let l = leer_presupuesto(&p);
+        assert_eq!(l.casillas_pci(), 0);
+        let mut e = Expediente::nuevo(Disciplina::Pci, crate::Documento::Memoria, dec!(5000));
+        l.rellenar(&mut e);
+        assert_eq!(e.instalaciones_pci, 1);
+    }
+
     #[test]
     fn rellena_y_avisa() {
         let l = leer_presupuesto(&supermercado());
         let mut e = Expediente::nuevo(Disciplina::Pci, crate::Documento::Memoria, dec!(50000));
         l.rellenar(&mut e);
-        assert_eq!(e.instalaciones_pci, 5);
+        // Extintores y señalización no tienen casilla en la solicitud: 3.
+        assert_eq!(e.instalaciones_pci, 3);
         assert!(e.pci_bie && e.pci_deteccion);
         assert!(e.avisos_documentacion()[0].contains("exige proyecto"));
     }
