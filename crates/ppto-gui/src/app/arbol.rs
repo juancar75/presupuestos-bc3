@@ -29,7 +29,7 @@ impl Aplicacion {
     /// Rojo: sin valorar. Naranja: mano de obra sin material o al revés.
     pub(super) fn color_estado(&self, t: RichText, codigo: &str) -> RichText {
         use ppto_core::valoracion::Estado;
-        if self.p.conceptos.get(codigo).is_some_and(|c| c.excluida) {
+        if self.p.conceptos.get(codigo).is_some_and(|c| c.fuera_de_importe()) {
             return t.weak().strikethrough();
         }
         match self.calc.estados.get(codigo) {
@@ -44,6 +44,9 @@ impl Aplicacion {
     pub(super) fn explicar_estado(&self, codigo: &str) -> Option<String> {
         use ppto_core::valoracion::Estado;
         let c = self.p.conceptos.get(codigo)?;
+        if c.incluida {
+            return Some("Tachada: partida INCLUIDA en otra (importe 0 y sale como «INCLUIDO»).".into());
+        }
         if c.excluida {
             return Some("Tachada: partida EXCLUIDA (fuera de la oferta: importe 0 y sale como «EXCLUIDO»).".into());
         }

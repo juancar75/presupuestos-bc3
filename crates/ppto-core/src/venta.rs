@@ -234,7 +234,7 @@ pub fn venta_concepto(
     bi_pct: Decimal,
     decimales: u32,
 ) -> VentaPartida {
-    if c.excluida {
+    if c.fuera_de_importe() {
         return venta_partida(Decimal::ZERO, Decimal::ZERO, Decimal::ZERO, decimales);
     }
     match c.venta_fija {

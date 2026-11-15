@@ -595,6 +595,7 @@ impl Lector {
                     margen: None,
                     venta_fija: None,
                     excluida: false,
+                    incluida: false,
                     origen: None,
                 },
             );

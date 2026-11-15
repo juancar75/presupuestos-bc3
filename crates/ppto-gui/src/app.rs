@@ -151,6 +151,8 @@ enum Accion {
     Margen(String, Option<Decimal>),
     /// Partida excluida de la oferta (sí/no).
     Excluir(String, bool),
+    /// Partida incluida en otra (sí/no): importe cero, sale «INCLUIDO».
+    Incluir(String, bool),
     /// Precio de venta bloqueado de una partida (`None` = desbloquear).
     VentaFija(String, Option<Decimal>),
     /// PVP de tarifa de un recurso ligado a un fabricante.
@@ -731,7 +733,7 @@ impl Aplicacion {
             };
             (0..n).map(paso).find(|&i| {
                 let h = &orden[i].1;
-                !self.p.conceptos.get(h).is_some_and(|c| c.excluida)
+                !self.p.conceptos.get(h).is_some_and(|c| c.fuera_de_importe())
                     && self.calc.precios.get(h).is_none_or(|p| p.is_zero())
             })
         } else {
