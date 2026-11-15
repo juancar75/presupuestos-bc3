@@ -921,6 +921,20 @@ mod tests {
         assert_eq!(l.equipos_partidos, 0);
         assert!(!l.primario_frio);
 
+        // Multisplit: líneas de refrigerante en obra → primario.
+        let mut m = Presupuesto::new("sintético", "OBRA", "Local");
+        m.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN").unwrap();
+        partida(
+            &mut m,
+            "C01",
+            "E01",
+            "Ud. Unidad exterior multisplit 1x3 R-32, potencia frigorífica 8 kW, calorífica 9,4 kW",
+            dec!(2),
+        );
+        let l = leer_presupuesto(&m);
+        assert_eq!(l.equipos_partidos, 2);
+        assert!(l.primario_frio);
+
         // La misma aerotermia en bibloc sí lleva primario.
         let mut q = Presupuesto::new("sintético", "OBRA", "Viviendas");
         q.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN Y ACS").unwrap();

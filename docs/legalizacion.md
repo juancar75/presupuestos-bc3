@@ -43,7 +43,7 @@ revisar):
 | Potencia de calor y frío | kW del texto de unidades exteriores, bombas de calor, enfriadoras, calderas, roof-top y splits, por su medición (no las unidades interiores) |
 | Circuitos RSIF y modelos | unidades exteriores y enfriadoras, y partidas distintas |
 | Refrigerante | el más exigente nombrado (R-32/R-454B → A2L; R-410A, R-744 → L1; R-717 → L2; R-290 → L3) |
-| Primario frigorífico (RITE) | split, bibloc o VRF con refrigerante (circuito hecho en obra): se marca el primario del expediente RITE (EICI «con primario»). **Monobloc y compactos** (roof-top, enfriadoras) no tienen primario. No hay registro frigorífico aparte: solo climatización y ACS (R-32, R-290), sin frío industrial (Orden CM de 31/03/2025) |
+| Primario frigorífico (RITE) | split, multisplit, bibloc o VRF con refrigerante (circuito hecho en obra): se marca el primario del expediente RITE (EICI «con primario»). **Monobloc y compactos** (roof-top, enfriadoras) no tienen primario. No hay registro frigorífico aparte: solo climatización y ACS (R-32, R-290), sin frío industrial (Orden CM de 31/03/2025) |
 | Sistemas PCI, BIE y detección | extintores, BIE, detección, alarma, hidrantes, columna seca, rociadores, abastecimiento, extinción automática, control de humos y señalización |
 | Instalaciones PCI (EICI) | las **casillas** del apartado 8.2 de la solicitud PCI: cuentan todos los sistemas leídos **menos extintores y señalización**, que no tienen casilla |
 
