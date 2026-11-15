@@ -8,6 +8,7 @@ versionado [semántico](https://semver.org/lang/es/).
 ### Corregido
 - **Legalización: el primario de la climatización ya no se cobra dos veces.** Split, bibloc o VRF con refrigerante se leen como circuito primario del expediente RITE (EICI «con primario»); monobloc y compactos no llevan primario. Se quita el registro frigorífico aparte (EICI y tasa IF): solo climatización y ACS con R-32/R-290, sin frío industrial (Orden CM de 31/03/2025).
 - **Legalización PCI: instalaciones según las casillas de la solicitud.** Extintores y señalización no tienen casilla en el apartado 8.2 y ya no cuentan para la EICI (p. ej. extintores + BIE + detección + pulsadores + señalización = 3, no 5).
+- **Legalización: trabajo base por alcance.** Además de la parte proporcional al PEM, horas mínimas de memoria y de proyecto para clima y ventilación, ACS, PCI detección y PCI extinción (`bases` en el baremo; «Trabajo base (h)» en «Editar honorarios»). La lectura marca ACS y extinción; casillas en la ventana.
 - **Legalización: visita de la OCA por muestreo en memorias RITE.** Nuevo campo del baremo `muestreo_memoria_rite_pct` (p. ej. 7 %): la visita (horas y viaje) se reparte entre todas las memorias (0,07 visitas por memoria). Sin el campo, 0.
 
 ## [0.1.0-alpha.60] - 2026-11-13

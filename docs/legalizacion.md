@@ -9,9 +9,9 @@ La **tarifa sale de nuestros costes y nuestro margen**:
 
 | Bloque del descompuesto | Cuándo | Cálculo |
 |---|---|---|
-| Elaboración y tramitación de la memoria técnica | memorias | horas fijas + por 10.000 € de PEM + por vivienda, repartidas por perfil a su coste |
+| Elaboración y tramitación de la memoria técnica | memorias | horas fijas + por 10.000 € de PEM + por vivienda + **trabajo base de cada alcance** (clima y ventilación, ACS, detección, extinción), repartidas por perfil a su coste |
 | Tramitación y dirección de la instalación | proyectos | igual, con las horas y el reparto de proyectos; + % de horas si el proyecto es de otro técnico |
-| Redacción del proyecto | proyectos propios | horas fijas + por 10.000 € de PEM (+ por vivienda) |
+| Redacción del proyecto | proyectos propios | horas fijas + por 10.000 € de PEM (+ por vivienda) + **trabajo base de cada alcance** |
 | Justificación RITE | memorias RITE y proyectos de otro técnico | horas fijas + por 10.000 € de PEM |
 | Justificación RSIF | si hay circuitos | horas por modelo + horas por circuito repetido |
 | Visitas a obra / de la OCA | según nº de visitas | horas del técnico por visita |
@@ -49,6 +49,23 @@ revisar):
 
 No se leen el uso del DB SI 4, la superficie, las viviendas, las revisiones
 de arquitectura, las visitas ni los km.
+
+## Trabajo base por alcance
+
+Los honorarios tienen dos partes: una **proporcional al PEM** (horas por
+10.000 € de cada tarea) y un **trabajo base**: las horas mínimas para hacer
+la memoria o el proyecto de cada alcance, que se suman si el alcance está
+marcado.
+
+| Alcance | Disciplina | Se marca (lectura) | Base memoria / proyecto |
+|---|---|---|---|
+| Clima y ventilación | RITE | siempre (se puede quitar) | `bases.clima.memoria` / `.proyecto` |
+| ACS | RITE | «ACS», «agua caliente sanitaria», interacumulador… | `bases.acs` |
+| Detección | PCI | detección automática | `bases.deteccion` |
+| Extinción | PCI | extintores, BIE, hidrantes, columna seca, rociadores, abastecimiento, extinción automática | `bases.extincion` |
+
+En memorias la base se suma a la elaboración; en proyectos, a la redacción
+(en los de otro técnico no hay redacción y no se suma). Sin datos, 0.
 
 ## Baremo
 

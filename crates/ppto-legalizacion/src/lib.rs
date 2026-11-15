@@ -145,6 +145,35 @@ fn reparto_redaccion() -> Reparto {
     }
 }
 
+/// Trabajo base (horas mínimas) de un alcance en memoria y en proyecto.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Base {
+    pub memoria: Decimal,
+    pub proyecto: Decimal,
+}
+
+impl Base {
+    fn de(&self, proyecto: bool) -> Decimal {
+        if proyecto { self.proyecto } else { self.memoria }
+    }
+}
+
+/// Trabajo base por alcance: lo mínimo para hacer la memoria o el proyecto
+/// de cada parte. Se suma a la parte proporcional al PEM de la tarea.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BasesAlcance {
+    /// RITE: climatización y ventilación.
+    pub clima: Base,
+    /// RITE: producción de ACS.
+    pub acs: Base,
+    /// PCI: detección y alarma.
+    pub deteccion: Base,
+    /// PCI: extinción (extintores, BIE, hidrantes, rociadores…).
+    pub extincion: Base,
+}
+
 /// Horas de una tarea: fijas + por cada 10.000 € de PEM + por vivienda,
 /// con un mínimo.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
@@ -243,6 +272,10 @@ pub struct Baremo {
     pub rsif_minimo: Decimal,
 
     // --- horas por tarea (forman el precio)
+    /// Trabajo base por alcance (clima y ventilación, ACS, detección,
+    /// extinción): en memorias se suma a la elaboración; en proyectos, a la
+    /// redacción.
+    pub bases: BasesAlcance,
     pub horas_memoria: Horas,
     pub horas_tramitacion: Horas,
     /// Redacción del proyecto: memoria, presupuesto, pliego de condiciones y
@@ -384,6 +417,7 @@ impl Default for Baremo {
             coste_documentacion: z,
             margen: z,
             reparto_tramitacion: reparto_tramitacion(),
+            bases: BasesAlcance::default(),
             horas_memoria: Horas::default(),
             horas_tramitacion: Horas::default(),
             horas_redaccion: Horas::default(),
@@ -497,6 +531,7 @@ impl Baremo {
             margen_grande: d(35),
             horas_mediano: d(20),
             horas_grande: d(80),
+            bases: BasesAlcance::default(),
             horas_memoria: Horas {
                 base: d(4),
                 por_10k: Decimal::new(4, 1),
@@ -791,6 +826,11 @@ pub struct Expediente {
     /// PCI: hay BIE (cálculo hidráulico) y detección (cobertura y baterías).
     pub pci_bie: bool,
     pub pci_deteccion: bool,
+    /// Alcance para el trabajo base: RITE clima y ventilación, RITE ACS,
+    /// PCI extinción (la detección es `pci_deteccion`).
+    pub rite_clima: bool,
+    pub rite_acs: bool,
+    pub pci_extincion: bool,
     /// Justificación RITE (memorias RITE y proyectos de otro técnico; en los
     /// proyectos propios va en la redacción).
     pub justificar_rite: bool,
@@ -848,6 +888,9 @@ impl Expediente {
             uso_pci: UsoPci::Otro,
             pci_bie: false,
             pci_deteccion: false,
+            rite_clima: true,
+            rite_acs: false,
+            pci_extincion: false,
             justificar_rite: disciplina == Disciplina::Rite && documento == Documento::Memoria,
             circuitos_rsif: 0,
             modelos_rsif: 0,
@@ -921,6 +964,35 @@ impl Expediente {
             }
         }
         a
+    }
+
+    /// Trabajo base de los alcances marcados (horas) y su explicación.
+    pub fn trabajo_base(&self, b: &BasesAlcance) -> (Decimal, Vec<String>) {
+        let proyecto = self.proyecto();
+        let alcances: [(&str, bool, &Base); 4] = match self.disciplina {
+            Disciplina::Rite => [
+                ("clima y ventilación", self.rite_clima, &b.clima),
+                ("ACS", self.rite_acs, &b.acs),
+                ("", false, &b.deteccion),
+                ("", false, &b.extincion),
+            ],
+            Disciplina::Pci => [
+                ("detección", self.pci_deteccion, &b.deteccion),
+                ("extinción", self.pci_extincion || self.pci_bie, &b.extincion),
+                ("", false, &b.clima),
+                ("", false, &b.acs),
+            ],
+        };
+        let mut h = Decimal::ZERO;
+        let mut partes = Vec::new();
+        for (nombre, activo, base) in alcances {
+            let x = base.de(proyecto);
+            if activo && !x.is_zero() {
+                h += x;
+                partes.push(format!("base {nombre} {} h", corto(x)));
+            }
+        }
+        (h, partes)
     }
 
     /// Circuitos RSIF de modelos distintos y repetidos.
@@ -1203,6 +1275,13 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     };
     let mut h = horas.de(e.pem, n_viv);
     let mut regla = horas.texto(n_viv);
+    if !proyecto {
+        let (base, partes) = e.trabajo_base(&b.bases);
+        if !base.is_zero() {
+            h += base;
+            regla.push_str(&format!(" + {}", partes.join(" + ")));
+        }
+    }
     if pci_memoria && !b.horas_pci_instalacion.is_zero() {
         let n = e.instalaciones_pci.max(1);
         h += d(n) * b.horas_pci_instalacion;
@@ -1255,6 +1334,13 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
         for (titulo, que, horas, reparto) in tareas {
             let mut h = horas.de(e.pem, n_viv);
             let mut regla = horas.texto(n_viv);
+            if titulo.starts_with("Redacción") {
+                let (base, partes) = e.trabajo_base(&b.bases);
+                if !base.is_zero() {
+                    h += base;
+                    regla.push_str(&format!(" + {}", partes.join(" + ")));
+                }
+            }
             if titulo == "Planos as-built" && revisiones > 0 && !b.horas_revision_plano.is_zero() {
                 let (n, estimado) = if e.planos > 0 {
                     (d(e.planos), false)
@@ -2229,6 +2315,49 @@ mod tests {
         // PCI memoria no inspeccionable: sin visita.
         let q = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(20000));
         assert!(bloque(&calcular(&bm, &q), "Visitas de inspección").is_none());
+    }
+
+    #[test]
+    fn trabajo_base_por_alcance_mas_parte_proporcional() {
+        let mut bm = b();
+        bm.bases = BasesAlcance {
+            clima: Base {
+                memoria: dec!(6),
+                proyecto: dec!(16),
+            },
+            acs: Base {
+                memoria: dec!(3),
+                proyecto: dec!(8),
+            },
+            deteccion: Base {
+                memoria: dec!(4),
+                proyecto: dec!(10),
+            },
+            extincion: Base {
+                memoria: dec!(5),
+                proyecto: dec!(12),
+            },
+        };
+        // Memoria RITE solo clima: elaboración = la de antes + 6 h.
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
+        let sin = horas(&calcular(&b(), &e), "Elaboración");
+        assert_eq!(horas(&calcular(&bm, &e), "Elaboración"), sin + dec!(6));
+        // Clima + ACS: + 9 h, y la regla lo explica.
+        e.rite_acs = true;
+        let c = calcular(&bm, &e);
+        assert_eq!(horas(&c, "Elaboración"), sin + dec!(9));
+        assert!(bloque(&c, "Elaboración").unwrap().regla.contains("base ACS 3 h"));
+        // Proyecto RITE: la base va en la redacción.
+        let mut p = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(150000));
+        p.potencia_calor_kw = dec!(120);
+        let r0 = horas(&calcular(&b(), &p), "Redacción");
+        assert_eq!(horas(&calcular(&bm, &p), "Redacción"), r0 + dec!(16));
+        // PCI memoria con detección y BIE (extinción): + 4 + 5.
+        let mut q = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(20000));
+        let q0 = horas(&calcular(&b(), &q), "Elaboración");
+        q.pci_deteccion = true;
+        q.pci_bie = true;
+        assert_eq!(horas(&calcular(&bm, &q), "Elaboración"), q0 + dec!(9));
     }
 
     #[test]

@@ -41,6 +41,8 @@ pub struct Lectura {
     /// Equipos con circuito frigorífico hecho en obra (split, bibloc, VRF):
     /// los monobloc y compactos no cuentan (circuito sellado de fábrica).
     pub equipos_partidos: u32,
+    /// Hay producción de ACS (alcance RITE «ACS» del trabajo base).
+    pub acs: bool,
     // PCI
     pub sistemas_pci: Vec<&'static str>,
     pub bie: u32,
@@ -87,6 +89,10 @@ impl Lectura {
         if casillas > 0 {
             e.instalaciones_pci = casillas;
         }
+        if e.disciplina == Disciplina::Rite {
+            e.rite_acs |= self.acs;
+        }
+        e.pci_extincion |= self.sistemas_pci.iter().any(|s| SISTEMAS_EXTINCION.contains(s));
         e.pci_bie |= self.bie > 0;
         e.pci_deteccion |= self.deteccion;
         e.presion_diferencial |= self.presion_diferencial;
@@ -247,6 +253,17 @@ const COMPACTO: &[&str] = &[
 /// Sistemas leídos que no tienen casilla en la solicitud PCI (apartado 8.2)
 /// y por tanto no cuentan como instalación para la EICI.
 const SIN_CASILLA_PCI: &[&str] = &["extintores", "señalización"];
+
+/// Sistemas de extinción (alcance PCI «extinción» del trabajo base).
+const SISTEMAS_EXTINCION: &[&str] = &[
+    "extintores",
+    "BIE",
+    "hidrantes",
+    "columna seca",
+    "rociadores",
+    "abastecimiento de agua",
+    "extinción automática",
+];
 
 /// Sistemas del RIPCI (anexo I) y sus palabras clave.
 const SISTEMAS_PCI: &[(&str, &[&str])] = &[
@@ -670,6 +687,19 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
                 );
             }
         }
+        let acs = alguna(
+            &t,
+            &[
+                "agua caliente sanitaria",
+                "interacumulador",
+                "acumulador de acs",
+                "deposito de acs",
+            ],
+        ) || t.split(|c: char| !c.is_alphanumeric()).any(|w| w == "acs");
+        if acs && !l.acs {
+            l.acs = true;
+            pista(&mut l, "Producción de ACS".into(), fuente(&m), true);
+        }
         if t.contains("sala de maquinas") && !l.sala_maquinas {
             l.sala_maquinas = true;
             pista(&mut l, "Sala de máquinas".into(), fuente(&m), false);
@@ -948,6 +978,24 @@ mod tests {
         let l = leer_presupuesto(&q);
         assert_eq!(l.equipos_partidos, 24);
         assert!(l.primario_frio);
+    }
+
+    #[test]
+    fn alcances_acs_y_extincion() {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Viviendas");
+        p.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN Y ACS").unwrap();
+        partida(&mut p, "C01", "E01", "Ud. Interacumulador de ACS 200 l", dec!(1));
+        let l = leer_presupuesto(&p);
+        assert!(l.acs);
+        let mut e = Expediente::nuevo(Disciplina::Rite, crate::Documento::Memoria, dec!(9000));
+        l.rellenar(&mut e);
+        assert!(e.rite_acs && e.rite_clima);
+
+        let l = leer_presupuesto(&supermercado());
+        let mut e = Expediente::nuevo(Disciplina::Pci, crate::Documento::Memoria, dec!(50000));
+        l.rellenar(&mut e);
+        assert!(e.pci_extincion && e.pci_deteccion);
+        assert!(!e.rite_acs);
     }
 
     #[test]

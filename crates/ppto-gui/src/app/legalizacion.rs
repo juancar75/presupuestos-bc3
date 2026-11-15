@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 /// Costes, horas, margen y referencias editables en la ventana (los repartos
 /// por perfil y las tablas oficiales, en el JSON).
-const CAMPOS: [(&str, &str); 63] = [
+const CAMPOS: [(&str, &str); 71] = [
     ("Costes horarios (€/h)", "Ingeniero senior"),
     ("Costes horarios (€/h)", "Ingeniero junior"),
     ("Costes horarios (€/h)", "Técnico"),
@@ -83,6 +83,14 @@ const CAMPOS: [(&str, &str); 63] = [
     ("Referencia de mercado (€)", "RSIF por repetido"),
     ("Referencia de mercado (€)", "RSIF mínimo"),
     ("Horas por tarea", "Memorias RITE inspeccionadas por la OCA (%)"),
+    ("Trabajo base (h)", "Clima y ventilación: memoria"),
+    ("Trabajo base (h)", "Clima y ventilación: proyecto"),
+    ("Trabajo base (h)", "ACS: memoria"),
+    ("Trabajo base (h)", "ACS: proyecto"),
+    ("Trabajo base (h)", "PCI detección: memoria"),
+    ("Trabajo base (h)", "PCI detección: proyecto"),
+    ("Trabajo base (h)", "PCI extinción: memoria"),
+    ("Trabajo base (h)", "PCI extinción: proyecto"),
 ];
 
 fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
@@ -150,6 +158,14 @@ fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
         60 => &mut b.rsif_repetido,
         61 => &mut b.rsif_minimo,
         62 => &mut b.muestreo_memoria_rite_pct,
+        63 => &mut b.bases.clima.memoria,
+        64 => &mut b.bases.clima.proyecto,
+        65 => &mut b.bases.acs.memoria,
+        66 => &mut b.bases.acs.proyecto,
+        67 => &mut b.bases.deteccion.memoria,
+        68 => &mut b.bases.deteccion.proyecto,
+        69 => &mut b.bases.extincion.memoria,
+        70 => &mut b.bases.extincion.proyecto,
         _ => unreachable!("campo fuera de rango"),
     }
 }
@@ -657,6 +673,11 @@ impl Aplicacion {
                                     .on_hover_text(
                                         "Por defecto en memorias y en proyectos de otro técnico; en los proyectos propios va en la redacción.",
                                     );
+                                ui.end_row();
+                                ui.checkbox(&mut v.e.rite_clima, "Clima y ventilación")
+                                    .on_hover_text("Suma el trabajo base de clima y ventilación");
+                                ui.checkbox(&mut v.e.rite_acs, "ACS")
+                                    .on_hover_text("Suma el trabajo base de producción de ACS");
                             }
                             Disciplina::Pci => {
                                 ui.label("Uso (DB SI 4)");
@@ -677,7 +698,9 @@ impl Aplicacion {
                                 ui.end_row();
                                 ui.checkbox(&mut v.e.pci_bie, "BIE").on_hover_text("Cálculo hidráulico");
                                 ui.checkbox(&mut v.e.pci_deteccion, "Detección")
-                                    .on_hover_text("Cálculo de cobertura y de baterías");
+                                    .on_hover_text("Cálculo de cobertura y de baterías; trabajo base de detección");
+                                ui.checkbox(&mut v.e.pci_extincion, "Extinción")
+                                    .on_hover_text("Trabajo base de extinción (extintores, BIE, hidrantes, rociadores…); con BIE ya cuenta");
                                 if v.e.documento == Documento::Memoria {
                                     ui.checkbox(&mut v.e.pci_inspeccionable, "Memoria inspeccionable").on_hover_text(
                                         "Aumenta recorridos de evacuación o superficie de sectorización: EICI con tarifa de proyecto y visita de la OCA",
