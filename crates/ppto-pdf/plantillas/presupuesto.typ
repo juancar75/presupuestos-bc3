@@ -171,7 +171,8 @@
   text(weight: "bold", fill: acento)[TOTAL], text(weight: "bold", fill: acento)[#d.total €],
 )))
 #v(1.2em)
-#par[Asciende el importe total a la expresada cantidad de *#upper(d.total_letra)* (#d.total €)#if d.iva != none [, IVA incluido].]
+// En letra, el importe sin IVA
+#par[Asciende el importe total a la expresada cantidad de *#upper(d.at("base_letra", default: d.total_letra))* (#if d.iva != none [#d.base] else [#d.total] €)#if d.iva != none [, IVA no incluido].]
 
 #if d.at("conformidad", default: false) [
   #v(2.5em)
