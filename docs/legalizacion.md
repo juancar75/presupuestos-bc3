@@ -17,7 +17,7 @@ La **tarifa sale de nuestros costes y nuestro margen**:
 | Visitas a obra / de la OCA | según nº de visitas | horas del técnico por visita |
 | Desplazamientos | por viaje | horas de viaje, km, aparcamiento y, por encima de un umbral, dietas |
 | Costes indirectos, gestión y beneficio | siempre | % según el tamaño del encargo (pequeño, mediano, grande por horas, o elegido) |
-| Tasas, inspección y visados | si se repercuten | tasa de la Comunidad, EICI, visados (proyectos), EICI de segundas visitas y registro frigorífico; sin margen |
+| Tasas, inspección y visados | si se repercuten | tasa de la Comunidad, EICI, visados (proyectos), EICI de segundas visitas; sin margen |
 
 El total de horas se redondea al alza a jornadas completas (8 h por defecto); la diferencia se añade al primer bloque como «ajuste a jornada completa».
 
@@ -43,8 +43,7 @@ revisar):
 | Potencia de calor y frío | kW del texto de unidades exteriores, bombas de calor, enfriadoras, calderas, roof-top y splits, por su medición (no las unidades interiores) |
 | Circuitos RSIF y modelos | unidades exteriores y enfriadoras, y partidas distintas |
 | Refrigerante | el más exigente nombrado (R-32/R-454B → A2L; R-410A, R-744 → L1; R-717 → L2; R-290 → L3) |
-| Instalación frigorífica | centrales, unidades condensadoras, cámaras y murales; kW eléctricos de compresores si vienen. Solo entonces se propone **registro frigorífico** aparte |
-| Primario frigorífico (RITE) | climatización con refrigerante (VRF, split…) sin instalación frigorífica propia: se marca el primario del expediente RITE (EICI «con primario») y **no** se propone registro IF, que se cobraría dos veces (Orden CM de 31/03/2025) |
+| Primario frigorífico (RITE) | split, bibloc o VRF con refrigerante (circuito hecho en obra): se marca el primario del expediente RITE (EICI «con primario»). **Monobloc y compactos** (roof-top, enfriadoras) no tienen primario. No hay registro frigorífico aparte: solo climatización y ACS (R-32, R-290), sin frío industrial (Orden CM de 31/03/2025) |
 | Sistemas PCI, BIE y detección | extintores, BIE, detección, alarma, hidrantes, columna seca, rociadores, abastecimiento, extinción automática, control de humos y señalización |
 | Instalaciones PCI (EICI) | las **casillas** del apartado 8.2 de la solicitud PCI: cuentan todos los sistemas leídos **menos extintores y señalización**, que no tienen casilla |
 

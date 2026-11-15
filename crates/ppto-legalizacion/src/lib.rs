@@ -311,6 +311,9 @@ pub struct Baremo {
     pub reparto_justificacion: Reparto,
     /// Horas del técnico en cada visita de la OCA.
     pub oca_horas: Decimal,
+    /// Memorias RITE: % que la OCA inspecciona por muestreo. Se reparte la
+    /// visita (horas y viaje) entre todas: 7 % → 0,07 visitas por memoria.
+    pub muestreo_memoria_rite_pct: Decimal,
     /// Viaje habitual (sin datos de la obra): km de ida y vuelta y horas.
     pub viaje_km: Decimal,
     pub viaje_horas: Decimal,
@@ -355,14 +358,6 @@ pub struct Baremo {
     /// Límites de superficie (m²) de las columnas: columna i si S < límite i.
     pub eici_pci_superficies: Vec<Decimal>,
     pub eici_pci_presion: Decimal,
-    /// Registro de instalación frigorífica (RSIF): EICI por nivel y tasa.
-    pub eici_if_memoria_a2l: Decimal,
-    pub eici_if_memoria_l1: Decimal,
-    pub eici_if_proyecto: Decimal,
-    pub eici_if_proyecto_sala: Decimal,
-    /// Coste adicional de la EICI de frigoríficas por circuito primario.
-    pub eici_if_primario: Decimal,
-    pub tasa_if: Decimal,
 }
 
 impl Default for Baremo {
@@ -439,6 +434,7 @@ impl Default for Baremo {
             },
             reparto_justificacion: Reparto::default(),
             oca_horas: z,
+            muestreo_memoria_rite_pct: z,
             viaje_km: z,
             viaje_horas: z,
             km: z,
@@ -467,12 +463,6 @@ impl Default for Baremo {
             eici_pci_proyecto: Vec::new(),
             eici_pci_superficies: Vec::new(),
             eici_pci_presion: z,
-            eici_if_memoria_a2l: z,
-            eici_if_memoria_l1: z,
-            eici_if_proyecto: z,
-            eici_if_proyecto_sala: z,
-            eici_if_primario: z,
-            tasa_if: z,
         }
     }
 }
@@ -554,6 +544,7 @@ impl Baremo {
             horas_visita_obra: d(2),
             horas_jornada: d(8),
             oca_horas: d(2),
+            muestreo_memoria_rite_pct: d(7),
             viaje_km: d(40),
             viaje_horas: d(1),
             km: Decimal::new(25, 2),
@@ -580,12 +571,6 @@ impl Baremo {
             eici_pci_proyecto: vec![vec![d(400), d(500)], vec![d(450), d(550)]],
             eici_pci_superficies: vec![d(1000)],
             eici_pci_presion: d(150),
-            eici_if_memoria_a2l: d(120),
-            eici_if_memoria_l1: d(130),
-            eici_if_proyecto: d(250),
-            eici_if_proyecto_sala: d(350),
-            eici_if_primario: d(150),
-            tasa_if: d(35),
             ..Self::default()
         }
     }
@@ -771,15 +756,6 @@ pub enum Refrigerante {
     L3,
 }
 
-/// Registro de instalación frigorífica que acompaña a la justificación RSIF.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RegistroIf {
-    MemoriaA2l,
-    MemoriaL1,
-    Proyecto,
-    ProyectoConSala,
-}
-
 /// Datos de un expediente (una disciplina de la obra).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Expediente {
@@ -822,15 +798,9 @@ pub struct Expediente {
     /// supera la carga mínima) y, de ellos, modelos distintos (0 = todos distintos).
     pub circuitos_rsif: u32,
     pub modelos_rsif: u32,
-    pub registro_if: Option<RegistroIf>,
-    /// La instalación frigorífica tiene circuito primario (adicional de la EICI).
-    pub if_primario: bool,
-    /// Frigorífica: potencia de compresores del mayor sistema y total (kW),
-    /// refrigerante y cámaras de atmósfera artificial (para el aviso de nivel).
-    pub if_kw_sistema: Decimal,
-    pub if_kw_total: Decimal,
+    /// Refrigerante más exigente de la climatización y el ACS (R-32 → A2L,
+    /// R-290 → L3).
     pub refrigerante: Refrigerante,
-    pub atmosfera_artificial: bool,
     /// Revisiones de los planos de arquitectura que obligan a rehacer los
     /// planos as-built.
     pub revisiones_arquitectura: u32,
@@ -881,12 +851,7 @@ impl Expediente {
             justificar_rite: disciplina == Disciplina::Rite && documento == Documento::Memoria,
             circuitos_rsif: 0,
             modelos_rsif: 0,
-            registro_if: None,
-            if_primario: false,
-            if_kw_sistema: Decimal::ZERO,
-            if_kw_total: Decimal::ZERO,
             refrigerante: Refrigerante::A2l,
-            atmosfera_artificial: false,
             revisiones_arquitectura: 0,
             planos: 0,
             visitas_obra: if documento == Documento::Proyecto { 2 } else { 1 },
@@ -953,43 +918,6 @@ impl Expediente {
                     "PCI: sin BIE ni detección y por debajo de los umbrales del uso; si no se alcanza ninguna condición de la tabla 1.1 del DB SI 4, basta memoria.".into(),
                 ),
                 _ => {}
-            }
-        }
-        if self.disciplina == Disciplina::Rite && self.primario_frio && self.registro_if.is_some() {
-            a.push(
-                "Frigorífica: el primario de la climatización se tramita en el expediente RITE (tarifa EICI «con primario»); el registro IF aparte es solo para una instalación frigorífica propia (cámaras, murales, centrales). Compruebe que no se cobra dos veces.".into(),
-            );
-        }
-        if let Some(reg) = self.registro_if {
-            let mut nivel2 = Vec::new();
-            if self.if_kw_sistema > d(30) {
-                nivel2.push(format!("un sistema de {} kW (> 30)", corto(self.if_kw_sistema)));
-            }
-            if self.if_kw_total > d(100) {
-                nivel2.push(format!("{} kW en total (> 100)", corto(self.if_kw_total)));
-            }
-            if self.atmosfera_artificial {
-                nivel2.push("cámaras de atmósfera artificial".into());
-            }
-            if matches!(self.refrigerante, Refrigerante::L2 | Refrigerante::L3) {
-                nivel2.push("refrigerante L2/L3".into());
-            }
-            let es_memoria = matches!(reg, RegistroIf::MemoriaA2l | RegistroIf::MemoriaL1);
-            let datos = !self.if_kw_sistema.is_zero() || !self.if_kw_total.is_zero();
-            if es_memoria && !nivel2.is_empty() {
-                a.push(format!(
-                    "Frigorífica: {} → nivel 2; el RSIF (art. 20.2) exige proyecto, no memoria.",
-                    nivel2.join(", ")
-                ));
-            } else if !es_memoria && nivel2.is_empty() && datos {
-                a.push(format!(
-                    "Frigorífica: nivel 1{} → basta memoria (RSIF art. 20.2).",
-                    if self.refrigerante == Refrigerante::A2l {
-                        " (A2L dentro de los límites)"
-                    } else {
-                        ""
-                    }
-                ));
             }
         }
         a
@@ -1386,7 +1314,6 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
             });
         }
     }
-    let mut rep_if = Vec::new();
     if e.circuitos_rsif > 0 {
         let (modelos, repetidos) = e.rsif_modelos_repetidos();
         // Los primeros circuitos van en las horas fijas; se descuentan primero
@@ -1421,35 +1348,6 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
                 lineas: horas_perfil(b, "justificación RSIF", h, &b.reparto_justificacion),
             });
         }
-        if e.repercutir
-            && let Some(nivel) = e.registro_if
-        {
-            let (txt, eici) = match nivel {
-                RegistroIf::MemoriaA2l => ("memoria nivel 1 (A2L)", b.eici_if_memoria_a2l),
-                RegistroIf::MemoriaL1 => ("memoria nivel 1 (L1)", b.eici_if_memoria_l1),
-                RegistroIf::Proyecto => ("proyecto nivel 2 sin sala", b.eici_if_proyecto),
-                RegistroIf::ProyectoConSala => ("proyecto nivel 2 con sala", b.eici_if_proyecto_sala),
-            };
-            rep_if.push(importe_fijo(
-                format!("EICI registro instalación frigorífica, {txt}"),
-                eici,
-                Tipo::Repercutido,
-            ));
-            if e.if_primario && !b.eici_if_primario.is_zero() {
-                rep_if.push(importe_fijo(
-                    "EICI frigoríficas: coste adicional por circuito primario".into(),
-                    b.eici_if_primario,
-                    Tipo::Repercutido,
-                ));
-            }
-            if !b.tasa_if.is_zero() {
-                rep_if.push(importe_fijo(
-                    "Tasa de registro de instalación frigorífica".into(),
-                    b.tasa_if,
-                    Tipo::Repercutido,
-                ));
-            }
-        }
     }
 
     // 4. Visitas: de obra y de la OCA
@@ -1475,18 +1373,33 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
         });
     }
     let inspeccion = proyecto || (e.disciplina == Disciplina::Pci && e.pci_inspeccionable);
-    let visitas_oca = u32::from(inspeccion) + e.segundas_visitas;
-    if visitas_oca > 0 && !b.oca_horas.is_zero() {
+    // Memorias RITE: la OCA inspecciona una parte por muestreo; la visita se
+    // reparte entre todas (valor esperado).
+    let muestreo = if e.disciplina == Disciplina::Rite && !proyecto {
+        b.muestreo_memoria_rite_pct / Decimal::ONE_HUNDRED
+    } else {
+        Decimal::ZERO
+    };
+    let visitas_oca = d(u32::from(inspeccion) + e.segundas_visitas) + muestreo;
+    if !visitas_oca.is_zero() && !b.oca_horas.is_zero() {
         c.bloques.push(Bloque {
-            titulo: format!("Visitas de inspección de la OCA ({visitas_oca})"),
-            regla: format!("{} h por visita", corto(b.oca_horas)),
+            titulo: format!("Visitas de inspección de la OCA ({})", corto(visitas_oca)),
+            regla: if muestreo.is_zero() {
+                format!("{} h por visita", corto(b.oca_horas))
+            } else {
+                format!(
+                    "{} h por visita; memoria: {} % inspeccionadas por muestreo",
+                    corto(b.oca_horas),
+                    corto(b.muestreo_memoria_rite_pct)
+                )
+            },
             lineas: vec![por_unidad(
                 format!(
                     "{}: preparación y asistencia a la visita de la OCA",
                     Perfil::Tecnico.nombre()
                 ),
                 "h",
-                b.oca_horas * d(visitas_oca),
+                b.oca_horas * visitas_oca,
                 b.coste_tecnico,
                 Tipo::ManoObra,
             )],
@@ -1494,15 +1407,15 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     }
 
     // 5. Desplazamientos
-    let viajes = e.visitas_obra + visitas_oca;
-    if viajes > 0 {
+    let viajes = d(e.visitas_obra) + visitas_oca;
+    if !viajes.is_zero() {
         let km = if e.km > Decimal::ZERO { e.km } else { b.viaje_km };
         let horas = if e.horas_viaje > Decimal::ZERO {
             e.horas_viaje
         } else {
             b.viaje_horas
         };
-        let v = d(viajes);
+        let v = viajes;
         let mut lineas = Vec::new();
         if !horas.is_zero() {
             lineas.push(por_unidad(
@@ -1530,10 +1443,11 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
         }
         if !lineas.is_empty() {
             c.bloques.push(Bloque {
-                titulo: format!("Desplazamientos ({viajes} viajes)"),
+                titulo: format!("Desplazamientos ({} viajes)", corto(viajes)),
                 regla: format!(
-                    "{} visitas a obra + {visitas_oca} de la OCA; {} km y {} h por viaje",
+                    "{} visitas a obra + {} de la OCA; {} km y {} h por viaje",
                     e.visitas_obra,
+                    corto(visitas_oca),
                     corto(km),
                     corto(horas)
                 ),
@@ -1613,7 +1527,6 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
                 Tipo::Repercutido,
             ));
         }
-        lineas.extend(rep_if);
         if !lineas.is_empty() {
             c.bloques.push(Bloque {
                 titulo: "Tasas, inspección y visados (repercutidos sin margen)".into(),
@@ -2002,6 +1915,8 @@ mod tests {
     fn b() -> Baremo {
         Baremo {
             horas_jornada: Decimal::ZERO,
+            // Sin muestreo salvo en su propia prueba.
+            muestreo_memoria_rite_pct: Decimal::ZERO,
             ..Baremo::ejemplo(2026)
         }
     }
@@ -2098,7 +2013,7 @@ mod tests {
     }
 
     #[test]
-    fn avisos_de_proyecto_pci_y_frigorifica() {
+    fn avisos_de_proyecto_pci() {
         let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(20000));
         assert!(e.avisos_documentacion().is_empty());
         e.pci_bie = true;
@@ -2111,17 +2026,6 @@ mod tests {
         assert!(e.avisos_documentacion().is_empty());
         e.documento = Documento::Proyecto;
         assert!(e.avisos_documentacion()[0].contains("basta memoria"));
-        // Frigorífica
-        let mut f = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(20000));
-        f.registro_if = Some(RegistroIf::MemoriaA2l);
-        f.if_kw_sistema = dec!(20);
-        f.if_kw_total = dec!(60);
-        assert!(f.avisos_documentacion().is_empty());
-        f.if_kw_sistema = dec!(35);
-        assert!(f.avisos_documentacion()[0].contains("nivel 2"));
-        f.if_kw_sistema = dec!(20);
-        f.registro_if = Some(RegistroIf::ProyectoConSala);
-        assert!(f.avisos_documentacion()[0].contains("basta memoria"));
     }
 
     #[test]
@@ -2298,33 +2202,33 @@ mod tests {
     }
 
     #[test]
-    fn avisa_si_primario_rite_y_registro_if_a_la_vez() {
-        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
-        e.primario_frio = true;
-        assert!(!e.avisos_documentacion().iter().any(|a| a.contains("cobra dos veces")));
-        e.registro_if = Some(RegistroIf::MemoriaA2l);
-        assert!(e.avisos_documentacion().iter().any(|a| a.contains("cobra dos veces")));
-    }
-
-    #[test]
-    fn rsif_por_modelo_y_repetido_con_registro() {
+    fn rsif_por_modelo_y_repetido() {
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
         e.circuitos_rsif = 40;
         e.modelos_rsif = 2;
-        e.registro_if = Some(RegistroIf::MemoriaA2l);
         let c = calcular(&b(), &e);
         assert_eq!(horas(&c, "Justificación RSIF"), dec!(1) + dec!(2) + dec!(9.5));
-        assert!(
-            c.lineas()
-                .any(|l| l.tipo == Tipo::Repercutido && l.importe() == dec!(120))
-        );
-        assert!(
-            c.lineas()
-                .any(|l| l.tipo == Tipo::Repercutido && l.importe() == dec!(35))
-        );
-        // Circuito primario: adicional de la EICI de frigoríficas.
-        e.if_primario = true;
-        assert_eq!(calcular(&b(), &e).repercutidos, c.repercutidos + dec!(150));
+        // Sin frío industrial: la justificación RSIF no añade registro IF.
+        assert!(!c.lineas().any(|l| l.resumen.contains("frigorífica")));
+    }
+
+    #[test]
+    fn memoria_rite_reparte_la_visita_por_muestreo() {
+        let mut bm = b();
+        bm.muestreo_memoria_rite_pct = dec!(7);
+        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
+        let c = calcular(&bm, &e);
+        // 0,07 visitas × 2 h × 40 €/h.
+        let v = bloque(&c, "Visitas de inspección").unwrap();
+        assert_eq!(v.importe(), dec!(5.6));
+        assert!(v.regla.contains("7 %"));
+        // Proyecto: visita entera, sin muestreo.
+        let p = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(50000));
+        let cp = calcular(&bm, &p);
+        assert!(!bloque(&cp, "Visitas de inspección").unwrap().regla.contains("muestreo"));
+        // PCI memoria no inspeccionable: sin visita.
+        let q = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(20000));
+        assert!(bloque(&calcular(&bm, &q), "Visitas de inspección").is_none());
     }
 
     #[test]

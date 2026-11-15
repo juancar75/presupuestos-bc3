@@ -12,14 +12,14 @@ use eframe::egui::{self, Color32, RichText};
 use ppto_core::Decimal;
 use ppto_core::formato::{eur, leer, num};
 use ppto_legalizacion::{
-    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, Lectura, Refrigerante, RegistroIf, Rol, Tamano, Tipo,
-    Tramo, Uso, UsoPci, aplicar, calcular, capitulos,
+    Baremo, Baremos, Calculo, Disciplina, Documento, Expediente, Lectura, Rol, Tamano, Tipo, Tramo, Uso, UsoPci,
+    aplicar, calcular, capitulos,
 };
 use std::path::PathBuf;
 
 /// Costes, horas, margen y referencias editables en la ventana (los repartos
 /// por perfil y las tablas oficiales, en el JSON).
-const CAMPOS: [(&str, &str); 64] = [
+const CAMPOS: [(&str, &str); 63] = [
     ("Costes horarios (€/h)", "Ingeniero senior"),
     ("Costes horarios (€/h)", "Ingeniero junior"),
     ("Costes horarios (€/h)", "Técnico"),
@@ -73,8 +73,6 @@ const CAMPOS: [(&str, &str); 64] = [
     ("Desplazamientos", "Dieta (€/viaje)"),
     ("Desplazamientos", "Dietas a partir de (km)"),
     ("Repercutidos (€)", "EICI 2ª visita"),
-    ("Repercutidos (€)", "Tasa registro frigorífica"),
-    ("Repercutidos (€)", "EICI frigoríficas: circuito primario"),
     ("Referencia de mercado (€)", "Mínimo proyecto"),
     ("Referencia de mercado (€)", "Mínimo memoria"),
     ("Referencia de mercado (€)", "Mínimo por vivienda"),
@@ -84,6 +82,7 @@ const CAMPOS: [(&str, &str); 64] = [
     ("Referencia de mercado (€)", "RSIF por modelo"),
     ("Referencia de mercado (€)", "RSIF por repetido"),
     ("Referencia de mercado (€)", "RSIF mínimo"),
+    ("Horas por tarea", "Memorias RITE inspeccionadas por la OCA (%)"),
 ];
 
 fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
@@ -141,17 +140,16 @@ fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
         50 => &mut b.dieta,
         51 => &mut b.km_umbral,
         52 => &mut b.eici_segunda_visita,
-        53 => &mut b.tasa_if,
-        54 => &mut b.eici_if_primario,
-        55 => &mut b.tramitacion_minimo,
-        56 => &mut b.tramitacion_minimo_memoria,
-        57 => &mut b.minimo_vivienda,
-        58 => &mut b.redaccion_minimo,
-        59 => &mut b.justif_rite_pct,
-        60 => &mut b.justif_rite_minimo,
-        61 => &mut b.rsif_circuito,
-        62 => &mut b.rsif_repetido,
-        63 => &mut b.rsif_minimo,
+        53 => &mut b.tramitacion_minimo,
+        54 => &mut b.tramitacion_minimo_memoria,
+        55 => &mut b.minimo_vivienda,
+        56 => &mut b.redaccion_minimo,
+        57 => &mut b.justif_rite_pct,
+        58 => &mut b.justif_rite_minimo,
+        59 => &mut b.rsif_circuito,
+        60 => &mut b.rsif_repetido,
+        61 => &mut b.rsif_minimo,
+        62 => &mut b.muestreo_memoria_rite_pct,
         _ => unreachable!("campo fuera de rango"),
     }
 }
@@ -173,8 +171,6 @@ pub(super) struct VentanaLegalizacion {
     horas: String,
     potencia_calor: String,
     potencia_frio: String,
-    if_kw_sistema: String,
-    if_kw_total: String,
     superficie: String,
     /// Datos sacados del presupuesto (para revisar).
     lectura: Option<Lectura>,
@@ -202,8 +198,6 @@ impl VentanaLegalizacion {
             horas: String::new(),
             potencia_calor: String::new(),
             potencia_frio: String::new(),
-            if_kw_sistema: String::new(),
-            if_kw_total: String::new(),
             superficie: String::new(),
             lectura: None,
             editar: false,
@@ -305,8 +299,6 @@ impl VentanaLegalizacion {
         };
         fijar(&mut self.potencia_calor, l.potencia_calor);
         fijar(&mut self.potencia_frio, l.potencia_frio);
-        fijar(&mut self.if_kw_sistema, l.if_kw_sistema);
-        fijar(&mut self.if_kw_total, l.if_kw_total);
     }
 
     fn baremo(&self) -> Baremo {
@@ -324,8 +316,6 @@ impl VentanaLegalizacion {
         e.horas_viaje = leer(&self.horas).unwrap_or_default();
         e.potencia_calor_kw = leer(&self.potencia_calor).unwrap_or_default();
         e.potencia_frio_kw = leer(&self.potencia_frio).unwrap_or_default();
-        e.if_kw_sistema = leer(&self.if_kw_sistema).unwrap_or_default();
-        e.if_kw_total = leer(&self.if_kw_total).unwrap_or_default();
         e.superficie = leer(&self.superficie).unwrap_or_default();
         if e.disciplina == Disciplina::Pci {
             e.justificar_rite = false;
@@ -573,7 +563,7 @@ impl Aplicacion {
                         if ui
                             .button("Rellenar desde el presupuesto")
                             .on_hover_text(
-                                "Busca en las mediciones potencias, unidades exteriores, refrigerante, frigorífica, BIE, detección y sistemas PCI. Revise lo propuesto.",
+                                "Busca en las mediciones potencias, unidades exteriores, refrigerante, equipos partidos (primario), BIE, detección y sistemas PCI. Revise lo propuesto.",
                             )
                             .clicked()
                         {
@@ -701,56 +691,6 @@ impl Aplicacion {
                         ui.label("de ellos, modelos distintos");
                         numero(ui, &mut v.e.modelos_rsif);
                         ui.end_row();
-                        ui.label("Registro frigorífico");
-                        egui::ComboBox::from_id_salt("leg_if")
-                            .selected_text(match v.e.registro_if {
-                                None => "no",
-                                Some(RegistroIf::MemoriaA2l) => "memoria A2L",
-                                Some(RegistroIf::MemoriaL1) => "memoria L1",
-                                Some(RegistroIf::Proyecto) => "proyecto sin sala",
-                                Some(RegistroIf::ProyectoConSala) => "proyecto con sala",
-                            })
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(&mut v.e.registro_if, None, "no");
-                                ui.selectable_value(&mut v.e.registro_if, Some(RegistroIf::MemoriaA2l), "memoria A2L");
-                                ui.selectable_value(&mut v.e.registro_if, Some(RegistroIf::MemoriaL1), "memoria L1");
-                                ui.selectable_value(
-                                    &mut v.e.registro_if,
-                                    Some(RegistroIf::Proyecto),
-                                    "proyecto sin sala",
-                                );
-                                ui.selectable_value(
-                                    &mut v.e.registro_if,
-                                    Some(RegistroIf::ProyectoConSala),
-                                    "proyecto con sala",
-                                );
-                            });
-                        ui.checkbox(&mut v.e.if_primario, "Circuito primario")
-                            .on_hover_text("Adicional de la EICI de frigoríficas por circuito primario");
-                        ui.end_row();
-                        if v.e.registro_if.is_some() {
-                            ui.label("Frigorífica: kW del mayor sistema");
-                            caja(ui, &mut v.if_kw_sistema, 70.0);
-                            ui.label("kW total");
-                            caja(ui, &mut v.if_kw_total, 70.0);
-                            ui.end_row();
-                            ui.label("Refrigerante");
-                            egui::ComboBox::from_id_salt("leg_refrig")
-                                .selected_text(match v.e.refrigerante {
-                                    Refrigerante::L1 => "L1",
-                                    Refrigerante::A2l => "A2L",
-                                    Refrigerante::L2 => "L2 (no A2L)",
-                                    Refrigerante::L3 => "L3",
-                                })
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut v.e.refrigerante, Refrigerante::L1, "L1");
-                                    ui.selectable_value(&mut v.e.refrigerante, Refrigerante::A2l, "A2L");
-                                    ui.selectable_value(&mut v.e.refrigerante, Refrigerante::L2, "L2 (no A2L)");
-                                    ui.selectable_value(&mut v.e.refrigerante, Refrigerante::L3, "L3");
-                                });
-                            ui.checkbox(&mut v.e.atmosfera_artificial, "Cámaras de atmósfera artificial");
-                            ui.end_row();
-                        }
                         if v.e.documento == Documento::Proyecto {
                             ui.label("Revisiones de arquitectura").on_hover_text(
                                 "Veces que hay que rehacer los planos as-built por cambios en los planos de arquitectura",
