@@ -64,7 +64,10 @@ pub struct OpcionesPdf {
     /// Vacío: el resumen de la raíz del presupuesto.
     pub titulo: String,
     pub direccion: String,
+    /// Constructora o cliente al que va la oferta.
     pub cliente: String,
+    /// Persona a la que va dirigida («A la atención de»).
+    pub atencion: String,
     /// Referencia de obra u oferta (p. ej. 2026OBM013).
     pub referencia: String,
     pub revision: String,
@@ -107,6 +110,7 @@ impl Default for OpcionesPdf {
             titulo: String::new(),
             direccion: String::new(),
             cliente: String::new(),
+            atencion: String::new(),
             referencia: String::new(),
             revision: "R0".into(),
             fecha: String::new(),
@@ -309,6 +313,7 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
         "titulo": titulo,
         "direccion": o.direccion,
         "cliente": o.cliente,
+        "atencion": o.atencion,
         "referencia": if o.referencia.is_empty() { p.raiz.clone() } else { o.referencia.clone() },
         "revision": o.revision,
         "fecha": o.fecha,

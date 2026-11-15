@@ -31,6 +31,7 @@
     columns: (3.6cm, 1fr),
     row-gutter: 0.75em,
     ..if d.cliente != "" { (text(fill: gris)[Cliente], text(weight: "bold", d.cliente)) },
+    ..if d.atencion != "" { (text(fill: gris)[A la atención de], d.atencion) },
     text(fill: gris)[Referencia], d.referencia,
     text(fill: gris)[Revisión], text(weight: "bold", d.revision),
     text(fill: gris)[Fecha], d.fecha,

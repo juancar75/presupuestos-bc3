@@ -7,6 +7,7 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ### Cambiado
 - **PDF: la portada muestra el importe sin IVA** («Importe (IVA no incl.)», base imponible = PEM + GG + BI). El total con IVA sigue en el resumen final.
+- **PDF: «A la atención de» en la portada**, bajo el cliente (constructora). Nuevo campo en la ventana del PDF; al elegir un cliente de la lista se rellena con su contacto. Se guarda por obra con el resto de datos.
 
 ### Añadido
 - **Partida «Incluida»** junto a «Excluida»: conserva medición y descompuesto, no suma en el capítulo y sale «INCLUIDO» en PDF y Excel (p. ej. legalizaciones de un expediente único). Excluida e incluida son excluyentes. Se guarda en la obra (migración 0014); en BC3 viaja como factor 0, igual que la excluida, y al reimportar se lee como excluida.
