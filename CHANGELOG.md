@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.62] - 2026-11-16
+
 ### Cambiado
 - **PDF: la portada muestra el importe sin IVA** («Importe (IVA no incl.)», base imponible = PEM + GG + BI). El total con IVA sigue en el resumen final.
 - **PDF: «A la atención de» en la portada**, bajo el cliente (constructora). Nuevo campo en la ventana del PDF; al elegir un cliente de la lista se rellena con su contacto. Se guarda por obra con el resto de datos.
