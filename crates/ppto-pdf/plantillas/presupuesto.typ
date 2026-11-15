@@ -34,7 +34,7 @@
     text(fill: gris)[Referencia], d.referencia,
     text(fill: gris)[Revisión], text(weight: "bold", d.revision),
     text(fill: gris)[Fecha], d.fecha,
-    text(fill: gris)[Importe (IVA incl.)], text(weight: "bold")[#d.total €],
+    text(fill: gris)[Importe (IVA no incl.)], text(weight: "bold")[#d.base €],
   )
   #v(1fr)
   #line(length: 100%, stroke: 0.4pt + gris)
