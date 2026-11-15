@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 /// Costes, horas, margen y referencias editables en la ventana (los repartos
 /// por perfil y las tablas oficiales, en el JSON).
-const CAMPOS: [(&str, &str); 75] = [
+const CAMPOS: [(&str, &str); 79] = [
     ("Costes horarios (€/h)", "Ingeniero senior"),
     ("Costes horarios (€/h)", "Ingeniero junior"),
     ("Costes horarios (€/h)", "Técnico"),
@@ -95,6 +95,10 @@ const CAMPOS: [(&str, &str); 75] = [
     ("Trabajo base (h)", "ACS: cálculos (proyecto)"),
     ("Trabajo base (h)", "PCI detección: cálculos (proyecto)"),
     ("Trabajo base (h)", "PCI extinción: cálculos (proyecto)"),
+    ("Trabajo base (h)", "Control de humos / garaje: memoria"),
+    ("Trabajo base (h)", "Control de humos / garaje: proyecto"),
+    ("Trabajo base (h)", "Control de humos / garaje: cálculos (proyecto)"),
+    ("Trabajo base (h)", "Control de humos / garaje: certificado"),
 ];
 
 fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
@@ -174,6 +178,10 @@ fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
         72 => &mut b.bases.acs.calculos,
         73 => &mut b.bases.deteccion.calculos,
         74 => &mut b.bases.extincion.calculos,
+        75 => &mut b.bases.control_humos.memoria,
+        76 => &mut b.bases.control_humos.proyecto,
+        77 => &mut b.bases.control_humos.calculos,
+        78 => &mut b.horas_certificado_humos,
         _ => unreachable!("campo fuera de rango"),
     }
 }
@@ -707,6 +715,8 @@ impl Aplicacion {
                                 ui.checkbox(&mut v.e.pci_bie, "BIE").on_hover_text("Cálculo hidráulico");
                                 ui.checkbox(&mut v.e.pci_deteccion, "Detección")
                                     .on_hover_text("Cálculo de cobertura y de baterías; trabajo base de detección");
+                                ui.checkbox(&mut v.e.pci_control_humos, "Control de humos / garaje (SCTEH)")
+                                    .on_hover_text("Ventilación de garaje y control de humos: exige proyecto y certificado de la instalación");
                                 ui.checkbox(&mut v.e.pci_extincion, "Extinción")
                                     .on_hover_text("Trabajo base de extinción (extintores, BIE, hidrantes, rociadores…); con BIE ya cuenta");
                                 if v.e.documento == Documento::Memoria {

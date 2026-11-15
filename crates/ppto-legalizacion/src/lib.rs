@@ -185,6 +185,8 @@ pub struct BasesAlcance {
     pub deteccion: Base,
     /// PCI: extinción (extintores, BIE, hidrantes, rociadores…).
     pub extincion: Base,
+    /// PCI: control de humos y calor, p. ej. ventilación de garaje (SCTEH).
+    pub control_humos: Base,
 }
 
 /// Horas de una tarea: fijas + por cada 10.000 € de PEM + por vivienda,
@@ -317,6 +319,8 @@ pub struct Baremo {
     /// cada instalación (BIE, detección, alarma… las casillas de la solicitud).
     pub horas_memoria_pci: Horas,
     pub horas_pci_instalacion: Decimal,
+    /// Certificado de la instalación de control de humos (SCTEH, garajes).
+    pub horas_certificado_humos: Decimal,
     /// RSIF: horas fijas, que cubren hasta `rsif_circuitos_base` circuitos;
     /// a partir de ahí, por modelo distinto y por circuito repetido.
     pub rsif_horas_base: Decimal,
@@ -454,6 +458,7 @@ impl Default for Baremo {
             horas_justif_rite: Horas::default(),
             horas_memoria_pci: Horas::default(),
             horas_pci_instalacion: z,
+            horas_certificado_humos: z,
             rsif_horas_modelo: z,
             rsif_horas_repetido: z,
             horas_visita_obra: z,
@@ -831,6 +836,9 @@ pub struct Expediente {
     /// PCI: superficie (m²) para la EICI de proyecto.
     pub superficie: Decimal,
     pub presion_diferencial: bool,
+    /// PCI: control de humos y calor (ventilación de garaje SCTEH): exige
+    /// proyecto y certificado de la instalación.
+    pub pci_control_humos: bool,
     /// PCI: memoria inspeccionable (aumenta recorridos de evacuación o
     /// superficie de sectorización): EICI con tarifa de proyecto y visita.
     pub pci_inspeccionable: bool,
@@ -897,6 +905,7 @@ impl Expediente {
             instalaciones_pci: 1,
             superficie: Decimal::ZERO,
             presion_diferencial: false,
+            pci_control_humos: false,
             pci_inspeccionable: false,
             uso_pci: UsoPci::Otro,
             pci_bie: false,
@@ -956,6 +965,9 @@ impl Expediente {
             if self.pci_deteccion {
                 motivos.push("hay detección".to_owned());
             }
+            if self.pci_control_humos {
+                motivos.push("control de humos / ventilación de garaje (SCTEH)".to_owned());
+            }
             if let Some((m2, que)) = self.uso_pci.umbral()
                 && self.superficie > d(m2)
             {
@@ -982,18 +994,16 @@ impl Expediente {
     /// Trabajo base de los alcances marcados (horas) y su explicación.
     pub fn trabajo_base(&self, b: &BasesAlcance, parte: ParteBase) -> (Decimal, Vec<String>) {
         let proyecto = self.proyecto();
-        let alcances: [(&str, bool, &Base); 4] = match self.disciplina {
+        let alcances: [(&str, bool, &Base); 3] = match self.disciplina {
             Disciplina::Rite => [
                 ("clima y ventilación", self.rite_clima, &b.clima),
                 ("ACS", self.rite_acs, &b.acs),
                 ("", false, &b.deteccion),
-                ("", false, &b.extincion),
             ],
             Disciplina::Pci => [
                 ("detección", self.pci_deteccion, &b.deteccion),
                 ("extinción", self.pci_extincion || self.pci_bie, &b.extincion),
-                ("", false, &b.clima),
-                ("", false, &b.acs),
+                ("control de humos", self.pci_control_humos, &b.control_humos),
             ],
         };
         let mut h = Decimal::ZERO;
@@ -1412,6 +1422,19 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
                 });
             }
         }
+    }
+    // Control de humos (SCTEH): certificado de la instalación.
+    if e.disciplina == Disciplina::Pci && e.pci_control_humos && !b.horas_certificado_humos.is_zero() {
+        c.bloques.push(Bloque {
+            titulo: "Certificado de la instalación de control de humos (SCTEH)".into(),
+            regla: format!("{} h", corto(b.horas_certificado_humos)),
+            lineas: horas_perfil(
+                b,
+                "certificado de la instalación de control de humos",
+                b.horas_certificado_humos,
+                &b.reparto_anexos,
+            ),
+        });
     }
 
     // 3. Justificaciones
@@ -2366,6 +2389,7 @@ mod tests {
                 proyecto: dec!(12),
                 calculos: Decimal::ZERO,
             },
+            control_humos: Base::default(),
         };
         // Memoria RITE solo clima: elaboración = la de antes + 6 h.
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(50000));
@@ -2396,6 +2420,26 @@ mod tests {
         q.pci_deteccion = true;
         q.pci_bie = true;
         assert_eq!(horas(&calcular(&bm, &q), "Elaboración"), q0 + dec!(9));
+    }
+
+    #[test]
+    fn garaje_scteh_exige_proyecto_y_certificado() {
+        let mut bm = b();
+        bm.bases.control_humos = Base {
+            memoria: Decimal::ZERO,
+            proyecto: dec!(16),
+            calculos: dec!(10),
+        };
+        bm.horas_certificado_humos = dec!(3);
+        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(40000));
+        e.pci_control_humos = true;
+        assert!(e.avisos_documentacion()[0].contains("SCTEH"));
+        e.documento = Documento::Proyecto;
+        let c0 = calcular(&b(), &e);
+        let c = calcular(&bm, &e);
+        assert_eq!(horas(&c, "Redacción"), horas(&c0, "Redacción") + dec!(16));
+        assert_eq!(horas(&c, "Cálculos"), horas(&c0, "Cálculos") + dec!(10));
+        assert_eq!(horas(&c, "Certificado de la instalación de control de humos"), dec!(3));
     }
 
     #[test]

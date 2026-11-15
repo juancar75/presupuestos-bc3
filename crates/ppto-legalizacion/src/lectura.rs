@@ -93,6 +93,7 @@ impl Lectura {
             e.rite_acs |= self.acs;
         }
         e.pci_extincion |= self.sistemas_pci.iter().any(|s| SISTEMAS_EXTINCION.contains(s));
+        e.pci_control_humos |= self.sistemas_pci.contains(&"control de humos");
         e.pci_bie |= self.bie > 0;
         e.pci_deteccion |= self.deteccion;
         e.presion_diferencial |= self.presion_diferencial;
@@ -313,6 +314,13 @@ const SISTEMAS_PCI: &[(&str, &[&str])] = &[
             "sobrepresion",
             "presion diferencial",
             "exutorio",
+            "scteh",
+            "ventilacion de garaje",
+            "ventilacion del garaje",
+            "extraccion de garaje",
+            "extraccion del garaje",
+            "jet fan",
+            "jetfan",
         ],
     ),
     (
@@ -996,6 +1004,25 @@ mod tests {
         l.rellenar(&mut e);
         assert!(e.pci_extincion && e.pci_deteccion);
         assert!(!e.rite_acs);
+    }
+
+    #[test]
+    fn garaje_con_ventilacion_scteh_es_control_de_humos() {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Garaje");
+        p.nuevo_capitulo("OBRA", "C04", "VENTILACIÓN DE GARAJE").unwrap();
+        partida(
+            &mut p,
+            "C04",
+            "V01",
+            "Ud. Ventilador jet fan para ventilación de garaje F400 2h",
+            dec!(6),
+        );
+        let l = leer_presupuesto(&p);
+        assert!(l.sistemas_pci.contains(&"control de humos"));
+        let mut e = Expediente::nuevo(Disciplina::Pci, crate::Documento::Proyecto, dec!(60000));
+        l.rellenar(&mut e);
+        assert!(e.pci_control_humos);
+        assert_eq!(e.instalaciones_pci, 1);
     }
 
     #[test]

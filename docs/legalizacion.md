@@ -63,9 +63,14 @@ marcado.
 | ACS | RITE | «ACS», «agua caliente sanitaria», interacumulador… | `bases.acs` |
 | Detección | PCI | detección automática | `bases.deteccion` |
 | Extinción | PCI | extintores, BIE, hidrantes, columna seca, rociadores, abastecimiento, extinción automática | `bases.extincion` |
+| Control de humos / garaje (SCTEH) | PCI | control o extracción de humos, sobrepresión, exutorios, ventilación de garaje, jet fan | `bases.control_humos` + `horas_certificado_humos` |
 
 En memorias la base se suma a la elaboración; en proyectos, a la redacción
 (en los de otro técnico no hay redacción y no se suma). Sin datos, 0.
+La ventilación de garaje (SCTEH) se tramita como **expediente PCI**: exige
+proyecto (aviso si se marca memoria) y lleva además el **certificado de la
+instalación** (`horas_certificado_humos`).
+
 En proyectos propios cada alcance tiene además sus **horas de cálculos**
 (`bases.<alcance>.calculos`), que se suman a los cálculos justificativos.
 
