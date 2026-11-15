@@ -32,7 +32,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+mod intercambio;
 mod lectura;
+pub use intercambio::{ErrorIntercambio, Respuesta, Solicitud, VERSION_INTERCAMBIO};
 pub use lectura::{Lectura, Pista, leer_presupuesto};
 
 /// Fichero del baremo en la carpeta de configuración.
@@ -1042,7 +1044,7 @@ impl Perfil {
 }
 
 /// Clase de línea: decide si lleva margen y cómo se suma.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tipo {
     ManoObra,
     Indirecto,
@@ -1051,7 +1053,7 @@ pub enum Tipo {
 }
 
 /// Línea del descompuesto de la partida de legalización.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Linea {
     pub resumen: String,
     pub unidad: String,
@@ -1095,7 +1097,7 @@ fn por_unidad(resumen: String, unidad: &str, n: Decimal, precio: Decimal, tipo: 
 }
 
 /// Grupo de líneas con su explicación (para la vista previa).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Bloque {
     pub titulo: String,
     /// Cómo se ha calculado (honorario de baremo, mínimo aplicado…).
@@ -1109,7 +1111,7 @@ impl Bloque {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Calculo {
     pub resumen: String,
     pub texto: String,

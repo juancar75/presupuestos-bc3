@@ -17,14 +17,14 @@ $origen  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $destino = Join-Path $env:LOCALAPPDATA 'Programs\presupuestos-bc3'
 
 Write-Host "Instalando en $destino ..."
-$abiertos = Get-Process ppto-gui, ppto-mcp -ErrorAction SilentlyContinue
+$abiertos = Get-Process ppto-gui, legalizacion, ppto-mcp -ErrorAction SilentlyContinue
 if ($abiertos) {
     $abiertos | Stop-Process -Force -ErrorAction SilentlyContinue
     # Windows tarda un momento en liberar los .exe después de cerrarlos
     $abiertos | Wait-Process -Timeout 15 -ErrorAction SilentlyContinue
 }
 New-Item -ItemType Directory -Force -Path $destino | Out-Null
-foreach ($f in 'ppto-gui.exe', 'ppto-mcp.exe', 'ppto.exe', 'LEEME.txt') {
+foreach ($f in 'ppto-gui.exe', 'legalizacion.exe', 'ppto-mcp.exe', 'ppto.exe', 'LEEME.txt') {
     $p = Join-Path $origen $f
     if (-not (Test-Path $p)) { continue }
     $copiado = $false
@@ -36,7 +36,7 @@ foreach ($f in 'ppto-gui.exe', 'ppto-mcp.exe', 'ppto.exe', 'LEEME.txt') {
             if ($i -eq 10) {
                 throw "No se puede sustituir ${f}: sigue abierto. Cierre Presupuestos BC3 y la app de Claude (icono junto al reloj > Salir) y vuelva a ejecutar instalar.bat."
             }
-            Get-Process ppto-gui, ppto-mcp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-Process ppto-gui, legalizacion, ppto-mcp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
         }
     }

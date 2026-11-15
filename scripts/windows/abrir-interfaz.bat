@@ -1,7 +1,7 @@
 @echo off
 rem Compila (la primera vez tarda unos minutos) y abre la interfaz de escritorio.
 cd /d "%~dp0\..\.."
-cargo build --release -p ppto-gui
+cargo build --release -p ppto-gui -p ppto-legalizacion-app
 if errorlevel 1 (
   echo.
   echo *** ERROR al compilar: revisa el mensaje anterior ***

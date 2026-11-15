@@ -396,7 +396,7 @@ pub struct Aplicacion {
     /// Si los documentos de las ofertas siguen donde se vincularon.
     docs: ofertas::CacheDocumentos,
     ventana_comparar: Option<comparar::VentanaComparar>,
-    ventana_legalizacion: Option<legalizacion::VentanaLegalizacion>,
+    ventana_legalizacion: Option<legalizacion::Lanzada>,
     dificultad: dificultad::FormDificultad,
     /// Cambios que se anotan en la auditoría al guardar la revisión.
     notas_revision: Vec<String>,

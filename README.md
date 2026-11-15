@@ -166,6 +166,7 @@ Programa y MCP se comunican por dos ficheros de la carpeta de configuración
 ## Interfaz de escritorio (prototipo)
 
 ```console
+cargo build --release -p ppto-legalizacion-app   # «Legalización…» abre este programa
 cargo run --release -p ppto-gui
 ```
 
