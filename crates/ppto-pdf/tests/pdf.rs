@@ -40,6 +40,11 @@ fn datos_de_la_plantilla() {
         d["total_letra"],
         "diez mil ochenta y seis euros con setenta y dos céntimos"
     );
+    // En letra va el importe sin IVA
+    assert_eq!(
+        d["base_letra"],
+        "ocho mil trescientos treinta y seis euros con trece céntimos"
+    );
     let c = &d["capitulos"][0];
     assert_eq!(
         (c["codigo"].as_str(), c["importe"].as_str()),

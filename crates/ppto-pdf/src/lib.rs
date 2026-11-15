@@ -335,6 +335,7 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
         "iva": iva,
         "total": eur(r.total),
         "total_letra": en_letra(r.total),
+        "base_letra": en_letra(r.base),
         "observaciones": o.observaciones.iter().filter(|s| !s.trim().is_empty()).collect::<Vec<_>>(),
         "conformidad": o.conformidad,
         "cliente_firma": if o.cliente.trim().is_empty() { "El cliente".to_owned() } else { o.cliente.clone() },
