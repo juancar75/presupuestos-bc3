@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.61] - 2026-11-15
+
 ### Corregido
 - PDF: el importe en letra es el del presupuesto sin IVA («…, IVA no incluido»), no el total con IVA.
 
