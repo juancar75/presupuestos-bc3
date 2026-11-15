@@ -151,11 +151,24 @@ fn reparto_redaccion() -> Reparto {
 pub struct Base {
     pub memoria: Decimal,
     pub proyecto: Decimal,
+    /// Proyectos: horas de cálculos justificativos del alcance.
+    pub calculos: Decimal,
+}
+
+/// Qué parte del trabajo base se pide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParteBase {
+    Documento,
+    Calculos,
 }
 
 impl Base {
-    fn de(&self, proyecto: bool) -> Decimal {
-        if proyecto { self.proyecto } else { self.memoria }
+    fn de(&self, proyecto: bool, parte: ParteBase) -> Decimal {
+        match parte {
+            ParteBase::Calculos => self.calculos,
+            ParteBase::Documento if proyecto => self.proyecto,
+            ParteBase::Documento => self.memoria,
+        }
     }
 }
 
@@ -967,7 +980,7 @@ impl Expediente {
     }
 
     /// Trabajo base de los alcances marcados (horas) y su explicación.
-    pub fn trabajo_base(&self, b: &BasesAlcance) -> (Decimal, Vec<String>) {
+    pub fn trabajo_base(&self, b: &BasesAlcance, parte: ParteBase) -> (Decimal, Vec<String>) {
         let proyecto = self.proyecto();
         let alcances: [(&str, bool, &Base); 4] = match self.disciplina {
             Disciplina::Rite => [
@@ -986,7 +999,7 @@ impl Expediente {
         let mut h = Decimal::ZERO;
         let mut partes = Vec::new();
         for (nombre, activo, base) in alcances {
-            let x = base.de(proyecto);
+            let x = base.de(proyecto, parte);
             if activo && !x.is_zero() {
                 h += x;
                 partes.push(format!("base {nombre} {} h", corto(x)));
@@ -1276,7 +1289,7 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     let mut h = horas.de(e.pem, n_viv);
     let mut regla = horas.texto(n_viv);
     if !proyecto {
-        let (base, partes) = e.trabajo_base(&b.bases);
+        let (base, partes) = e.trabajo_base(&b.bases, ParteBase::Documento);
         if !base.is_zero() {
             h += base;
             regla.push_str(&format!(" + {}", partes.join(" + ")));
@@ -1334,8 +1347,15 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
         for (titulo, que, horas, reparto) in tareas {
             let mut h = horas.de(e.pem, n_viv);
             let mut regla = horas.texto(n_viv);
-            if titulo.starts_with("Redacción") {
-                let (base, partes) = e.trabajo_base(&b.bases);
+            let parte = if titulo.starts_with("Redacción") {
+                Some(ParteBase::Documento)
+            } else if titulo == "Cálculos justificativos" {
+                Some(ParteBase::Calculos)
+            } else {
+                None
+            };
+            if let Some(parte) = parte {
+                let (base, partes) = e.trabajo_base(&b.bases, parte);
                 if !base.is_zero() {
                     h += base;
                     regla.push_str(&format!(" + {}", partes.join(" + ")));
@@ -1378,6 +1398,11 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
                     "cobertura y baterías de detección {} h",
                     corto(b.horas_calc_deteccion)
                 ));
+            }
+            let (base, otras) = e.trabajo_base(&b.bases, ParteBase::Calculos);
+            if !base.is_zero() {
+                h += base;
+                partes.extend(otras);
             }
             if h > Decimal::ZERO {
                 c.bloques.push(Bloque {
@@ -2324,18 +2349,22 @@ mod tests {
             clima: Base {
                 memoria: dec!(6),
                 proyecto: dec!(16),
+                calculos: Decimal::ZERO,
             },
             acs: Base {
                 memoria: dec!(3),
                 proyecto: dec!(8),
+                calculos: Decimal::ZERO,
             },
             deteccion: Base {
                 memoria: dec!(4),
                 proyecto: dec!(10),
+                calculos: Decimal::ZERO,
             },
             extincion: Base {
                 memoria: dec!(5),
                 proyecto: dec!(12),
+                calculos: Decimal::ZERO,
             },
         };
         // Memoria RITE solo clima: elaboración = la de antes + 6 h.
@@ -2352,6 +2381,15 @@ mod tests {
         p.potencia_calor_kw = dec!(120);
         let r0 = horas(&calcular(&b(), &p), "Redacción");
         assert_eq!(horas(&calcular(&bm, &p), "Redacción"), r0 + dec!(16));
+        // Cálculos del proyecto por alcance: clima 10 h (+ ACS 4 h si hay ACS).
+        bm.bases.clima.calculos = dec!(10);
+        bm.bases.acs.calculos = dec!(4);
+        let k0 = horas(&calcular(&b(), &p), "Cálculos");
+        assert_eq!(horas(&calcular(&bm, &p), "Cálculos"), k0 + dec!(10));
+        p.rite_acs = true;
+        assert_eq!(horas(&calcular(&bm, &p), "Cálculos"), k0 + dec!(14));
+        // En la memoria no hay cálculos aparte.
+        assert!(bloque(&calcular(&bm, &e), "Cálculos").is_none());
         // PCI memoria con detección y BIE (extinción): + 4 + 5.
         let mut q = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(20000));
         let q0 = horas(&calcular(&b(), &q), "Elaboración");

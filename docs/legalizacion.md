@@ -66,6 +66,8 @@ marcado.
 
 En memorias la base se suma a la elaboración; en proyectos, a la redacción
 (en los de otro técnico no hay redacción y no se suma). Sin datos, 0.
+En proyectos propios cada alcance tiene además sus **horas de cálculos**
+(`bases.<alcance>.calculos`), que se suman a los cálculos justificativos.
 
 ## Baremo
 

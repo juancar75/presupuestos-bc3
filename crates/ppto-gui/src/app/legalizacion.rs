@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 /// Costes, horas, margen y referencias editables en la ventana (los repartos
 /// por perfil y las tablas oficiales, en el JSON).
-const CAMPOS: [(&str, &str); 71] = [
+const CAMPOS: [(&str, &str); 75] = [
     ("Costes horarios (€/h)", "Ingeniero senior"),
     ("Costes horarios (€/h)", "Ingeniero junior"),
     ("Costes horarios (€/h)", "Técnico"),
@@ -91,6 +91,10 @@ const CAMPOS: [(&str, &str); 71] = [
     ("Trabajo base (h)", "PCI detección: proyecto"),
     ("Trabajo base (h)", "PCI extinción: memoria"),
     ("Trabajo base (h)", "PCI extinción: proyecto"),
+    ("Trabajo base (h)", "Clima y ventilación: cálculos (proyecto)"),
+    ("Trabajo base (h)", "ACS: cálculos (proyecto)"),
+    ("Trabajo base (h)", "PCI detección: cálculos (proyecto)"),
+    ("Trabajo base (h)", "PCI extinción: cálculos (proyecto)"),
 ];
 
 fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
@@ -166,6 +170,10 @@ fn campo(b: &mut Baremo, i: usize) -> &mut Decimal {
         68 => &mut b.bases.deteccion.proyecto,
         69 => &mut b.bases.extincion.memoria,
         70 => &mut b.bases.extincion.proyecto,
+        71 => &mut b.bases.clima.calculos,
+        72 => &mut b.bases.acs.calculos,
+        73 => &mut b.bases.deteccion.calculos,
+        74 => &mut b.bases.extincion.calculos,
         _ => unreachable!("campo fuera de rango"),
     }
 }
