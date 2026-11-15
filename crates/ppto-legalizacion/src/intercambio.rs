@@ -105,15 +105,16 @@ mod tests {
     use super::*;
     use crate::{Baremo, Documento, Expediente, aplicar, calcular, codigo_partida};
 
-    fn dir() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("leg-intercambio-{}", std::process::id()));
+    /// Carpeta propia de cada prueba (se ejecutan en paralelo).
+    fn dir(prueba: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("leg-intercambio-{prueba}-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }
 
     #[test]
     fn la_respuesta_se_aplica_igual_que_el_calculo_original() {
-        let d = dir();
+        let d = dir("respuesta");
         let b = Baremo::ejemplo(2026);
         let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, Decimal::from(50_000));
         e.potencia_calor_kw = Decimal::from(20);
@@ -136,7 +137,7 @@ mod tests {
 
     #[test]
     fn la_solicitud_conserva_la_obra_y_rechaza_otra_version() {
-        let d = dir();
+        let d = dir("solicitud");
         let ruta = d.join("solicitud.json");
         let s = Solicitud::nueva(Presupuesto::new("Obra", "OBRA", "Obra"), Decimal::from(19));
         s.guardar(&ruta).unwrap();
