@@ -296,3 +296,42 @@ fn contradictorio_crea_partida_y_capitulo() {
     p.aplicar_propuesta(&otra).unwrap();
     assert_eq!(p.concepto("ADIC").unwrap().descomposicion.len(), 2);
 }
+
+#[test]
+fn actualizar_recursos_existentes_al_aceptar() {
+    let mut p = suelo_radiante();
+    p.fijar_descuento("LAPESA", dec!(40)).unwrap();
+    // MT.PANEL ya está ligado a tarifa con un PVP estimado de 20 € (neto 12 €)
+    p.fijar_tarifa("MT.PANEL", "Lapesa", dec!(20)).unwrap();
+    let prop = propuesta(
+        "SR.M2",
+        Contenido::Descompuesto(vec![
+            LineaPropuesta {
+                pvp: Some(dec!(15)), // tarifa nueva
+                fabricante: Some("LAPESA".into()),
+                ..linea("MT.PANEL", dec!(1))
+            },
+            LineaPropuesta {
+                precio: Some(dec!(26)), // en la obra está a 24,50, sin tarifa
+                ..linea("MO.OF1F", dec!(0.5))
+            },
+        ]),
+    );
+    // Sin actualizar: se informa y se mantienen los de la obra
+    let s = p.simular_propuesta(&prop).unwrap();
+    assert_eq!(s.pvp_distintos, [("MT.PANEL".to_owned(), dec!(20), dec!(15))]);
+    assert_eq!(s.precios_distintos, [("MO.OF1F".to_owned(), dec!(24.50), dec!(26))]);
+    assert!(s.actualizados.is_empty());
+    // Actualizando: los recursos toman lo propuesto
+    let a = p.aplicar_propuesta_actualizando(&prop).unwrap();
+    assert_eq!(
+        a.actualizados,
+        [
+            ("MT.PANEL".to_owned(), dec!(12), dec!(9)),
+            ("MO.OF1F".to_owned(), dec!(24.50), dec!(26))
+        ]
+    );
+    assert_eq!(p.concepto("MT.PANEL").unwrap().tarifa.as_ref().unwrap().pvp, dec!(15));
+    assert_eq!(p.concepto("MO.OF1F").unwrap().precio, dec!(26));
+    assert_eq!(p.precio("SR.M2").unwrap(), dec!(22), "9 + 0,5 × 26");
+}

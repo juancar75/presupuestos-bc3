@@ -31,6 +31,9 @@ pub(super) struct Enlace {
     pub solo_alta: bool,
     /// Pulsado «Reaplicar aceptadas» (se convierte en acción en el fotograma).
     pub reaplicar: bool,
+    /// Al aceptar, poner al día los recursos que ya están en la obra con el
+    /// precio o el PVP propuestos.
+    pub actualizar_recursos: bool,
 }
 
 impl Enlace {
@@ -46,6 +49,7 @@ impl Enlace {
             ventana: false,
             solo_alta: true,
             reaplicar: false,
+            actualizar_recursos: true,
         }
     }
 
@@ -210,6 +214,11 @@ impl Aplicacion {
                         format!("{} pendientes.", pendientes.len())
                     });
                     ui.checkbox(&mut self.enlace.solo_alta, "solo confianza alta");
+                    ui.checkbox(&mut self.enlace.actualizar_recursos, "actualizar precios de recursos existentes")
+                        .on_hover_text(
+                            "Si la propuesta trae otro precio o PVP para un recurso que ya está en la obra, \
+                             se pone al día (afecta a todas las partidas que lo usan). Desmarcado, se mantiene el de la obra.",
+                        );
                     let elegibles: Vec<u64> = pendientes
                         .iter()
                         .filter(|p| !self.enlace.solo_alta || p.confianza == Confianza::Alta)
@@ -239,7 +248,11 @@ impl Aplicacion {
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
             let c = self.p.conceptos.get(&prop.partida);
-            let sim = self.p.simular_propuesta(prop);
+            let sim = if self.enlace.actualizar_recursos {
+                self.p.simular_propuesta_actualizando(prop)
+            } else {
+                self.p.simular_propuesta(prop)
+            };
             ui.horizontal(|ui| {
                 if ui
                     .link(RichText::new(format!(
@@ -310,15 +323,37 @@ impl Aplicacion {
                                 .color(Color32::from_rgb(220, 150, 40)),
                         );
                     }
-                    for (cod, obra, propuesto) in &s.precios_distintos {
+                    for (cod, antes, despues) in &s.actualizados {
                         ui.label(
                             RichText::new(format!(
-                                "{cod}: se usa el precio de la obra {} € (la IA indicó {} €)",
-                                eur(*obra),
-                                eur(*propuesto)
+                                "{cod}: se actualiza en la obra ({} → {} €), en todas las partidas que lo usan",
+                                eur(*antes),
+                                eur(*despues)
                             ))
-                            .color(Color32::from_rgb(220, 150, 40)),
+                            .color(Color32::from_rgb(90, 150, 230)),
                         );
+                    }
+                    if s.actualizados.is_empty() {
+                        for (cod, obra, propuesto) in &s.precios_distintos {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{cod}: se usa el precio de la obra {} € (la IA indicó {} €)",
+                                    eur(*obra),
+                                    eur(*propuesto)
+                                ))
+                                .color(Color32::from_rgb(220, 150, 40)),
+                            );
+                        }
+                        for (cod, obra, propuesto) in &s.pvp_distintos {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{cod}: se usa el PVP de la obra {} € (la IA indicó {} €)",
+                                    eur(*obra),
+                                    eur(*propuesto)
+                                ))
+                                .color(Color32::from_rgb(220, 150, 40)),
+                            );
+                        }
                     }
                 }
                 Err(e) => {
@@ -419,10 +454,15 @@ impl Aplicacion {
         if prop.estado != EstadoPropuesta::Pendiente {
             return Err(format!("la propuesta #{id} ya no está pendiente"));
         }
-        let a = self.p.aplicar_propuesta(&prop).map_err(|e| e.to_string())?;
+        let a = if self.enlace.actualizar_recursos {
+            self.p.aplicar_propuesta_actualizando(&prop)
+        } else {
+            self.p.aplicar_propuesta(&prop)
+        }
+        .map_err(|e| e.to_string())?;
         self.enlace.marcar(id, EstadoPropuesta::Aceptada);
         Ok(format!(
-            "Propuesta #{id} aceptada: {} pasa de {} € a {} €{}.",
+            "Propuesta #{id} aceptada: {} pasa de {} € a {} €{}{}.",
             prop.partida,
             eur(a.precio_antes),
             eur(a.precio_despues),
@@ -430,6 +470,18 @@ impl Aplicacion {
                 String::new()
             } else {
                 format!("; recursos nuevos {}", a.nuevos.join(", "))
+            },
+            if a.actualizados.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; recursos actualizados {}",
+                    a.actualizados
+                        .iter()
+                        .map(|(c, _, _)| c.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
             }
         ))
     }

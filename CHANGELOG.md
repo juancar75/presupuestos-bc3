@@ -5,6 +5,9 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Corregido
+- **Propuestas de la IA: los recursos que ya estaban en la obra se ponen al día al aceptar.** Si una propuesta trae otro neto (o, para recursos con tarifa, otro PVP) para un recurso que ya existe —por ejemplo, el PVP estimado de una primera propuesta frente a la tarifa real de una segunda—, antes se mantenía el de la obra sin avisar en el caso del PVP. Ahora la ventana de propuestas tiene la casilla «actualizar precios de recursos existentes» (marcada por defecto): la tarjeta muestra qué recursos cambian y en cuánto, y al aceptar se actualizan en todas las partidas que los usan. Desmarcada, se mantiene el precio de la obra y se avisa también de los PVP distintos. «Reaplicar aceptadas» no actualiza recursos.
+
 ## [0.1.0-alpha.62] - 2026-11-16
 
 ### Cambiado
