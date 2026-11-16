@@ -1227,7 +1227,7 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
         nueva: leer_nueva(a)?,
     };
     let sim = p
-        .simular_propuesta(&prop)
+        .simular_propuesta_actualizando(&prop)
         .map_err(|e| format!("propuesta no válida: {e}"))?;
     let ruta = estado
         .ruta_bandeja
@@ -1259,7 +1259,19 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
             num(*pct, 2)
         );
     }
-    for (c, obra, propuesto) in &sim.precios_distintos {
+    for (c, antes, despues) in &sim.actualizados {
+        let _ = write!(
+            t,
+            "\n{c} ya está en la obra a {} €: al aceptar (opción por defecto) pasa a {} € en todas las partidas que lo usan.",
+            eur(*antes),
+            eur(*despues)
+        );
+    }
+    for (c, obra, propuesto) in sim
+        .precios_distintos
+        .iter()
+        .filter(|(c, _, _)| !sim.actualizados.iter().any(|(x, _, _)| x == c))
+    {
         let _ = write!(
             t,
             "\nAviso: {c} está en la obra a {} € (usted indicó {} €): se usará el de la obra.",

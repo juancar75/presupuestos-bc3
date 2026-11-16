@@ -8,9 +8,13 @@
 //!
 //! Al aceptar ([`Presupuesto::aplicar_propuesta`]):
 //! - Los recursos que ya existen en la obra se reutilizan **con su precio**
-//!   (si la IA proponía otro, se informa en `precios_distintos`). Si existen
-//!   a neto sin tarifa y la propuesta trae PVP y fabricante, se **ligan** a
-//!   la tarifa (`ligados`), y su neto pasa a depender del descuento.
+//!   (si la IA proponía otro neto, se informa en `precios_distintos`; si
+//!   proponía otro PVP de tarifa, en `pvp_distintos`). Con
+//!   [`Presupuesto::aplicar_propuesta_actualizando`] esos recursos se ponen
+//!   al día con lo propuesto (`actualizados`): el neto de los que no tienen
+//!   tarifa y el PVP de los que sí. Si existen a neto sin tarifa y la
+//!   propuesta trae PVP y fabricante, se **ligan** a la tarifa (`ligados`),
+//!   y su neto pasa a depender del descuento.
 //! - Los nuevos se dan de alta con la naturaleza, unidad y precio propuestos.
 //! - El descompuesto de la partida se sustituye por el propuesto.
 //!
@@ -137,6 +141,11 @@ pub struct Aplicada {
     pub nuevos: Vec<String>,
     /// (código, precio en la obra, precio propuesto) cuando no coinciden.
     pub precios_distintos: Vec<(String, Decimal, Decimal)>,
+    /// (código, PVP en la obra, PVP propuesto) de recursos con tarifa.
+    pub pvp_distintos: Vec<(String, Decimal, Decimal)>,
+    /// Recursos que ya estaban en la obra y se han puesto al día con la
+    /// propuesta: (código, neto antes, neto después). Solo al actualizar.
+    pub actualizados: Vec<(String, Decimal, Decimal)>,
     /// Descuentos de fabricante que la obra no tenía y se toman de la propuesta.
     pub descuentos_nuevos: Vec<(String, Decimal)>,
     /// Recursos que ya estaban en la obra a neto y se ligan a la tarifa del
@@ -147,8 +156,18 @@ pub struct Aplicada {
 impl Presupuesto {
     /// Aplica la propuesta (ver el módulo). Si falla, no cambia nada.
     pub fn aplicar_propuesta(&mut self, prop: &Propuesta) -> Result<Aplicada, ErrorMotor> {
+        self.aplicar_con(prop, false)
+    }
+
+    /// Como [`Self::aplicar_propuesta`], pero los recursos que ya están en la
+    /// obra con otro precio toman el de la propuesta (ver el módulo).
+    pub fn aplicar_propuesta_actualizando(&mut self, prop: &Propuesta) -> Result<Aplicada, ErrorMotor> {
+        self.aplicar_con(prop, true)
+    }
+
+    fn aplicar_con(&mut self, prop: &Propuesta, actualizar: bool) -> Result<Aplicada, ErrorMotor> {
         let copia = self.clone();
-        let r = self.aplicar_propuesta_sin_deshacer(prop);
+        let r = self.aplicar_propuesta_sin_deshacer(prop, actualizar);
         if r.is_err() {
             *self = copia;
         }
@@ -157,7 +176,12 @@ impl Presupuesto {
 
     /// Lo que pasaría al aceptar, sin cambiar el presupuesto.
     pub fn simular_propuesta(&self, prop: &Propuesta) -> Result<Aplicada, ErrorMotor> {
-        self.clone().aplicar_propuesta_sin_deshacer(prop)
+        self.clone().aplicar_propuesta_sin_deshacer(prop, false)
+    }
+
+    /// Lo que pasaría al aceptar actualizando los recursos de la obra.
+    pub fn simular_propuesta_actualizando(&self, prop: &Propuesta) -> Result<Aplicada, ErrorMotor> {
+        self.clone().aplicar_propuesta_sin_deshacer(prop, true)
     }
 
     /// Crea la partida de un contradictorio (y su capítulo si falta).
@@ -204,7 +228,7 @@ impl Presupuesto {
         self.anadir_linea(&n.capitulo, partida, n.cantidad)
     }
 
-    fn aplicar_propuesta_sin_deshacer(&mut self, prop: &Propuesta) -> Result<Aplicada, ErrorMotor> {
+    fn aplicar_propuesta_sin_deshacer(&mut self, prop: &Propuesta, actualizar: bool) -> Result<Aplicada, ErrorMotor> {
         let partida = prop.partida.as_str();
         if let Some(n) = &prop.nueva
             && !self.conceptos.contains_key(partida)
@@ -279,11 +303,33 @@ impl Presupuesto {
                                 self.fijar_tarifa_grupo(&l.codigo, fab, l.grupo.as_deref(), pvp)?;
                                 let despues = self.concepto(&l.codigo)?.precio;
                                 out.ligados.push((l.codigo.clone(), antes, despues));
+                            } else if let (Some(t), Some(pvp)) = (&h.tarifa, l.pvp)
+                                && h.naturaleza.es_basico()
+                                && pvp != t.pvp
+                            {
+                                out.pvp_distintos.push((l.codigo.clone(), t.pvp, pvp));
+                                if actualizar {
+                                    let antes = h.precio;
+                                    let fab = l.fabricante.clone().unwrap_or_else(|| t.fabricante.clone());
+                                    let grupo = if l.fabricante.is_some() {
+                                        l.grupo.clone()
+                                    } else {
+                                        t.grupo.clone()
+                                    };
+                                    self.fijar_tarifa_grupo(&l.codigo, &fab, grupo.as_deref(), pvp)?;
+                                    let despues = self.concepto(&l.codigo)?.precio;
+                                    out.actualizados.push((l.codigo.clone(), antes, despues));
+                                }
                             } else if let Some(pp) = l.precio
                                 && h.naturaleza.es_basico()
                                 && pp != h.precio
                             {
                                 out.precios_distintos.push((l.codigo.clone(), h.precio, pp));
+                                if actualizar && h.tarifa.is_none() {
+                                    let antes = h.precio;
+                                    self.fijar_precio(&l.codigo, pp)?;
+                                    out.actualizados.push((l.codigo.clone(), antes, pp));
+                                }
                             }
                         }
                         None => {
