@@ -5,6 +5,9 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Legalización: clasificación RSIF** (`ppto_legalizacion::rsif`), que se comprueba además del umbral de 70 kW del RITE: nivel 1, A2L por vía simplificada (memoria; firma del instalador con justificación ordinaria, técnico competente con apéndice 4, técnico y empresa de nivel 2 con análisis de riesgos), nivel 2 general (proyecto y dirección técnica aunque haya menos de 70 kW térmicos) e IF-20 (sistemas indirectos cerrados con equipos compactos L2/L3). Grupo del refrigerante por nombre (R32, R290…). Límites de 30 / 100 kW eléctricos en compresores.
+
 ## [0.1.0-alpha.62] - 2026-11-16
 
 ### Cambiado

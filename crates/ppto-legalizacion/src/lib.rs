@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 mod lectura;
+pub mod rsif;
 pub use lectura::{Lectura, Pista, leer_presupuesto};
 
 /// Fichero del baremo en la carpeta de configuración.
