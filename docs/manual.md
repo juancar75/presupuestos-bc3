@@ -163,6 +163,8 @@ Al cliente solo le llega el precio de venta repercutido: las observaciones y los
 
 Claude hace la misma comparación (`comparar_obras`) y explica cada desviación antes de dar la oferta por buena.
 
+**Planos DXF**: si la carpeta de documentos tiene planos en DXF, Claude cuenta los aparatos dibujados (bloques por nombre y capa: detectores, BIE, extintores, rejillas…), lee las leyendas y mide la distancia de cada aparato al más cercano y la superficie que cubren, para comprobar la medición del cliente y las coberturas. Los planos en PDF solo aportan sus textos; los DWG, guardarlos como DXF.
+
 ## 9. Trabajar con Claude: propuestas IA
 
 Claude se conecta a la obra abierta en el programa y propone precios, pero nunca cambia nada por su cuenta: todo queda como propuesta hasta que la aceptas.
@@ -221,5 +223,5 @@ El BC3 exportado vale exactamente lo mismo que la obra; en Presto hay que pulsar
 - **Una partida sale como sin precio pero no quiero valorarla.** Márcala como «Excluida» o «Incluida».
 - **No encuentro una partida en la base.** Comprueba que la base está añadida y con su especialidad, o usa «Todas a la vez».
 - **🖹 no aparece junto a un material.** Ese fabricante no tiene carpeta en la carpeta de tarifas, o el nombre no coincide.
-- **Claude no encuentra los documentos de la obra.** Elige la carpeta en Obra → «Datos de la obra…» (📁). Lee PDF, Word y Excel; los DWG hay que exportarlos a PDF o DXF.
+- **Claude no encuentra los documentos de la obra.** Elige la carpeta en Obra → «Datos de la obra…» (📁). Lee PDF, Word, Excel y planos DXF; los DWG hay que guardarlos como DXF (GstarCAD o AutoCAD: Guardar como → DXF).
 - **Claude dice que no hay presupuesto abierto.** Abre la obra en el programa y pídele que se conecte otra vez.

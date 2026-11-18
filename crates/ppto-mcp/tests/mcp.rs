@@ -557,6 +557,14 @@ fn datos_y_documentos_de_la_obra() {
     let memoria = "Memoria sintética. Garaje de 2 plantas bajo rasante con 60 plazas.".repeat(2000);
     std::fs::write(docs.join("Memorias").join("memoria.txt"), &memoria).unwrap();
     std::fs::write(docs.join("plano.dwg"), b"x").unwrap();
+    std::fs::write(
+        docs.join("planta.dxf"),
+        "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n\
+         0\nINSERT\n8\nPCI\n2\nDET\n10\n0\n20\n0\n\
+         0\nINSERT\n8\nPCI\n2\nDET\n10\n7\n20\n0\n\
+         0\nTEXT\n8\nLEYENDA\n1\nDetector óptico\n0\nENDSEC\n0\nEOF\n",
+    )
+    .unwrap();
     std::fs::write(dir.join("fuera.txt"), b"secreto").unwrap();
     let p = ppto_core::ejemplos::suelo_radiante();
     let activa = dir.join("obra-activa.json");
@@ -596,6 +604,13 @@ fn datos_y_documentos_de_la_obra() {
         json!({"ruta": "Memorias/memoria.txt", "desde": 60000}),
     );
     assert!(t.contains("plazas") && t.contains("desde = 120000"), "{t}");
+    let (t, err) = llamar(&mut e, "leer_plano", json!({"ruta": "planta.dxf", "bloque": "DET"}));
+    assert!(
+        !err && t.contains("| DET | PCI | 2 |") && t.contains("mediana 7.0 m") && t.contains("Detector óptico"),
+        "{t}"
+    );
+    let (t, err) = llamar(&mut e, "leer_plano", json!({"ruta": "plano.dwg"}));
+    assert!(err && t.contains("DXF"), "{t}");
     let (t, err) = llamar(&mut e, "leer_documento", json!({"ruta": "../fuera.txt"}));
     assert!(err && t.contains("carpeta de la obra"), "{t}");
     let (t, err) = llamar(

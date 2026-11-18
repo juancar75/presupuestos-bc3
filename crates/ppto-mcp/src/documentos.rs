@@ -115,7 +115,7 @@ fn recorrer(dir: &Path, base: &Path, nivel: u8, out: &mut Vec<(String, u64, Stri
         } else if ext == "dwg" {
             "no se lee: exportar a DXF o PDF".to_owned()
         } else if ext == "dxf" {
-            "plano DXF: aún no se lee".to_owned()
+            "plano: leer_plano (bloques, leyendas, distancias)".to_owned()
         } else {
             "no se lee".to_owned()
         };
@@ -151,8 +151,8 @@ pub(crate) fn documentos_obra(estado: &Estado) -> Result<String, String> {
     Ok(t)
 }
 
-/// Texto de un documento de la carpeta de la obra, por trozos.
-pub(crate) fn leer_documento(estado: &Estado, a: &Value) -> Result<String, String> {
+/// Ruta de un documento, solo dentro de la carpeta de la obra.
+fn ruta_documento(estado: &Estado, a: &Value) -> Result<PathBuf, String> {
     let (_, datos) = obra(estado)?;
     let dir = carpeta(&datos)?;
     let rel = texto(a, "ruta")?.trim().trim_matches('"');
@@ -161,7 +161,6 @@ pub(crate) fn leer_documento(estado: &Estado, a: &Value) -> Result<String, Strin
     } else {
         dir.join(rel)
     };
-    // Solo dentro de la carpeta de la obra
     let (c_dir, c_ruta) = (
         dir.canonicalize().map_err(|e| format!("carpeta de documentos: {e}"))?,
         ruta.canonicalize()
@@ -170,6 +169,40 @@ pub(crate) fn leer_documento(estado: &Estado, a: &Value) -> Result<String, Strin
     if !c_ruta.starts_with(&c_dir) {
         return Err("solo se leen documentos de la carpeta de la obra".into());
     }
+    Ok(c_ruta)
+}
+
+/// Plano DXF de la carpeta de la obra: bloques por nombre y capa, textos
+/// y, con «bloque», distancias y cobertura.
+pub(crate) fn leer_plano(estado: &Estado, a: &Value) -> Result<String, String> {
+    let r = ruta_documento(estado, a)?;
+    let ext = r
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if ext == "dwg" {
+        return Err(
+            "los DWG no se leen: pida al usuario que lo guarde como DXF (GstarCAD/AutoCAD: Guardar como → DXF)".into(),
+        );
+    }
+    if ext != "dxf" {
+        return Err("leer_plano es para DXF; los planos en PDF, con leer_documento (solo sus textos)".into());
+    }
+    let p = crate::dxf::leer(&r)?;
+    let nombre = r
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok(crate::dxf::resumen(
+        &p,
+        &nombre,
+        a.get("bloque").and_then(Value::as_str),
+    ))
+}
+
+/// Texto de un documento de la carpeta de la obra, por trozos.
+pub(crate) fn leer_documento(estado: &Estado, a: &Value) -> Result<String, String> {
+    let c_ruta = ruta_documento(estado, a)?;
     let todo = crate::asistente::extraer_texto(&c_ruta)?;
     let desde = a
         .get("desde")
