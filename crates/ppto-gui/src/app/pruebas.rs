@@ -2961,7 +2961,10 @@ fn datos_de_la_obra_con_lo_que_propone_claude() {
     .unwrap();
     app.ver_ficha = true;
     app.obra_textos.insert("documentos".into(), dir.display().to_string());
-    assert!(app.revision_documentos().is_some_and(|r| r.subcarpetas.iter().all(|c| !c.existe)));
+    assert!(
+        app.revision_documentos()
+            .is_some_and(|r| r.subcarpetas.iter().all(|c| !c.existe))
+    );
     let ctx = Context::default();
     let mut o = ctx.run_ui(RawInput::default(), |ui| {
         let c = ui.ctx().clone();
