@@ -8,6 +8,11 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [0.1.0-alpha.63] - 2026-11-18
 
 ### Añadido
+- **Datos de la obra** (Obra → «Datos de la obra…», antes «Datos del edificio»): además de la ficha del edificio, obra, dirección, municipio, cliente, a la atención de, promotor, referencia y **carpeta de documentos** (planos, memorias, cálculos), que se guardan con la obra. Nuevos campos de superficie construida y útil totales. El PDF toma de aquí obra, dirección, cliente, atención y referencia, y lo que se escribe en el PDF vuelve aquí.
+- **Claude lee los documentos de la obra** (MCP): `ver_datos_obra`, `documentos_obra` (lista la carpeta y qué se puede leer), `leer_documento` (PDF, Word, Excel, CSV y TXT, por trozos; solo dentro de la carpeta de la obra) y `proponer_datos_obra`. Lo que propone sale en azul en «Datos de la obra», con su fuente, y se acepta o descarta uno a uno o todo junto. La obra activa que lee la IA lleva ya los datos de la obra.
+- **Automático si hay documentos**: al conectarse a la obra, si tiene carpeta de documentos y faltan datos, Claude los lee y los propone antes de valorar. En «Datos de la obra», el botón «✨ Que Claude los rellene con los documentos» deja el encargo en el panel del asistente.
+
+### Añadido
 - «Precios → Comprobar antes de valorar…» (y al importar un ciego): lee la obra y dice si están los recursos para sacar los precios. Por fabricante: tarifa en la carpeta de tarifas o en la biblioteca, descuento en la obra o en la biblioteca, y nombres parecidos (el mismo fabricante con otro nombre). Marcas conocidas que se nombran en partidas sin precio sin tarifa o sin descuento. Materiales con neto fijo, con PVP distinto del de la biblioteca y recursos a 0 €. De lo que falta a lo que está bien; se puede copiar.
 - Claude (MCP): herramienta `comprobar_recursos`, el primer paso antes de valorar.
 - **Ayuda dentro del programa**: Ayuda → «Manual…», el botón **?** de la barra o **F1** abren el manual (`docs/manual.md`, el mismo que se publica) con índice por apartados y búsqueda.

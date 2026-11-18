@@ -368,6 +368,12 @@ pub struct Aplicacion {
     especialidades: Vec<ppto_core::especialidad::Especialidad>,
     /// Ficha de datos del edificio (por clave de campo).
     ficha: ppto_core::ficha::Ficha,
+    /// Datos de texto de la obra (dirección, cliente, carpeta de documentos…).
+    obra_textos: ppto_core::ficha::Textos,
+    /// Datos de la ficha que propone la IA, pendientes de aceptar.
+    ficha_propuesta: Vec<ppto_propuestas::DatoPropuesto>,
+    /// Última lectura de las propuestas de ficha.
+    ficha_leida: Option<std::time::Instant>,
     /// Ventana «Datos del edificio» abierta.
     ver_ficha: bool,
     /// Formulario «Origen del precio» de un recurso.
@@ -595,6 +601,9 @@ impl Aplicacion {
             asistente_nuevo: None,
             especialidades: Vec::new(),
             ficha: Default::default(),
+            obra_textos: Default::default(),
+            ficha_propuesta: Vec::new(),
+            ficha_leida: None,
             ver_ficha: false,
             form_origen: None,
             ventana_informes: None,

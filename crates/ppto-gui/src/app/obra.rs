@@ -363,7 +363,7 @@ impl Aplicacion {
 
     pub(super) fn menu_obra(&mut self, ui: &mut Ui) {
         if ui
-            .button("Datos del edificio…")
+            .button("Datos de la obra…")
             .on_hover_text("Bloques, plantas, plazas, superficies, escaleras… (base de las reglas de medición)")
             .clicked()
         {

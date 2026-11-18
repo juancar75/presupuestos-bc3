@@ -545,3 +545,78 @@ fn biblioteca_aprende_de_una_obra_y_de_tarifas_y_ofertas() {
     assert!(t.contains("| FABB |") && t.contains("50+10+5 %"), "{t}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn datos_y_documentos_de_la_obra() {
+    use std::collections::BTreeMap;
+    let dir = std::env::temp_dir().join(format!("mcp-docs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let docs = dir.join("documentos");
+    std::fs::create_dir_all(docs.join("Memorias")).unwrap();
+    // Documentos sintéticos
+    let memoria = "Memoria sintética. Garaje de 2 plantas bajo rasante con 60 plazas.".repeat(2000);
+    std::fs::write(docs.join("Memorias").join("memoria.txt"), &memoria).unwrap();
+    std::fs::write(docs.join("plano.dwg"), b"x").unwrap();
+    std::fs::write(dir.join("fuera.txt"), b"secreto").unwrap();
+    let p = ppto_core::ejemplos::suelo_radiante();
+    let activa = dir.join("obra-activa.json");
+    let datos = BTreeMap::from([
+        ("obra.documentos".to_owned(), docs.display().to_string()),
+        ("obra.direccion".to_owned(), "C/ Sintética 1".to_owned()),
+        ("especialidad".to_owned(), "ventilacion_garaje".to_owned()),
+        ("ficha.garaje_altura".to_owned(), "2.7".to_owned()),
+    ]);
+    ppto_propuestas::ObraActiva::guardar_con(&p, &datos, &activa).unwrap();
+    // Guardar solo el presupuesto conserva los datos de esa obra
+    ppto_propuestas::ObraActiva::guardar(&p, &activa).unwrap();
+    let mut e = Estado {
+        ruta_obra_activa: Some(activa),
+        ruta_ficha: Some(dir.join("ficha_propuesta.json")),
+        ..Estado::default()
+    };
+    // Al abrir la obra, si hay documentos y faltan datos, se pide leerlos antes de valorar
+    let (t, err) = llamar(&mut e, "abrir_obra_activa", json!({}));
+    assert!(
+        !err && t.contains("ANTES de valorar") && t.contains("proponer_datos_obra"),
+        "{t}"
+    );
+    let (t, err) = llamar(&mut e, "ver_datos_obra", json!({}));
+    assert!(
+        !err && t.contains("C/ Sintética 1") && t.contains("| garaje_plazas |"),
+        "{t}"
+    );
+    assert!(t.contains("2.7 m"), "{t}");
+    let (t, err) = llamar(&mut e, "documentos_obra", json!({}));
+    assert!(!err && t.contains("memoria.txt") && t.contains("exportar a DXF"), "{t}");
+    let (t, err) = llamar(&mut e, "leer_documento", json!({"ruta": "Memorias/memoria.txt"}));
+    assert!(!err && t.contains("60 plazas") && t.contains("desde = 60000"), "{t}");
+    let (t, _) = llamar(
+        &mut e,
+        "leer_documento",
+        json!({"ruta": "Memorias/memoria.txt", "desde": 60000}),
+    );
+    assert!(t.contains("plazas") && t.contains("desde = 120000"), "{t}");
+    let (t, err) = llamar(&mut e, "leer_documento", json!({"ruta": "../fuera.txt"}));
+    assert!(err && t.contains("carpeta de la obra"), "{t}");
+    let (t, err) = llamar(
+        &mut e,
+        "proponer_datos_obra",
+        json!({"datos": [
+            {"clave": "garaje_plazas", "valor": 60, "fuente": "Memoria, pág. 1"},
+            {"clave": "plantas_bajo", "valor": "2", "fuente": "Memoria, pág. 1"},
+            {"clave": "municipio", "valor": "Madrid", "fuente": "Memoria"},
+            {"clave": "garaje_altura", "valor": "alta", "fuente": "x"},
+            {"clave": "inventada", "valor": 1, "fuente": "x"}
+        ]}),
+    );
+    assert!(
+        !err && t.starts_with("3 datos propuestos") && t.contains("no es un número"),
+        "{t}"
+    );
+    let f = ppto_propuestas::FichaPropuesta::cargar(&dir.join("ficha_propuesta.json"));
+    let v = f.obras.values().next().unwrap();
+    assert_eq!(v.len(), 3);
+    let (t, _) = llamar(&mut e, "ver_datos_obra", json!({}));
+    assert!(t.contains("3 datos propuestos pendientes"), "{t}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -56,6 +56,7 @@ impl Aplicacion {
         self.ciego = None;
         self.especialidades.clear();
         self.ficha.clear();
+        self.obra_textos.clear();
         self.historial.limpiar();
         self.p = Presupuesto::new("Presupuesto nuevo", "OBRA", "Presupuesto nuevo");
         self.fichero = None;
@@ -204,6 +205,7 @@ impl Aplicacion {
                 self.ciego = None;
                 self.especialidades.clear();
                 self.ficha.clear();
+                self.obra_textos.clear();
                 self.historial.limpiar();
                 self.p = imp.presupuesto.clone();
                 let k = &imp.porcentajes;
@@ -326,6 +328,7 @@ impl Aplicacion {
             d.insert("especialidad".into(), v.join(","));
         }
         ppto_core::ficha::a_datos(&self.ficha, &mut d);
+        ppto_core::ficha::textos_a_datos(&self.obra_textos, &mut d);
         d
     }
 
@@ -352,6 +355,7 @@ impl Aplicacion {
             })
             .unwrap_or_default();
         self.ficha = ppto_core::ficha::de_datos(d);
+        self.obra_textos = ppto_core::ficha::textos_de_datos(d);
         self.ciego = None;
         if let Some(r) = d.get("ciego").map(PathBuf::from) {
             match ppto_ciego::leer(&r) {

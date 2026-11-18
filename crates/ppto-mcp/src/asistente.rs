@@ -124,6 +124,7 @@ pub fn extraer_texto(ruta: &Path) -> Result<String, String> {
                 Ok(t)
             }
         }
+        "docx" | "docm" => docx(ruta),
         "csv" | "txt" | "md" | "bc3" | "json" => {
             let b = std::fs::read(ruta).map_err(|e| format!("no se pudo leer {}: {e}", ruta.display()))?;
             Ok(match String::from_utf8(b) {
@@ -133,9 +134,46 @@ pub fn extraer_texto(ruta: &Path) -> Result<String, String> {
             })
         }
         otro => Err(format!(
-            "tipo de adjunto no admitido «{otro}» (xlsx, xls, ods, pdf, csv, txt)"
+            "tipo de adjunto no admitido «{otro}» (pdf, docx, xlsx, xls, ods, csv, txt)"
         )),
     }
+}
+
+/// Texto de un Word (.docx): los párrafos de `word/document.xml`.
+fn docx(ruta: &Path) -> Result<String, String> {
+    use std::io::Read;
+    let f = std::fs::File::open(ruta).map_err(|e| format!("no se pudo leer {}: {e}", ruta.display()))?;
+    let mut z = zip::ZipArchive::new(f).map_err(|e| format!("{} no es un Word válido: {e}", ruta.display()))?;
+    let mut xml = String::new();
+    z.by_name("word/document.xml")
+        .map_err(|e| format!("{} no es un Word válido: {e}", ruta.display()))?
+        .read_to_string(&mut xml)
+        .map_err(|e| e.to_string())?;
+    Ok(texto_de_xml_word(&xml))
+}
+
+/// Quita las etiquetas del XML de Word: un salto por párrafo, tabulador
+/// por celda, y las entidades básicas.
+fn texto_de_xml_word(xml: &str) -> String {
+    let mut t = String::with_capacity(xml.len() / 4);
+    let mut resto = xml;
+    while let Some(i) = resto.find('<') {
+        t.push_str(&resto[..i]);
+        let Some(j) = resto[i..].find('>') else { break };
+        let etiqueta = &resto[i + 1..i + j];
+        if etiqueta == "/w:p" || etiqueta.starts_with("w:br") {
+            t.push('\n');
+        } else if etiqueta == "/w:tc" || etiqueta.starts_with("w:tab") && !etiqueta.starts_with("w:tabs") {
+            t.push('\t');
+        }
+        resto = &resto[i + j + 1..];
+    }
+    t.push_str(resto);
+    t.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
 }
 
 fn hoja_calculo(ruta: &Path) -> Result<String, String> {
@@ -199,6 +237,14 @@ mod tests {
             .as_bytes(),
         );
         b
+    }
+
+    #[test]
+    fn texto_de_word() {
+        let x = r#"<w:document><w:body><w:p><w:r><w:t>Garaje: 60 plazas</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Plantas</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>2 &amp; 1</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#;
+        let t = super::texto_de_xml_word(x);
+        assert!(t.contains("Garaje: 60 plazas\n"), "{t:?}");
+        assert!(t.contains("Plantas\n\t2 & 1"), "{t:?}");
     }
 
     #[test]

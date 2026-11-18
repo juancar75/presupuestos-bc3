@@ -29,6 +29,8 @@ La configuración (bases, especialidades, recientes, carpeta de tarifas) vive en
 - **Ciego del cliente**: BC3 o Excel sin precios. Al importarlo se abre sola la comprobación antes de valorar (apartado 4).
 - **Abrir ejemplo**: un presupuesto sintético para practicar.
 
+**Datos de la obra** (Obra → «Datos de la obra…»): obra, dirección, municipio, cliente, a la atención de, promotor, referencia, **carpeta de documentos** (planos, memorias, cálculos) y la ficha del edificio que piden sus especialidades (superficies, plantas sobre y bajo rasante, viviendas, plazas de garaje, escaleras…). Se guardan con la obra y el PDF toma de aquí la obra, la dirección y el cliente. Claude puede rellenarlos leyendo la carpeta de documentos («rellena los datos de la obra con sus documentos»): lo que propone sale en azul con su fuente («Memoria, pág. 3») y se acepta con ✔ o «Aceptar todos». Si la obra tiene carpeta de documentos y faltan datos, Claude lo hace solo al conectarse, antes de valorar; también se le puede encargar con el botón «✨ Que Claude los rellene con los documentos».
+
 **Revisiones**: cada guardado puede ser una revisión nueva (R1, R2…) dentro del mismo fichero; las anteriores se conservan y se comparan con Archivo → «Comparar con…».
 
 ## 3. La pantalla principal
@@ -156,7 +158,7 @@ Al cliente solo le llega el precio de venta repercutido: las observaciones y los
 Claude se conecta a la obra abierta en el programa y propone precios, pero nunca cambia nada por su cuenta: todo queda como propuesta hasta que la aceptas.
 
 1. Ten la obra abierta y el ordenador enlazado con Claude (aplicación de escritorio abierta).
-2. Pídele lo que necesites: «conéctate al presupuesto», «valora las partidas sin precio con la tarifa X», «propón los contradictorios». Lo primero que hace es la comprobación del apartado 4.
+2. Pídele lo que necesites: «conéctate al presupuesto», «rellena los datos de la obra con sus documentos», «valora las partidas sin precio con la tarifa X», «propón los contradictorios». Antes de valorar mira los datos y los documentos de la obra (memoria, pliego: marcas, modelos, alcance) y hace la comprobación del apartado 4.
 3. Abre **Propuestas IA** en la barra: partida, descompuesto propuesto, precio antes y después, confianza y justificación.
 4. **Acepta** o **rechaza** cada una. Al aceptar se aplica y se puede deshacer.
 
@@ -209,4 +211,5 @@ El BC3 exportado vale exactamente lo mismo que la obra; en Presto hay que pulsar
 - **Una partida sale como sin precio pero no quiero valorarla.** Márcala como «Excluida» o «Incluida».
 - **No encuentro una partida en la base.** Comprueba que la base está añadida y con su especialidad, o usa «Todas a la vez».
 - **🖹 no aparece junto a un material.** Ese fabricante no tiene carpeta en la carpeta de tarifas, o el nombre no coincide.
+- **Claude no encuentra los documentos de la obra.** Elige la carpeta en Obra → «Datos de la obra…» (📁). Lee PDF, Word y Excel; los DWG hay que exportarlos a PDF o DXF.
 - **Claude dice que no hay presupuesto abierto.** Abre la obra en el programa y pídele que se conecte otra vez.

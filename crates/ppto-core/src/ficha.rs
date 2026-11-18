@@ -30,6 +30,8 @@ const fn c(clave: &'static str, etiqueta: &'static str, unidad: &'static str, gr
 }
 
 const EDIFICIO: &[Campo] = &[
+    c("superficie_construida", "Superficie construida total", "m²", "Edificio"),
+    c("superficie_util", "Superficie útil total", "m²", "Edificio"),
     c("bloques", "Bloques o portales", "ud", "Edificio"),
     c("viviendas", "Viviendas (total)", "ud", "Edificio"),
     c("viviendas_planta", "Viviendas por planta", "ud", "Edificio"),
@@ -150,6 +152,104 @@ fn campos_de_una(e: Especialidad) -> Vec<Campo> {
 /// Valores de la ficha por clave.
 pub type Ficha = BTreeMap<String, Decimal>;
 
+/// Un dato de texto de la obra (dirección, cliente…).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CampoTexto {
+    pub clave: &'static str,
+    pub etiqueta: &'static str,
+    pub pista: &'static str,
+}
+
+/// Datos de texto de la obra, en este orden en la ficha.
+pub const TEXTOS: &[CampoTexto] = &[
+    CampoTexto {
+        clave: "titulo",
+        etiqueta: "Obra",
+        pista: "p. ej. 24 viviendas y garaje",
+    },
+    CampoTexto {
+        clave: "direccion",
+        etiqueta: "Dirección",
+        pista: "calle y número",
+    },
+    CampoTexto {
+        clave: "municipio",
+        etiqueta: "Municipio",
+        pista: "p. ej. Madrid",
+    },
+    CampoTexto {
+        clave: "cliente",
+        etiqueta: "Cliente",
+        pista: "constructora o propiedad",
+    },
+    CampoTexto {
+        clave: "atencion",
+        etiqueta: "A la atención de",
+        pista: "persona de contacto",
+    },
+    CampoTexto {
+        clave: "promotor",
+        etiqueta: "Promotor",
+        pista: "",
+    },
+    CampoTexto {
+        clave: "referencia",
+        etiqueta: "Referencia u oferta",
+        pista: "p. ej. 2026-OBM000",
+    },
+    CampoTexto {
+        clave: "documentos",
+        etiqueta: "Carpeta de documentos",
+        pista: "planos, memorias, cálculos",
+    },
+];
+
+/// Datos de texto de la obra por clave.
+pub type Textos = BTreeMap<String, String>;
+
+/// Prefijo de los datos de texto en los datos de la obra.
+pub const PREFIJO_TEXTO: &str = "obra.";
+
+/// Textos → datos de la obra (`obra.<clave>`), sin los vacíos.
+pub fn textos_a_datos(t: &Textos, datos: &mut BTreeMap<String, String>) {
+    for (k, v) in t {
+        if !v.trim().is_empty() {
+            datos.insert(format!("{PREFIJO_TEXTO}{k}"), v.trim().to_owned());
+        }
+    }
+}
+
+/// Datos de la obra → textos.
+pub fn textos_de_datos(datos: &BTreeMap<String, String>) -> Textos {
+    datos
+        .iter()
+        .filter_map(|(k, v)| Some((k.strip_prefix(PREFIJO_TEXTO)?.to_owned(), v.clone())))
+        .collect()
+}
+
+/// Etiqueta y unidad de una clave de la ficha (numérica o de texto).
+pub fn describir(clave: &str) -> Option<(&'static str, &'static str)> {
+    TEXTOS
+        .iter()
+        .find(|c| c.clave == clave)
+        .map(|c| (c.etiqueta, ""))
+        .or_else(|| {
+            [EDIFICIO, GARAJE, COMUNES, PCI, VIVIENDA]
+                .iter()
+                .flat_map(|g| g.iter())
+                .find(|c| c.clave == clave)
+                .map(|c| (c.etiqueta, c.unidad))
+        })
+}
+
+/// ¿Es una clave numérica de la ficha?
+pub fn es_numerica(clave: &str) -> bool {
+    [EDIFICIO, GARAJE, COMUNES, PCI, VIVIENDA]
+        .iter()
+        .flat_map(|g| g.iter())
+        .any(|c| c.clave == clave)
+}
+
 /// Prefijo con el que la ficha va en los datos de la obra.
 pub const PREFIJO: &str = "ficha.";
 
@@ -196,5 +296,19 @@ mod tests {
         let g = de_datos(&d);
         assert_eq!(g.len(), 2);
         assert_eq!(g["garaje_plazas"], dec!(60));
+        // Textos: van aparte y sin los vacíos
+        let t: Textos = [
+            ("direccion".to_owned(), " C/ Sintética 1 ".to_owned()),
+            ("cliente".to_owned(), "  ".to_owned()),
+        ]
+        .into();
+        textos_a_datos(&t, &mut d);
+        let t2 = textos_de_datos(&d);
+        assert_eq!(t2.len(), 1);
+        assert_eq!(t2["direccion"], "C/ Sintética 1");
+        assert_eq!(de_datos(&d).len(), 2, "los textos no entran en la ficha numérica");
+        assert_eq!(describir("garaje_plazas"), Some(("Plazas de garaje (total)", "ud")));
+        assert_eq!(describir("direccion"), Some(("Dirección", "")));
+        assert!(es_numerica("plantas_bajo") && !es_numerica("direccion"));
     }
 }

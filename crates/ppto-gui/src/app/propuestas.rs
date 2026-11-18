@@ -31,6 +31,8 @@ pub(super) struct Enlace {
     pub solo_alta: bool,
     /// Pulsado «Reaplicar aceptadas» (se convierte en acción en el fotograma).
     pub reaplicar: bool,
+    /// Datos de la obra que propone la IA (`ficha_propuesta.json`).
+    pub ruta_ficha: Option<std::path::PathBuf>,
 }
 
 impl Enlace {
@@ -46,6 +48,7 @@ impl Enlace {
             ventana: false,
             solo_alta: true,
             reaplicar: false,
+            ruta_ficha: None,
         }
     }
 
@@ -53,6 +56,7 @@ impl Enlace {
         Self {
             ruta_activa: ppto_propuestas::ruta_obra_activa(),
             ruta_bandeja: ppto_propuestas::ruta_bandeja(),
+            ruta_ficha: ppto_propuestas::ruta_ficha_propuesta(),
             sucia: true,
             ..Self::sin_disco()
         }
@@ -84,6 +88,11 @@ fn color_confianza(c: Confianza) -> Color32 {
 impl Aplicacion {
     /// Publica la obra y lee la bandeja. Se llama en cada fotograma.
     pub(super) fn sincronizar_ia(&mut self, ctx: &egui::Context) {
+        let datos = if self.enlace.sucia {
+            self.datos_obra()
+        } else {
+            Default::default()
+        };
         let e = &mut self.enlace;
         if e.ruta_activa.is_none() && e.ruta_bandeja.is_none() {
             return;
@@ -91,7 +100,7 @@ impl Aplicacion {
         let ahora = Instant::now();
         if e.sucia && e.ultima_copia.is_none_or(|t| ahora - t > Duration::from_millis(1500)) {
             if let Some(r) = &e.ruta_activa {
-                let _ = ObraActiva::guardar(&self.p, r);
+                let _ = ObraActiva::guardar_con(&self.p, &datos, r);
             }
             e.sucia = false;
             e.ultima_copia = Some(ahora);
