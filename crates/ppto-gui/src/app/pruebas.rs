@@ -2896,3 +2896,39 @@ fn comprobar_antes_de_valorar_se_pinta() {
     }
     assert!(app.comprobacion.is_some());
 }
+
+#[test]
+fn la_ayuda_se_pinta_en_cada_apartado_y_busca() {
+    let mut app = Aplicacion::sin_ventana();
+    let ctx = Context::default();
+    let n = ayuda::apartados().len();
+    for i in 0..n {
+        app.abrir_ayuda(None);
+        app.ayuda.elegido = i;
+        let mut o = ctx.run_ui(RawInput::default(), |ui| {
+            let c = ui.ctx().clone();
+            app.ventana_ayuda(&c);
+        });
+        o.textures_delta.clear();
+    }
+    app.abrir_ayuda(Some("carpeta de tarifas"));
+    assert!(
+        ayuda::apartados()[app.ayuda.elegido]
+            .titulo
+            .contains("Carpeta de tarifas")
+    );
+    // Buscar salta al primer apartado que lo nombra
+    app.ayuda.elegido = 0;
+    app.ayuda.buscar = "kit".into();
+    let mut o = ctx.run_ui(RawInput::default(), |ui| {
+        let c = ui.ctx().clone();
+        app.ventana_ayuda(&c);
+    });
+    o.textures_delta.clear();
+    assert!(
+        ayuda::apartados()[app.ayuda.elegido]
+            .texto
+            .to_lowercase()
+            .contains("kit")
+    );
+}

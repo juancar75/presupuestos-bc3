@@ -172,6 +172,11 @@ impl Aplicacion {
                 }
             });
             ui.menu_button("Ayuda", |ui| {
+                if ui.add(egui::Button::new("Manual…").shortcut_text("F1")).clicked() {
+                    ui.close();
+                    self.abrir_ayuda(None);
+                }
+                ui.separator();
                 if ui.button(format!("Info (versión {VERSION})")).clicked() {
                     ui.close();
                     self.ver_acerca = true;
@@ -184,6 +189,9 @@ impl Aplicacion {
                 ui.hyperlink_to("Novedades", "https://github.com/juancar75/presupuestos-bc3/releases");
             });
             self.boton_actualizar(ui);
+            if ui.button("?").on_hover_text("Manual del programa (F1)").clicked() {
+                self.abrir_ayuda(None);
+            }
             ui.separator();
             // Uso diario
             let des = self.historial.deshacer.last().map(|(_, q)| q.clone());
