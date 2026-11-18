@@ -26,6 +26,7 @@ mod modelo;
 mod nuevo;
 mod obra;
 mod ofertas;
+mod parecidas;
 mod partida;
 mod pdf;
 mod pestanas;
@@ -359,6 +360,8 @@ pub struct Aplicacion {
     ventana_biblioteca: Option<biblioteca::VentanaBiblioteca>,
     /// «Comprobar antes de valorar».
     comprobacion: Option<ppto_biblioteca::comprobar::Comprobacion>,
+    /// «Comparar con obras parecidas».
+    parecidas: Option<ppto_biblioteca::huellas::Comparacion>,
     ventana_bases: Option<bases::VentanaBases>,
     ventana_emparejar: Option<emparejar::VentanaEmparejar>,
     /// Ventana «Nuevo presupuesto» (qué se presupuesta y de dónde se parte).
@@ -596,6 +599,7 @@ impl Aplicacion {
             ventana_tarifas: None,
             ventana_biblioteca: None,
             comprobacion: None,
+            parecidas: None,
             ventana_bases: None,
             ventana_emparejar: None,
             asistente_nuevo: None,
@@ -1005,6 +1009,7 @@ impl Aplicacion {
         self.ventana_guardar_kit(&ctx);
         self.sondear_tarifa(&ctx);
         self.ventana_comprobar(&ctx);
+        self.ventana_parecidas(&ctx, &mut acciones);
         self.ventana_ayuda(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_emparejar(&ctx, &mut acciones);

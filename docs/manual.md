@@ -153,6 +153,16 @@ El coste directo (CD) sale de los descompuestos. La venta se monta en «Resumen 
 
 Al cliente solo le llega el precio de venta repercutido: las observaciones y los textos no llevan costes internos.
 
+**Comparar con obras parecidas** (Obra → «Comparar con obras parecidas…»): los ratios de la obra frente a la mediana de las obras del mismo tipo y tamaño parecido guardadas en la biblioteca compartida.
+
+- Garaje: €/plaza, €/m² de garaje y horas de mano de obra por plaza; PCI: €/m² construido y €/vivienda; clima, ventilación de viviendas y fontanería: €/vivienda y €/m² útil. Además, el importe de cada grupo de capítulo (ventilación, detección, BIE…) y el reparto entre materiales, mano de obra y subcontratas.
+- Parecidas: mismo tipo y tamaño de la mitad al doble (si hay menos de 3, todas las del tipo, y lo avisa). Si hay 3 o más adjudicadas, solo esas.
+- En rojo, lo que se aparta más de un 25 % de la mediana; «Ir» lleva al capítulo.
+- Cada obra deja su «huella» al guardarla (si tiene especialidad y datos de la obra). Las contratadas cuentan como adjudicadas; las demás, según el «Estado de la oferta» de Datos de la obra (ofertada, adjudicada, perdida).
+- Los importes de otros años no se actualizan: tenlo en cuenta con obras antiguas.
+
+Claude hace la misma comparación (`comparar_obras`) y explica cada desviación antes de dar la oferta por buena.
+
 ## 9. Trabajar con Claude: propuestas IA
 
 Claude se conecta a la obra abierta en el programa y propone precios, pero nunca cambia nada por su cuenta: todo queda como propuesta hasta que la aceptas.

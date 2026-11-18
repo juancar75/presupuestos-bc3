@@ -618,5 +618,9 @@ fn datos_y_documentos_de_la_obra() {
     assert_eq!(v.len(), 3);
     let (t, _) = llamar(&mut e, "ver_datos_obra", json!({}));
     assert!(t.contains("3 datos propuestos pendientes"), "{t}");
+    // Comparar con obras parecidas: sin obras guardadas, lo dice
+    e.ruta_biblioteca = Some(dir.join("biblioteca.json"));
+    let (t, err) = llamar(&mut e, "comparar_obras", json!({}));
+    assert!(!err && t.contains("Aún no hay obras del mismo tipo"), "{t}");
     let _ = std::fs::remove_dir_all(&dir);
 }

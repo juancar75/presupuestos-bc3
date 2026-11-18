@@ -230,6 +230,12 @@ impl Biblioteca {
                 self.sellos.insert(format!("eq:{k}"), s.clone());
             }
         }
+        let claves: BTreeSet<String> = antes.huellas.keys().chain(self.huellas.keys()).cloned().collect();
+        for k in claves {
+            if antes.huellas.get(&k) != self.huellas.get(&k) {
+                self.sellos.insert(format!("hue:{k}"), s.clone());
+            }
+        }
         let claves: BTreeSet<String> = antes.kits.keys().chain(self.kits.keys()).cloned().collect();
         for k in claves {
             if antes.kits.get(&k) != self.kits.get(&k) {
@@ -330,6 +336,8 @@ impl Biblioteca {
                 }
             }
         }
+        // Huellas de obras (comparar con obras parecidas)
+        juntar_mapa(fuentes, "hue:", |f| &f.huellas, &mut b.huellas, &mut b.sellos);
         // Kits
         let claves: BTreeSet<&str> = fuentes
             .iter()
@@ -720,5 +728,75 @@ mod pruebas_kits {
         let j = Biblioteca::juntar(&[a, b]);
         assert!(j.kits.is_empty());
         assert_eq!(j.sellos["kit:Toma fancoil"].quien, "b");
+        // Las huellas de obra se juntan igual
+        let p = ppto_core::ejemplos::suelo_radiante();
+        let hu = crate::huellas::huella(
+            &p,
+            "Obra sintética",
+            &["climatizacion".into()],
+            &BTreeMap::new(),
+            crate::huellas::Estado::Ofertada,
+            "2026-11-18",
+        )
+        .unwrap();
+        let mut a = Biblioteca::default();
+        let antes = a.clone();
+        a.huellas.insert("OBRA".into(), hu);
+        a.sellar(&antes, &s1);
+        let j = Biblioteca::juntar(&[Biblioteca::default(), a]);
+        assert!(j.huellas.contains_key("OBRA"));
+        assert_eq!(j.sellos["hue:OBRA"].quien, "a");
+    }
+}
+
+/// Junta un mapa con sello por clave (`<prefijo><clave>`): de cada clave gana
+/// la fuente con el sello más reciente, también si allí se borró.
+fn juntar_mapa<T: Clone>(
+    fuentes: &[Biblioteca],
+    prefijo: &str,
+    mapa: impl Fn(&Biblioteca) -> &BTreeMap<String, T>,
+    destino: &mut BTreeMap<String, T>,
+    sellos: &mut BTreeMap<String, Sello>,
+) {
+    let claves: BTreeSet<String> = fuentes
+        .iter()
+        .flat_map(|f| {
+            mapa(f)
+                .keys()
+                .cloned()
+                .chain(
+                    f.sellos
+                        .keys()
+                        .filter_map(|k| k.strip_prefix(prefijo))
+                        .map(str::to_owned),
+                )
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    for k in claves {
+        let sk = format!("{prefijo}{k}");
+        let mejor = fuentes
+            .iter()
+            .filter(|f| mapa(f).contains_key(&k) || f.sellos.contains_key(&sk))
+            .fold(None::<(Option<&Sello>, Option<&T>)>, |acc, f| {
+                let s = f.sellos.get(&sk);
+                match acc {
+                    Some((sa, _)) if s <= sa => acc,
+                    _ => Some((s, mapa(f).get(&k))),
+                }
+            });
+        if let Some((s, v)) = mejor {
+            if let Some(s) = s {
+                sellos.insert(sk, s.clone());
+            }
+            match v {
+                Some(v) => {
+                    destino.insert(k, v.clone());
+                }
+                None => {
+                    destino.remove(&k);
+                }
+            }
+        }
     }
 }
