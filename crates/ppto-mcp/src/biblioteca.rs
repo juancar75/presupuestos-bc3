@@ -95,6 +95,15 @@ pub(crate) fn buscar(estado: &Estado, a: &Value) -> Result<String, String> {
     Ok(t)
 }
 
+pub(crate) fn comprobar_recursos(estado: &Estado) -> Result<String, String> {
+    let b = Biblioteca::cargar(&ruta(estado)?);
+    let mut t = ppto_biblioteca::comprobar::comprobar_con_carpeta(estado.p()?, &b).texto();
+    if ppto_biblioteca::carpeta::ruta_carpeta().is_none() {
+        t.push_str("\nNo hay carpeta de tarifas configurada: solo se ha mirado la biblioteca.\n");
+    }
+    Ok(t)
+}
+
 pub(crate) fn estado_biblioteca(estado: &Estado) -> Result<String, String> {
     let b = Biblioteca::cargar(&ruta(estado)?);
     let actual = anio(&hoy());

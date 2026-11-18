@@ -92,7 +92,7 @@ pub fn paginas_pdf(pdf: &Path) -> Result<Vec<String>, String> {
 
 /// ¿Está `r` (normalizada) en `texto` como palabra o grupo de palabras
 /// completo? («E22» no casa con «E220».)
-fn contiene(texto: &str, r: &str) -> bool {
+pub(crate) fn contiene(texto: &str, r: &str) -> bool {
     let b = texto.as_bytes();
     texto.match_indices(r).any(|(i, _)| {
         let antes = i == 0 || b[i - 1] == b' ';

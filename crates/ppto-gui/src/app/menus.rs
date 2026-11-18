@@ -522,6 +522,18 @@ impl Aplicacion {
 
     pub(super) fn menu_precios(&mut self, ui: &mut Ui) {
         if ui
+            .button("Comprobar antes de valorar…")
+            .on_hover_text(
+                "Lo primero: ¿están las tarifas y los descuentos de los fabricantes de la obra? \
+                 ¿Nombres distintos para el mismo fabricante? ¿Marcas sin tarifa en las partidas sin precio?",
+            )
+            .clicked()
+        {
+            ui.close();
+            self.abrir_comprobar();
+        }
+        ui.separator();
+        if ui
             .button("Tarifas de subcontratas…")
             .on_hover_text("Importar de Excel, revisar unidades y usarlas en los descompuestos")
             .clicked()

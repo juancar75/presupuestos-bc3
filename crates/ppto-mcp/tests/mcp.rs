@@ -246,6 +246,11 @@ fn propuestas_a_la_obra_activa() {
 
     let (t, err) = llamar(&mut e, "abrir_obra_activa", json!({}));
     assert!(!err && t.contains("1 sin precio"), "{t}");
+    let (t, err) = llamar(&mut e, "comprobar_recursos", json!({}));
+    assert!(
+        !err && t.contains("Comprobación antes de valorar") && t.contains("1 sin precio"),
+        "{t}"
+    );
     let (t, _) = llamar(&mut e, "partidas_sin_precio", json!({}));
     assert!(t.contains("P.VAL") && t.contains("Válvula de zona"), "{t}");
     let (t, _) = llamar(&mut e, "buscar_tarifas", json!({"texto":"detector"}));
