@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 pub mod carpeta;
 mod compartir;
 pub mod comprobar;
+pub mod documentos;
 pub mod huellas;
 pub mod indice;
 pub use compartir::{Diferencia, Sello, ahora, fichero_de, ficheros, usuario};

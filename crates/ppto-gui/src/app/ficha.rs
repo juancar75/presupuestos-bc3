@@ -19,6 +19,44 @@ enum Cambio {
     Aceptar(Vec<DatoPropuesto>),
     Descartar(Vec<String>),
     PedirAClaude,
+    CrearCarpetas(String),
+}
+
+/// Cómo está la carpeta de documentos: qué hay en cada subcarpeta y avisos.
+fn revision_docs(
+    ui: &mut egui::Ui,
+    cambios: &mut Vec<Cambio>,
+    dir: &str,
+    r: &Option<ppto_biblioteca::documentos::Revision>,
+) {
+    let Some(r) = r else { return };
+    let resumen: Vec<String> = r
+        .subcarpetas
+        .iter()
+        .map(|c| {
+            if c.existe {
+                format!("{}: {}", c.nombre, c.ficheros)
+            } else {
+                format!("{}: —", c.nombre)
+            }
+        })
+        .collect();
+    ui.label(RichText::new(resumen.join(" · ")).small())
+        .on_hover_text(ppto_biblioteca::documentos::NORMAS);
+    for a in &r.avisos {
+        ui.colored_label(
+            egui::Color32::from_rgb(200, 140, 30),
+            RichText::new(format!("⚠ {a}")).small(),
+        );
+    }
+    if r.subcarpetas.iter().any(|c| !c.existe)
+        && ui
+            .small_button("Crear carpetas")
+            .on_hover_text("Crea 01 Proyecto, 02 Mediciones, 03 Planos, 04 Ofertas y 05 Cliente (las que falten)")
+            .clicked()
+    {
+        cambios.push(Cambio::CrearCarpetas(dir.to_owned()));
+    }
 }
 
 /// Encargo para que la IA rellene los datos de la obra con sus documentos.
@@ -42,6 +80,24 @@ impl Aplicacion {
             .map(|r| FichaPropuesta::cargar(r))
             .and_then(|mut f| f.obras.remove(&obra))
             .unwrap_or_default();
+    }
+
+    /// Revisión de la carpeta de documentos (como mucho cada 5 s).
+    pub(super) fn revision_documentos(&mut self) -> Option<ppto_biblioteca::documentos::Revision> {
+        let dir = self
+            .obra_textos
+            .get("documentos")
+            .map(|d| d.trim().to_owned())
+            .filter(|d| !d.is_empty())?;
+        let fresca = self
+            .docs_revisados
+            .as_ref()
+            .is_some_and(|(t, d, _)| *d == dir && t.elapsed() < Duration::from_secs(5));
+        if !fresca {
+            let r = ppto_biblioteca::documentos::revisar(std::path::Path::new(&dir));
+            self.docs_revisados = Some((Instant::now(), dir, r));
+        }
+        self.docs_revisados.as_ref().map(|(_, _, r)| r.clone())
     }
 
     /// Pone en la obra los datos propuestos (los numéricos que no se leen,
@@ -93,6 +149,7 @@ impl Aplicacion {
             format!("Datos de la obra · {}", n.join(" + "))
         };
         let propuesta = self.ficha_propuesta.clone();
+        let revision = self.revision_documentos();
         let de = |k: &str| propuesta.iter().find(|d| d.clave == k);
         let mut cambios = Vec::new();
         egui::Window::new(titulo)
@@ -184,6 +241,7 @@ impl Aplicacion {
                                         cambios.push(Cambio::Texto(c.clave, t.clone()));
                                     }
                                     if c.clave == "documentos" {
+                                        ui.small_button("?").on_hover_text(ppto_biblioteca::documentos::NORMAS);
                                         if ui.small_button("📁").on_hover_text("Elegir la carpeta").clicked()
                                             && let Some(d) = rfd::FileDialog::new()
                                                 .set_title("Carpeta de documentos de la obra")
@@ -200,6 +258,12 @@ impl Aplicacion {
                                 });
                                 ui.horizontal(|ui| propuesto(ui, &mut cambios, de(c.clave)));
                                 ui.end_row();
+                                if c.clave == "documentos" && !t.trim().is_empty() {
+                                    ui.label("");
+                                    ui.vertical(|ui| revision_docs(ui, &mut cambios, t.trim(), &revision));
+                                    ui.label("");
+                                    ui.end_row();
+                                }
                             }
                         });
                     ui.add_space(6.0);
@@ -272,6 +336,14 @@ impl Aplicacion {
                     self.info(format!("{n} datos de la obra aceptados."));
                 }
                 Cambio::Descartar(k) => self.descartar_ficha(&k),
+                Cambio::CrearCarpetas(d) => {
+                    match ppto_biblioteca::documentos::crear_estructura(std::path::Path::new(&d)) {
+                        Ok(n) => self.info(format!("{n} carpetas creadas en {d}.")),
+                        Err(e) => self.error(format!("No se pudieron crear las carpetas: {e}")),
+                    }
+                    self.docs_revisados = None;
+                    continue;
+                }
                 Cambio::PedirAClaude => {
                     self.asistente.entrada = ENCARGO.to_owned();
                     self.asistente.abierto = true;

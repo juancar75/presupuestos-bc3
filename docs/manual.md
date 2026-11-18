@@ -29,6 +29,18 @@ La configuración (bases, especialidades, recientes, carpeta de tarifas) vive en
 - **Ciego del cliente**: BC3 o Excel sin precios. Al importarlo se abre sola la comprobación antes de valorar (apartado 4).
 - **Abrir ejemplo**: un presupuesto sintético para practicar.
 
+**Carpeta de documentos de la obra**: una carpeta por obra (OneDrive o red) con estas subcarpetas, para que el programa y Claude encuentren cada cosa:
+
+| Subcarpeta | Qué va |
+| --- | --- |
+| 01 Proyecto | Memoria descriptiva, memoria de cálculo y pliego (PDF o Word) |
+| 02 Mediciones | Ciego o mediciones del cliente (BC3 o Excel) |
+| 03 Planos | Planos en DXF (mejor) y PDF; los DWG, guardarlos también como DXF |
+| 04 Ofertas | Ofertas de proveedores y subcontratas de esta obra |
+| 05 Cliente | Correos, actas, aclaraciones y contrato |
+
+En «Datos de la obra», junto a la carpeta: **?** explica dónde va cada cosa, «Crear carpetas» crea las que falten y debajo se ve cuántos ficheros hay en cada una, con avisos (subcarpetas vacías, ficheros sueltos, DWG sin su DXF).
+
 **Datos de la obra** (Obra → «Datos de la obra…»): obra, dirección, municipio, cliente, a la atención de, promotor, referencia, **carpeta de documentos** (planos, memorias, cálculos) y la ficha del edificio que piden sus especialidades (superficies, plantas sobre y bajo rasante, viviendas, plazas de garaje, escaleras…). Se guardan con la obra y el PDF toma de aquí la obra, la dirección y el cliente. Claude puede rellenarlos leyendo la carpeta de documentos («rellena los datos de la obra con sus documentos»): lo que propone sale en azul con su fuente («Memoria, pág. 3») y se acepta con ✔ o «Aceptar todos». Si la obra tiene carpeta de documentos y faltan datos, Claude lo hace solo al conectarse, antes de valorar; también se le puede encargar con el botón «✨ Que Claude los rellene con los documentos».
 
 **Revisiones**: cada guardado puede ser una revisión nueva (R1, R2…) dentro del mismo fichero; las anteriores se conservan y se comparan con Archivo → «Comparar con…».

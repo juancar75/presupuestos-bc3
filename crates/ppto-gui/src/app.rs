@@ -377,6 +377,8 @@ pub struct Aplicacion {
     ficha_propuesta: Vec<ppto_propuestas::DatoPropuesto>,
     /// Última lectura de las propuestas de ficha.
     ficha_leida: Option<std::time::Instant>,
+    /// Última revisión de la carpeta de documentos (cuándo, carpeta, resultado).
+    docs_revisados: Option<(std::time::Instant, String, ppto_biblioteca::documentos::Revision)>,
     /// Ventana «Datos del edificio» abierta.
     ver_ficha: bool,
     /// Formulario «Origen del precio» de un recurso.
@@ -608,6 +610,7 @@ impl Aplicacion {
             obra_textos: Default::default(),
             ficha_propuesta: Vec::new(),
             ficha_leida: None,
+            docs_revisados: None,
             ver_ficha: false,
             form_origen: None,
             ventana_informes: None,

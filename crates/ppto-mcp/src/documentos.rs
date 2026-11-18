@@ -134,10 +134,24 @@ pub(crate) fn documentos_obra(estado: &Estado) -> Result<String, String> {
     }
     let mut v = Vec::new();
     recorrer(&dir, &dir, 0, &mut v);
-    let mut t = format!(
-        "Carpeta de documentos: {}\n\n| Fichero | KB | |\n|---|---:|---|\n",
-        dir.display()
-    );
+    let r = ppto_biblioteca::documentos::revisar(&dir);
+    let mut t = format!("Carpeta de documentos: {}\n", dir.display());
+    for c in &r.subcarpetas {
+        let _ = writeln!(
+            t,
+            "- {}: {}",
+            c.nombre,
+            if c.existe {
+                format!("{} ficheros", c.ficheros)
+            } else {
+                "no existe".into()
+            }
+        );
+    }
+    for a in &r.avisos {
+        let _ = writeln!(t, "- AVISO: {a}");
+    }
+    t.push_str("\n| Fichero | KB | |\n|---|---:|---|\n");
     for (r, tam, nota) in &v {
         let _ = writeln!(t, "| {r} | {} | {nota} |", tam.div_ceil(1024));
     }
@@ -145,8 +159,9 @@ pub(crate) fn documentos_obra(estado: &Estado) -> Result<String, String> {
         t.push_str("\n(solo los 400 primeros)\n");
     }
     t.push_str(
-        "\nLea primero la memoria (descriptiva y de cálculo) y el pliego: datos del edificio, marcas, \
-         modelos y alcance. leer_documento con la ruta tal cual sale aquí.",
+        "\nLea primero 01 Proyecto (memoria descriptiva y de cálculo, pliego: datos del edificio, marcas, \
+         modelos y alcance), luego 02 Mediciones y los planos DXF de 03 Planos (leer_plano). \
+         leer_documento con la ruta tal cual sale aquí. Avise al usuario de los AVISOS de la carpeta.",
     );
     Ok(t)
 }

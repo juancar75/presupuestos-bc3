@@ -596,6 +596,10 @@ fn datos_y_documentos_de_la_obra() {
     assert!(t.contains("2.7 m"), "{t}");
     let (t, err) = llamar(&mut e, "documentos_obra", json!({}));
     assert!(!err && t.contains("memoria.txt") && t.contains("exportar a DXF"), "{t}");
+    assert!(
+        t.contains("01 Proyecto: no existe") && t.contains("Crear carpetas"),
+        "{t}"
+    );
     let (t, err) = llamar(&mut e, "leer_documento", json!({"ruta": "Memorias/memoria.txt"}));
     assert!(!err && t.contains("60 plazas") && t.contains("desde = 60000"), "{t}");
     let (t, _) = llamar(
