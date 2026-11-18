@@ -2880,3 +2880,19 @@ fn lo_que_viene_de_una_base_se_pone_al_dia_con_la_biblioteca() {
     assert_eq!(app.p.precio("M.SINT").unwrap(), dec!(72));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn comprobar_antes_de_valorar_se_pinta() {
+    let mut app = Aplicacion::sin_ventana();
+    app.abrir_comprobar();
+    assert!(app.comprobacion.as_ref().is_some_and(|c| c.partidas > 0));
+    let ctx = Context::default();
+    for _ in 0..2 {
+        let mut o = ctx.run_ui(RawInput::default(), |ui| {
+            let c = ui.ctx().clone();
+            app.ventana_comprobar(&c);
+        });
+        o.textures_delta.clear();
+    }
+    assert!(app.comprobacion.is_some());
+}

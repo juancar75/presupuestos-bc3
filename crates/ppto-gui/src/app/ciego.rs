@@ -45,6 +45,8 @@ impl Aplicacion {
                      o «Traer precios…» de un BC3, y luego «Devolver valorado…».{avisos}"
                 ));
                 self.ciego = Some(CiegoAbierto { ruta, ciego: c });
+                // Lo primero: ¿están los recursos para valorarlo?
+                self.abrir_comprobar();
                 true
             }
             Err(e) => {

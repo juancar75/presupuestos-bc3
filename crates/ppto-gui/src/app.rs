@@ -13,6 +13,7 @@ mod biblioteca;
 mod ciego;
 mod clientes;
 mod comparar;
+mod comprobar;
 mod dificultad;
 mod emparejar;
 mod ficha;
@@ -353,6 +354,8 @@ pub struct Aplicacion {
     tarifas: ppto_tarifas::Biblioteca,
     ventana_tarifas: Option<tarifas::VentanaTarifas>,
     ventana_biblioteca: Option<biblioteca::VentanaBiblioteca>,
+    /// «Comprobar antes de valorar».
+    comprobacion: Option<ppto_biblioteca::comprobar::Comprobacion>,
     ventana_bases: Option<bases::VentanaBases>,
     ventana_emparejar: Option<emparejar::VentanaEmparejar>,
     /// Ventana «Nuevo presupuesto» (qué se presupuesta y de dónde se parte).
@@ -582,6 +585,7 @@ impl Aplicacion {
             tarifas: ppto_tarifas::Biblioteca::default(),
             ventana_tarifas: None,
             ventana_biblioteca: None,
+            comprobacion: None,
             ventana_bases: None,
             ventana_emparejar: None,
             asistente_nuevo: None,
@@ -987,6 +991,7 @@ impl Aplicacion {
         self.ventana_pegado_pendiente(&ctx, &mut acciones);
         self.ventana_guardar_kit(&ctx);
         self.sondear_tarifa(&ctx);
+        self.ventana_comprobar(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_emparejar(&ctx, &mut acciones);
         self.ventana_nuevo(&ctx);

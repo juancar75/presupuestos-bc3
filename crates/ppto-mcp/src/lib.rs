@@ -169,7 +169,7 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                 "instructions": "Gestor de presupuestos de construcción e instalaciones (BC3/FIEBDC-3). \
                     Abre un presupuesto con abrir_presupuesto y consulta o simula. Las herramientas no \
                     modifican el presupuesto. Para valorar la obra que el usuario tiene abierta en el \
-                    programa: abrir_obra_activa, partidas_sin_precio, ver_concepto/buscar/buscar_tarifas \
+                    programa: abrir_obra_activa, LO PRIMERO comprobar_recursos (avise al usuario de los huecos: fabricantes sin tarifa o sin descuento, nombres distintos, marcas sin fuente), partidas_sin_precio, ver_concepto/buscar/buscar_tarifas \
                     para reutilizar recursos y precios existentes; ANTES de estimar consulte buscar_biblioteca (partidas, tarifas y ofertas del usuario de obras anteriores), y proponer (una propuesta por partida; para varias partidas, proponer_lote, que acepta hasta 40 en una llamada), \
                     con confianza y justificación de cada precio y rendimiento). El usuario acepta o \
                     rechaza cada propuesta en el programa; consulte ver_propuestas. Si el usuario \
@@ -267,6 +267,11 @@ fn herramientas() -> Value {
         {
             "name": "abrir_obra_activa",
             "description": "Abre el presupuesto que el usuario tiene abierto en el programa de escritorio (p. ej. un ciego que está valorando). Necesario para hacer propuestas.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "comprobar_recursos",
+            "description": "PRIMER PASO antes de valorar: lee la obra activa y comprueba si están los recursos para sacar los precios. Por fabricante de la obra: tarifa en la carpeta de tarifas o en la biblioteca, descuento en la obra o en la biblioteca, nombres parecidos (el mismo fabricante con otro nombre). Marcas de la biblioteca o la carpeta que se nombran en partidas sin precio y si tienen tarifa y descuento. Materiales con neto fijo, con PVP distinto del de la biblioteca y recursos a 0 €. Avise al usuario de lo marcado FALTA antes de proponer precios.",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
@@ -482,6 +487,7 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "simular_cambios" => simular_cambios(estado.p()?, a),
         "simular_subcontrata" => simular_subcontrata(estado.p()?, a),
         "abrir_obra_activa" => abrir_obra_activa(estado),
+        "comprobar_recursos" => biblioteca::comprobar_recursos(estado),
         "partidas_sin_precio" => {
             partidas_sin_precio(estado.p()?, a.get("limite").and_then(Value::as_u64).unwrap_or(40))
         }

@@ -5,6 +5,10 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- «Precios → Comprobar antes de valorar…» (y al importar un ciego): lee la obra y dice si están los recursos para sacar los precios. Por fabricante: tarifa en la carpeta de tarifas o en la biblioteca, descuento en la obra o en la biblioteca, y nombres parecidos (el mismo fabricante con otro nombre). Marcas conocidas que se nombran en partidas sin precio sin tarifa o sin descuento. Materiales con neto fijo, con PVP distinto del de la biblioteca y recursos a 0 €. De lo que falta a lo que está bien; se puede copiar.
+- Claude (MCP): herramienta `comprobar_recursos`, el primer paso antes de valorar.
+
 ## [0.1.0-alpha.62] - 2026-11-16
 
 ### Cambiado
