@@ -50,6 +50,7 @@ ignore = [
     { id = "RUSTSEC-2025-0141", reason = "bincode vía syntect (resaltado de código de Typst)" },
     { id = "RUSTSEC-2024-0436", reason = "paste (macro) vía biblatex de Typst" },
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz vía krilla/typst-pdf; Typst lo sustituirá" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono vía typst-as-lib (fecha del documento); sin fallo conocido" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser vía Typst" },
     { id = "RUSTSEC-2024-0320", reason = "yaml-rust vía syntect de Typst" },
     # zip retiró (yanked) toda la serie 8.x en crates.io; calamine 0.36 y
