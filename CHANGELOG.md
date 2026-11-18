@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.64] - 2026-11-18
+
 ### Añadido
 - **Dónde dejar los documentos de la obra**: estructura de la carpeta de documentos (01 Proyecto, 02 Mediciones, 03 Planos, 04 Ofertas, 05 Cliente). En «Datos de la obra»: **?** con lo que va en cada una, «Crear carpetas» y resumen de lo que hay, con avisos (vacías, ficheros sueltos, DWG sin DXF). Claude ve la misma estructura y lee primero el proyecto, luego mediciones y planos.
 
