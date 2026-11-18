@@ -2989,3 +2989,57 @@ fn datos_de_la_obra_con_lo_que_propone_claude() {
     assert_eq!(otra.obra_textos["direccion"], "C/ Sintética 1");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn comparar_con_obras_parecidas() {
+    use ppto_biblioteca::huellas::Estado;
+    let dir = std::env::temp_dir().join(format!("gui-parecidas-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut app = Aplicacion::sin_ventana();
+    app.ruta_biblioteca = Some(dir.join("biblioteca.prueba.json"));
+    app.especialidades = vec![ppto_core::especialidad::Especialidad::Climatizacion];
+    // Sin datos de la obra no se guarda huella
+    app.guardar_huella();
+    assert!(
+        ppto_biblioteca::Biblioteca::cargar(app.ruta_biblioteca.as_ref().unwrap())
+            .huellas
+            .is_empty()
+    );
+    // Tres obras sintéticas del mismo tipo, de tamaño parecido
+    let base = app.p.clone();
+    for (i, viv) in [10, 12, 14].into_iter().enumerate() {
+        let mut otra = Aplicacion::sin_ventana();
+        otra.ruta_biblioteca = app.ruta_biblioteca.clone();
+        otra.p = base.clone();
+        otra.p.nombre = format!("Sintética {i}");
+        otra.especialidades = app.especialidades.clone();
+        otra.ficha.insert("viviendas".into(), Decimal::from(viv));
+        otra.obra_textos.insert("estado".into(), "Adjudicada".into());
+        assert_eq!(otra.estado_oferta(), Estado::Adjudicada);
+        otra.guardar_huella();
+    }
+    let b = ppto_biblioteca::Biblioteca::cargar(app.ruta_biblioteca.as_ref().unwrap());
+    assert_eq!(b.huellas.len(), 3);
+    app.ficha.insert("viviendas".into(), dec!(12));
+    app.abrir_parecidas();
+    let c = app.parecidas.clone().unwrap();
+    assert_eq!(c.parecidas.len(), 3);
+    assert!(c.solo_adjudicadas);
+    let r = c.ratios.iter().find(|r| r.nombre == "PEM €/vivienda").unwrap();
+    assert!(r.esta.is_some() && r.mediana.is_some());
+    // Se pinta
+    let ctx = Context::default();
+    let mut acc = Vec::new();
+    let mut o = ctx.run_ui(RawInput::default(), |ui| {
+        let cx = ui.ctx().clone();
+        app.ventana_parecidas(&cx, &mut acc);
+    });
+    o.textures_delta.clear();
+    assert!(app.parecidas.is_some());
+    // Al guardar la obra se añade su huella
+    app.guardar_huella();
+    let b = ppto_biblioteca::Biblioteca::cargar(app.ruta_biblioteca.as_ref().unwrap());
+    assert_eq!(b.huellas.len(), 4);
+    let _ = std::fs::remove_dir_all(&dir);
+}

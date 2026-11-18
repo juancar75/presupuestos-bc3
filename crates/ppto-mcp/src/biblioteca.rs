@@ -95,6 +95,45 @@ pub(crate) fn buscar(estado: &Estado, a: &Value) -> Result<String, String> {
     Ok(t)
 }
 
+/// Ratios de la obra activa frente a las obras parecidas de la biblioteca.
+pub(crate) fn comparar_obras(estado: &Estado) -> Result<String, String> {
+    use ppto_biblioteca::huellas;
+    let b = Biblioteca::cargar(&ruta(estado)?);
+    let p = estado.p()?;
+    let r = estado
+        .ruta_obra_activa
+        .as_ref()
+        .ok_or("no se encuentra la carpeta de configuración")?;
+    let o = ppto_propuestas::ObraActiva::cargar(r)?;
+    let es: Vec<String> = o
+        .datos
+        .get("especialidad")
+        .map(|e| {
+            e.split(',')
+                .map(|x| x.trim().to_owned())
+                .filter(|x| !x.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    let ficha = ppto_core::ficha::de_datos(&o.datos);
+    let estado_oferta = if p.seguimiento.contrato.is_some() {
+        huellas::Estado::Adjudicada
+    } else {
+        o.datos
+            .get("obra.estado")
+            .and_then(|e| huellas::Estado::leer(e))
+            .unwrap_or_default()
+    };
+    let nombre = o.datos.get("obra.titulo").cloned().unwrap_or_else(|| p.nombre.clone());
+    let h = huellas::huella(p, &nombre, &es, &ficha, estado_oferta, &hoy())?;
+    let mut t = huellas::comparar(&o.clave, &h, &b.huellas).texto(ppto_core::Decimal::from(25));
+    t.push_str(
+        "\nExplique al usuario cada ⚠ (más de un 25 % sobre o bajo la mediana): ¿error de medición o de precio, \
+         o la obra es distinta (más plantas, otro sistema, alcance distinto)? Use los datos y documentos de la obra.",
+    );
+    Ok(t)
+}
+
 pub(crate) fn comprobar_recursos(estado: &Estado) -> Result<String, String> {
     let b = Biblioteca::cargar(&ruta(estado)?);
     let mut t = ppto_biblioteca::comprobar::comprobar_con_carpeta(estado.p()?, &b).texto();

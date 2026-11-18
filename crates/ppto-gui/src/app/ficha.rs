@@ -136,6 +136,21 @@ impl Aplicacion {
                         }
                     });
                 }
+                ui.horizontal(|ui| {
+                    ui.label("Estado de la oferta:");
+                    let actual = self.estado_oferta();
+                    if self.p.seguimiento.contrato.is_some() {
+                        ui.label(RichText::new("Adjudicada (contratada)").strong());
+                    } else {
+                        for e in ppto_biblioteca::huellas::Estado::TODOS {
+                            if ui.selectable_label(actual == e, e.nombre()).clicked() && actual != e {
+                                cambios.push(Cambio::Texto("estado", e.nombre().to_owned()));
+                            }
+                        }
+                    }
+                })
+                .response
+                .on_hover_text("Para comparar con obras parecidas: las adjudicadas pesan más");
                 ui.separator();
                 let propuesto = |ui: &mut egui::Ui, cambios: &mut Vec<Cambio>, d: Option<&DatoPropuesto>| {
                     if let Some(d) = d {

@@ -28,6 +28,7 @@ impl Aplicacion {
 
     /// Tras guardar la obra.
     pub(super) fn tras_guardar(&mut self) {
+        self.guardar_huella();
         if let Some((_, d)) = self.diferencias_biblioteca() {
             self.sincro = Some(Sincro::Subir(d));
         }

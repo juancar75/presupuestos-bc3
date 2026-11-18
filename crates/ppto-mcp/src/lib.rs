@@ -179,7 +179,7 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                     rechaza cada propuesta en el programa; consulte ver_propuestas. Si el usuario \
                     pide «atiende el asistente» o similar, lea los encargos que dejó en el panel del \
                     programa con leer_mensajes (adjuntos con leer_adjunto), atiéndalos y conteste con \
-                    responder; los informes se guardan con guardar_informe. Importes en euros con \
+                    responder; los informes se guardan con guardar_informe. Antes de dar por buena una oferta, comparar_obras con las obras parecidas. Importes en euros con \
                     formato español."
             }))
         }
@@ -301,6 +301,11 @@ fn herramientas() -> Value {
                     "fuente": { "type": "string" }
                 }, "required": ["clave", "valor", "fuente"] } }
             }, "required": ["datos"] }
+        },
+        {
+            "name": "comparar_obras",
+            "description": "Compara la obra activa con las obras parecidas guardadas en la biblioteca (mismo tipo y tamaño parecido): PEM €/plaza, €/m², horas de mano de obra por plaza o vivienda, importe por grupo de capítulo (ventilación, detección, BIE…) y reparto de costes, con mediana, mínimo, máximo y desviación. Úselo antes de dar la oferta por buena y explique las desviaciones de más del 25 %.",
+            "inputSchema": { "type": "object", "properties": {} }
         },
         {
             "name": "comprobar_recursos",
@@ -521,6 +526,7 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "simular_subcontrata" => simular_subcontrata(estado.p()?, a),
         "abrir_obra_activa" => abrir_obra_activa(estado),
         "comprobar_recursos" => biblioteca::comprobar_recursos(estado),
+        "comparar_obras" => biblioteca::comparar_obras(estado),
         "ver_datos_obra" => documentos::ver_datos_obra(estado),
         "documentos_obra" => documentos::documentos_obra(estado),
         "leer_documento" => documentos::leer_documento(estado, a),

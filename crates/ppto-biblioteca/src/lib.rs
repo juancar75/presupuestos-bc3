@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 pub mod carpeta;
 mod compartir;
 pub mod comprobar;
+pub mod huellas;
 pub mod indice;
 pub use compartir::{Diferencia, Sello, ahora, fichero_de, ficheros, usuario};
 
@@ -355,6 +356,10 @@ pub struct Biblioteca {
     /// de fancoil»), por nombre.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub kits: BTreeMap<String, Kit>,
+    /// Huellas de las obras (tipo, ficha, importes, horas) para comparar con
+    /// obras parecidas, por clave de obra.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub huellas: BTreeMap<String, huellas::Huella>,
 }
 
 /// Grupo de líneas de descompuesto guardado para reutilizarlo: se inserta

@@ -5,6 +5,11 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Comparar con obras parecidas** (Obra → «Comparar con obras parecidas…»): ratios de la obra (PEM €/plaza, €/m², horas de mano de obra por plaza o vivienda, importe por grupo de capítulo y reparto de costes) frente a la mediana, mínimo y máximo de las obras del mismo tipo y tamaño parecido; en rojo lo que se aparta más de un 25 %, con «Ir» al capítulo. Si hay 3 o más adjudicadas, solo cuentan esas.
+- **Huella de cada obra en la biblioteca compartida**: al guardar una obra con especialidad y datos de la obra se guarda su tipo, ficha, PEM, importes por grupo de capítulo, costes por naturaleza y horas por oficio, con quién y cuándo. «Estado de la oferta» (ofertada, adjudicada, perdida) en Datos de la obra; las contratadas cuentan como adjudicadas.
+- Claude (MCP): `comparar_obras`, antes de dar una oferta por buena.
+
 ## [0.1.0-alpha.63] - 2026-11-18
 
 ### Añadido

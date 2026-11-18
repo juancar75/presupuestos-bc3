@@ -371,6 +371,14 @@ impl Aplicacion {
             self.ver_ficha = true;
         }
         if ui
+            .button("Comparar con obras parecidas…")
+            .on_hover_text("€/plaza, €/m², horas por plaza… frente a las obras del mismo tipo y tamaño parecido")
+            .clicked()
+        {
+            ui.close();
+            self.abrir_parecidas();
+        }
+        if ui
             .button("Clientes…")
             .on_hover_text("Datos de cada cliente (CIF, dirección, contacto, forma de pago, condiciones) para elegirlos en cada oferta")
             .clicked()
