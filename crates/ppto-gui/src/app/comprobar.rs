@@ -20,6 +20,7 @@ impl Aplicacion {
         let mut abierta = true;
         let mut otra_vez = false;
         let mut copiar = None;
+        let mut ayuda = false;
         egui::Window::new("Comprobar antes de valorar")
             .open(&mut abierta)
             .default_width(620.0)
@@ -56,6 +57,13 @@ impl Aplicacion {
                     .small(),
                 );
                 ui.horizontal(|ui| {
+                    if ui
+                        .button("?")
+                        .on_hover_text("Ayuda: comprobar antes de valorar (F1)")
+                        .clicked()
+                    {
+                        ayuda = true;
+                    }
                     if ui.button("Volver a comprobar").clicked() {
                         otra_vez = true;
                     }
@@ -70,6 +78,9 @@ impl Aplicacion {
             });
         if let Some(t) = copiar {
             ctx.copy_text(t);
+        }
+        if ayuda {
+            self.abrir_ayuda(Some("comprobar"));
         }
         if !abierta {
             self.comprobacion = None;

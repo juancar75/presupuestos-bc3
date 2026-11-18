@@ -8,6 +8,7 @@ mod alta;
 mod arbol;
 mod archivo;
 mod asistente;
+mod ayuda;
 mod bases;
 mod biblioteca;
 mod ciego;
@@ -322,6 +323,8 @@ pub struct Aplicacion {
     informe: Option<ppto_bc3::Importacion>,
     ver_informe: bool,
     ver_acerca: bool,
+    /// Ventana de ayuda (manual).
+    ayuda: ayuda::Ayuda,
     alta: Option<Alta>,
     ventana_pdf: Option<pdf::VentanaPdf>,
     ventana_clientes: Option<clientes::VentanaClientes>,
@@ -563,6 +566,7 @@ impl Aplicacion {
             informe: None,
             ver_informe: false,
             ver_acerca: false,
+            ayuda: Default::default(),
             alta: None,
             ventana_pdf: None,
             ventana_clientes: None,
@@ -992,6 +996,7 @@ impl Aplicacion {
         self.ventana_guardar_kit(&ctx);
         self.sondear_tarifa(&ctx);
         self.ventana_comprobar(&ctx);
+        self.ventana_ayuda(&ctx);
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_emparejar(&ctx, &mut acciones);
         self.ventana_nuevo(&ctx);
