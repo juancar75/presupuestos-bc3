@@ -6,6 +6,9 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Dónde dejar los documentos de la obra**: estructura de la carpeta de documentos (01 Proyecto, 02 Mediciones, 03 Planos, 04 Ofertas, 05 Cliente). En «Datos de la obra»: **?** con lo que va en cada una, «Crear carpetas» y resumen de lo que hay, con avisos (vacías, ficheros sueltos, DWG sin DXF). Claude ve la misma estructura y lee primero el proyecto, luego mediciones y planos.
+
+### Añadido
 - **Planos DXF** (MCP `leer_plano`): Claude lee los planos DXF de la carpeta de documentos de la obra: bloques insertados por nombre y capa (cuántos detectores, BIE, extintores, rejillas…), los textos de leyendas y rótulos y, para un bloque, la distancia de cada uno al más cercano (mín., mediana, máx.) y la superficie que ocupan, para comprobar la medición y las coberturas. Lector DXF propio (texto, sin dependencias); los DXF binarios y los DWG no se leen.
 
 ### Añadido
