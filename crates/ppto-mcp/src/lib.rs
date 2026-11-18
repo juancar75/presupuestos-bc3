@@ -25,6 +25,7 @@ use std::str::FromStr;
 pub mod asistente;
 mod biblioteca;
 mod documentos;
+pub mod dxf;
 
 /// Versión del protocolo MCP que se anuncia si el cliente no pide otra.
 pub const PROTOCOLO: &str = "2025-06-18";
@@ -292,6 +293,14 @@ fn herramientas() -> Value {
             }, "required": ["ruta"] }
         },
         {
+            "name": "leer_plano",
+            "description": "Lee un plano DXF de la carpeta de la obra: bloques insertados por nombre y capa (cuántos detectores, BIE, extintores, rejillas…), los textos (leyendas, rótulos) y, con «bloque», la distancia de cada uno al más cercano (mín., mediana, máx., en m) y la superficie que ocupan, para comprobar coberturas frente a la medición y la norma. Los DWG no se leen (guardar como DXF).",
+            "inputSchema": { "type": "object", "properties": {
+                "ruta": { "type": "string", "description": "Tal cual sale en documentos_obra" },
+                "bloque": { "type": "string", "description": "Nombre del bloque para distancias y cobertura" }
+            }, "required": ["ruta"] }
+        },
+        {
             "name": "proponer_datos_obra",
             "description": "Propone datos de la obra sacados de sus documentos (claves de ver_datos_obra): números en las de la ficha (m², ud, m), texto en dirección, cliente, etc. Cada dato con su fuente («Memoria descriptiva, pág. 3»). NO cambia la obra: el usuario los acepta en Obra → Datos de la obra. No proponga lo que no esté en un documento.",
             "inputSchema": { "type": "object", "properties": {
@@ -531,6 +540,7 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "documentos_obra" => documentos::documentos_obra(estado),
         "leer_documento" => documentos::leer_documento(estado, a),
         "proponer_datos_obra" => documentos::proponer_datos_obra(estado, a),
+        "leer_plano" => documentos::leer_plano(estado, a),
         "partidas_sin_precio" => {
             partidas_sin_precio(estado.p()?, a.get("limite").and_then(Value::as_u64).unwrap_or(40))
         }

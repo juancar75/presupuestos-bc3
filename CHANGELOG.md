@@ -6,6 +6,9 @@ versionado [semántico](https://semver.org/lang/es/).
 ## [Sin publicar]
 
 ### Añadido
+- **Planos DXF** (MCP `leer_plano`): Claude lee los planos DXF de la carpeta de documentos de la obra: bloques insertados por nombre y capa (cuántos detectores, BIE, extintores, rejillas…), los textos de leyendas y rótulos y, para un bloque, la distancia de cada uno al más cercano (mín., mediana, máx.) y la superficie que ocupan, para comprobar la medición y las coberturas. Lector DXF propio (texto, sin dependencias); los DXF binarios y los DWG no se leen.
+
+### Añadido
 - **Comparar con obras parecidas** (Obra → «Comparar con obras parecidas…»): ratios de la obra (PEM €/plaza, €/m², horas de mano de obra por plaza o vivienda, importe por grupo de capítulo y reparto de costes) frente a la mediana, mínimo y máximo de las obras del mismo tipo y tamaño parecido; en rojo lo que se aparta más de un 25 %, con «Ir» al capítulo. Si hay 3 o más adjudicadas, solo cuentan esas.
 - **Huella de cada obra en la biblioteca compartida**: al guardar una obra con especialidad y datos de la obra se guarda su tipo, ficha, PEM, importes por grupo de capítulo, costes por naturaleza y horas por oficio, con quién y cuándo. «Estado de la oferta» (ofertada, adjudicada, perdida) en Datos de la obra; las contratadas cuentan como adjudicadas.
 - Claude (MCP): `comparar_obras`, antes de dar una oferta por buena.
