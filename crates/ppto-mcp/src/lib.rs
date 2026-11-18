@@ -1091,6 +1091,50 @@ pub(crate) fn abrir_obra_activa(estado: &mut Estado) -> Result<String, String> {
                 .join(", "),
         );
     }
+    // Datos de la obra: si hay documentos y faltan datos, que se lean antes de valorar
+    let es: Vec<ppto_core::especialidad::Especialidad> = o
+        .datos
+        .get("especialidad")
+        .map(|e| {
+            e.split(',')
+                .filter_map(ppto_core::especialidad::Especialidad::leer)
+                .collect()
+        })
+        .unwrap_or_default();
+    let ficha = ppto_core::ficha::de_datos(&o.datos);
+    let textos = ppto_core::ficha::textos_de_datos(&o.datos);
+    let faltan = ppto_core::ficha::campos_de(&es)
+        .iter()
+        .filter(|c| !ficha.contains_key(c.clave))
+        .count()
+        + ppto_core::ficha::TEXTOS
+            .iter()
+            .filter(|c| c.clave != "documentos" && !textos.contains_key(c.clave))
+            .count();
+    match textos.get("documentos") {
+        Some(d) if faltan > 0 => {
+            let _ = write!(
+                t,
+                "\n\nLa obra tiene carpeta de documentos ({d}) y faltan {faltan} datos de la obra: ANTES de valorar, \
+                 léalos (ver_datos_obra, documentos_obra, leer_documento de la memoria y el pliego) y propóngalos \
+                 con proponer_datos_obra; use también los documentos para marcas, modelos y alcance."
+            );
+        }
+        Some(d) => {
+            let _ = write!(
+                t,
+                "\n\nCarpeta de documentos: {d}. Úsela (documentos_obra, leer_documento) para marcas, modelos y alcance."
+            );
+        }
+        None if faltan > 0 => {
+            let _ = write!(
+                t,
+                "\n\nFaltan {faltan} datos de la obra y no tiene carpeta de documentos: si el usuario tiene planos \
+                 o memorias, que elija la carpeta en Obra → Datos de la obra."
+            );
+        }
+        None => {}
+    }
     estado.presupuesto = Some(p);
     estado.origen = String::new();
     estado.obra_activa = Some(o.clave);

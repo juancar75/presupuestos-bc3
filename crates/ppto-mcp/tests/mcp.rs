@@ -574,6 +574,12 @@ fn datos_y_documentos_de_la_obra() {
         ruta_ficha: Some(dir.join("ficha_propuesta.json")),
         ..Estado::default()
     };
+    // Al abrir la obra, si hay documentos y faltan datos, se pide leerlos antes de valorar
+    let (t, err) = llamar(&mut e, "abrir_obra_activa", json!({}));
+    assert!(
+        !err && t.contains("ANTES de valorar") && t.contains("proponer_datos_obra"),
+        "{t}"
+    );
     let (t, err) = llamar(&mut e, "ver_datos_obra", json!({}));
     assert!(
         !err && t.contains("C/ Sintética 1") && t.contains("| garaje_plazas |"),

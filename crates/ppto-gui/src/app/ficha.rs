@@ -18,7 +18,14 @@ enum Cambio {
     Texto(&'static str, String),
     Aceptar(Vec<DatoPropuesto>),
     Descartar(Vec<String>),
+    PedirAClaude,
 }
+
+/// Encargo para que la IA rellene los datos de la obra con sus documentos.
+pub(super) const ENCARGO: &str = "Rellena los datos de la obra con sus documentos: ver_datos_obra, documentos_obra, \
+lee la memoria, el pliego y los planos en PDF con leer_documento y propón con proponer_datos_obra los datos \
+que falten, cada uno con su documento y página. Dime después qué marcas, modelos y alcance has visto \
+que afecten a la valoración.";
 
 impl Aplicacion {
     /// Relee las propuestas de ficha de la IA (como mucho cada 2 s).
@@ -103,6 +110,18 @@ impl Aplicacion {
                     .small()
                     .weak(),
                 );
+                let hay_docs = self.obra_textos.get("documentos").is_some_and(|d| !d.trim().is_empty());
+                if hay_docs
+                    && ui
+                        .button("✨ Que Claude los rellene con los documentos")
+                        .on_hover_text(
+                            "Deja el encargo en el panel del asistente: Claude lee la carpeta de documentos \
+                             (memoria, pliego, planos en PDF) y propone los datos que falten, con su fuente",
+                        )
+                        .clicked()
+                {
+                    cambios.push(Cambio::PedirAClaude);
+                }
                 if !propuesta.is_empty() {
                     ui.horizontal(|ui| {
                         ui.colored_label(
@@ -238,6 +257,17 @@ impl Aplicacion {
                     self.info(format!("{n} datos de la obra aceptados."));
                 }
                 Cambio::Descartar(k) => self.descartar_ficha(&k),
+                Cambio::PedirAClaude => {
+                    self.asistente.entrada = ENCARGO.to_owned();
+                    self.asistente.abierto = true;
+                    match self.asistente.enviar(&self.p) {
+                        Ok(()) => self.info(
+                            "Encargo dejado en el panel del asistente. Con Claude Desktop: pídale «atiende el asistente».",
+                        ),
+                        Err(e) => self.error(e),
+                    }
+                    continue;
+                }
             }
             self.cambios = true;
             self.enlace.sucia = true;
