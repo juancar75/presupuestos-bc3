@@ -133,6 +133,31 @@ impl Aplicacion {
             obra.referencia = campo(3);
             obra.atencion = campo(4);
         }
+        // Los datos de la obra (ventana «Datos de la obra») mandan
+        let t = |k: &str| {
+            self.obra_textos
+                .get(k)
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty())
+        };
+        if let Some(v) = t("titulo") {
+            obra.titulo = v;
+        }
+        match (t("direccion"), t("municipio")) {
+            (Some(d), Some(m)) => obra.direccion = format!("{d}, {m}"),
+            (Some(d), None) => obra.direccion = d,
+            (None, Some(m)) if obra.direccion.is_empty() => obra.direccion = m,
+            _ => {}
+        }
+        if let Some(v) = t("cliente") {
+            obra.cliente = v;
+        }
+        if let Some(v) = t("atencion") {
+            obra.atencion = v;
+        }
+        if let Some(v) = t("referencia") {
+            obra.referencia = v;
+        }
         let mut v = VentanaPdf {
             perfiles,
             obra,
@@ -424,6 +449,35 @@ impl Aplicacion {
             && let Err(e) = guardar_datos_obra(&self.clave_obra(), &v.obra)
         {
             mensaje = Some((format!("No se pudieron guardar los datos de la obra: {e}"), true));
+        }
+        // Y a los datos de la obra, para que el PDF y la ficha digan lo mismo
+        if !abierta || generar {
+            let mut cambia = false;
+            let mut poner = |k: &str, v: &str| {
+                let v = v.trim();
+                if !v.is_empty() && self.obra_textos.get(k).map(String::as_str) != Some(v) {
+                    self.obra_textos.insert(k.to_owned(), v.to_owned());
+                    cambia = true;
+                }
+            };
+            poner("titulo", &v.obra.titulo);
+            poner("cliente", &v.obra.cliente);
+            poner("atencion", &v.obra.atencion);
+            poner("referencia", &v.obra.referencia);
+            if !self.obra_textos.contains_key("direccion") {
+                let d = v.obra.direccion.clone();
+                let mut poner = |k: &str, v: &str| {
+                    if !v.trim().is_empty() {
+                        self.obra_textos.insert(k.to_owned(), v.trim().to_owned());
+                        cambia = true;
+                    }
+                };
+                poner("direccion", &d);
+            }
+            if cambia {
+                self.cambios = true;
+                self.enlace.sucia = true;
+            }
         }
         if !abierta {
             let _ = v.volcar();

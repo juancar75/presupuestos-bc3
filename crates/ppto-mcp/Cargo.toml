@@ -27,6 +27,7 @@ rust_decimal.workspace = true
 serde_json = "1.0"
 pdf-extract = "0.12.1"
 calamine = "0.38"
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 rust_decimal_macros.workspace = true

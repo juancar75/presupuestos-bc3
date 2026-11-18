@@ -2932,3 +2932,59 @@ fn la_ayuda_se_pinta_en_cada_apartado_y_busca() {
             .contains("kit")
     );
 }
+
+#[test]
+fn datos_de_la_obra_con_lo_que_propone_claude() {
+    let dir = std::env::temp_dir().join(format!("gui-ficha-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut app = Aplicacion::sin_ventana();
+    let r = dir.join("ficha_propuesta.json");
+    app.enlace.ruta_ficha = Some(r.clone());
+    let obra = ppto_propuestas::clave(&app.p);
+    let d = |k: &str, v: &str| ppto_propuestas::DatoPropuesto {
+        clave: k.into(),
+        valor: v.into(),
+        fuente: "Memoria sintética, pág. 1".into(),
+        cuando: 0,
+    };
+    ppto_propuestas::FichaPropuesta::modificar(&r, |f| {
+        f.proponer(
+            &obra,
+            vec![
+                d("plantas_bajo", "2"),
+                d("direccion", "C/ Sintética 1"),
+                d("garaje_plazas", "60"),
+            ],
+        );
+    })
+    .unwrap();
+    app.ver_ficha = true;
+    let ctx = Context::default();
+    let mut o = ctx.run_ui(RawInput::default(), |ui| {
+        let c = ui.ctx().clone();
+        app.ventana_ficha(&c);
+    });
+    o.textures_delta.clear();
+    assert_eq!(app.ficha_propuesta.len(), 3);
+    // Aceptar dos: entran en la obra y salen de lo propuesto
+    let dos: Vec<_> = app
+        .ficha_propuesta
+        .iter()
+        .filter(|x| x.clave != "garaje_plazas")
+        .cloned()
+        .collect();
+    assert_eq!(app.aceptar_ficha(&dos), 2);
+    assert_eq!(app.ficha["plantas_bajo"], dec!(2));
+    assert_eq!(app.obra_textos["direccion"], "C/ Sintética 1");
+    let f = ppto_propuestas::FichaPropuesta::cargar(&r);
+    assert_eq!(f.obras[&obra].len(), 1);
+    // Se guardan con la obra
+    let datos = app.datos_obra();
+    assert_eq!(datos["obra.direccion"], "C/ Sintética 1");
+    assert_eq!(datos["ficha.plantas_bajo"], "2");
+    let mut otra = Aplicacion::sin_ventana();
+    otra.aplicar_datos_obra(&datos);
+    assert_eq!(otra.obra_textos["direccion"], "C/ Sintética 1");
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -24,6 +24,7 @@ use std::str::FromStr;
 
 pub mod asistente;
 mod biblioteca;
+mod documentos;
 
 /// Versión del protocolo MCP que se anuncia si el cliente no pide otra.
 pub const PROTOCOLO: &str = "2025-06-18";
@@ -40,6 +41,8 @@ pub struct Estado {
     pub ruta_tarifas: Option<std::path::PathBuf>,
     pub ruta_conversaciones: Option<std::path::PathBuf>,
     pub ruta_biblioteca: Option<std::path::PathBuf>,
+    /// Datos de la obra propuestos por la IA (`ficha_propuesta.json`).
+    pub ruta_ficha: Option<std::path::PathBuf>,
     pub gg: Decimal,
     pub bi: Decimal,
     pub iva: Decimal,
@@ -55,6 +58,7 @@ impl Default for Estado {
             ruta_bandeja: ppto_propuestas::ruta_bandeja(),
             ruta_tarifas: ppto_propuestas::carpeta_config().map(|c| c.join("tarifas.json")),
             ruta_conversaciones: ppto_propuestas::conversacion::ruta_conversaciones(),
+            ruta_ficha: ppto_propuestas::ruta_ficha_propuesta(),
             ruta_biblioteca: ppto_biblioteca::ruta(),
             gg: venta::GG_HABITUAL,
             bi: venta::BI_HABITUAL,
@@ -169,7 +173,7 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                 "instructions": "Gestor de presupuestos de construcción e instalaciones (BC3/FIEBDC-3). \
                     Abre un presupuesto con abrir_presupuesto y consulta o simula. Las herramientas no \
                     modifican el presupuesto. Para valorar la obra que el usuario tiene abierta en el \
-                    programa: abrir_obra_activa, LO PRIMERO comprobar_recursos (avise al usuario de los huecos: fabricantes sin tarifa o sin descuento, nombres distintos, marcas sin fuente), partidas_sin_precio, ver_concepto/buscar/buscar_tarifas \
+                    programa: abrir_obra_activa, antes de valorar ver_datos_obra (si faltan datos y hay carpeta de documentos: documentos_obra, leer_documento de la memoria y el pliego, y proponer_datos_obra; use también los documentos para marcas, modelos y alcance) y comprobar_recursos (avise al usuario de los huecos: fabricantes sin tarifa o sin descuento, nombres distintos, marcas sin fuente), partidas_sin_precio, ver_concepto/buscar/buscar_tarifas \
                     para reutilizar recursos y precios existentes; ANTES de estimar consulte buscar_biblioteca (partidas, tarifas y ofertas del usuario de obras anteriores), y proponer (una propuesta por partida; para varias partidas, proponer_lote, que acepta hasta 40 en una llamada), \
                     con confianza y justificación de cada precio y rendimiento). El usuario acepta o \
                     rechaza cada propuesta en el programa; consulte ver_propuestas. Si el usuario \
@@ -268,6 +272,35 @@ fn herramientas() -> Value {
             "name": "abrir_obra_activa",
             "description": "Abre el presupuesto que el usuario tiene abierto en el programa de escritorio (p. ej. un ciego que está valorando). Necesario para hacer propuestas.",
             "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "ver_datos_obra",
+            "description": "Datos de la obra activa: dirección, cliente, carpeta de documentos y la ficha del edificio que piden sus especialidades (superficies, plantas sobre y bajo rasante, viviendas, plazas de garaje, escaleras…), con su clave. Los vacíos salen «—».",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "documentos_obra",
+            "description": "Lista los ficheros de la carpeta de documentos de la obra (planos, memorias, pliegos, cálculos) y cuáles se pueden leer.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "leer_documento",
+            "description": "Texto de un documento de la carpeta de la obra (PDF, Word, Excel, CSV, TXT), por trozos de 60.000 caracteres: si sigue, repita con «desde» que se indica.",
+            "inputSchema": { "type": "object", "properties": {
+                "ruta": { "type": "string", "description": "Tal cual sale en documentos_obra" },
+                "desde": { "type": "integer" }
+            }, "required": ["ruta"] }
+        },
+        {
+            "name": "proponer_datos_obra",
+            "description": "Propone datos de la obra sacados de sus documentos (claves de ver_datos_obra): números en las de la ficha (m², ud, m), texto en dirección, cliente, etc. Cada dato con su fuente («Memoria descriptiva, pág. 3»). NO cambia la obra: el usuario los acepta en Obra → Datos de la obra. No proponga lo que no esté en un documento.",
+            "inputSchema": { "type": "object", "properties": {
+                "datos": { "type": "array", "items": { "type": "object", "properties": {
+                    "clave": { "type": "string" },
+                    "valor": { "type": ["string", "number"] },
+                    "fuente": { "type": "string" }
+                }, "required": ["clave", "valor", "fuente"] } }
+            }, "required": ["datos"] }
         },
         {
             "name": "comprobar_recursos",
@@ -488,6 +521,10 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "simular_subcontrata" => simular_subcontrata(estado.p()?, a),
         "abrir_obra_activa" => abrir_obra_activa(estado),
         "comprobar_recursos" => biblioteca::comprobar_recursos(estado),
+        "ver_datos_obra" => documentos::ver_datos_obra(estado),
+        "documentos_obra" => documentos::documentos_obra(estado),
+        "leer_documento" => documentos::leer_documento(estado, a),
+        "proponer_datos_obra" => documentos::proponer_datos_obra(estado, a),
         "partidas_sin_precio" => {
             partidas_sin_precio(estado.p()?, a.get("limite").and_then(Value::as_u64).unwrap_or(40))
         }

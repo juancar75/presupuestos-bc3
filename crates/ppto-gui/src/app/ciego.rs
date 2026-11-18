@@ -63,6 +63,7 @@ impl Aplicacion {
         self.p = p;
         self.especialidades.clear();
         self.ficha.clear();
+        self.obra_textos.clear();
         self.historial.limpiar();
         self.fichero = None;
         self.presupuesto_id = None;

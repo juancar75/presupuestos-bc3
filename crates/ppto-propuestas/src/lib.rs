@@ -148,14 +148,34 @@ pub struct ObraActiva {
     /// Segundos desde 1970 de la última copia.
     pub guardada: u64,
     pub presupuesto: Presupuesto,
+    /// Datos de la obra (ficha `ficha.*`, textos `obra.*`, especialidades…).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub datos: std::collections::BTreeMap<String, String>,
 }
 
 impl ObraActiva {
+    /// Solo el presupuesto: los datos de la obra que ya hubiera de esa misma
+    /// obra se conservan.
     pub fn guardar(p: &Presupuesto, ruta: &Path) -> std::io::Result<()> {
+        let datos = Self::cargar(ruta)
+            .ok()
+            .filter(|o| o.clave == clave(p))
+            .map(|o| o.datos)
+            .unwrap_or_default();
+        Self::guardar_con(p, &datos, ruta)
+    }
+
+    /// Con los datos de la obra (ficha, dirección, carpeta de documentos…).
+    pub fn guardar_con(
+        p: &Presupuesto,
+        datos: &std::collections::BTreeMap<String, String>,
+        ruta: &Path,
+    ) -> std::io::Result<()> {
         let o = ObraActiva {
             clave: clave(p),
             guardada: ahora(),
             presupuesto: p.clone(),
+            datos: datos.clone(),
         };
         let t = serde_json::to_string(&o).map_err(std::io::Error::other)?;
         escribir(ruta, &t)
@@ -263,4 +283,73 @@ impl Bandeja {
             Ok(r)
         })
     }
+}
+
+/// Datos de la ficha de la obra que propone la IA (sacados de los documentos
+/// de la obra), pendientes de que el usuario los acepte en el programa.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DatoPropuesto {
+    /// Clave de la ficha (`garaje_plazas`) o del texto (`direccion`).
+    pub clave: String,
+    /// Valor como texto (los numéricos, con punto decimal).
+    pub valor: String,
+    /// De dónde sale («Memoria, pág. 3»).
+    pub fuente: String,
+    /// Segundos desde 1970.
+    pub cuando: u64,
+}
+
+/// Propuestas de ficha por obra ([`clave`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FichaPropuesta {
+    pub obras: std::collections::BTreeMap<String, Vec<DatoPropuesto>>,
+}
+
+/// Fichero de las propuestas de ficha.
+pub fn ruta_ficha_propuesta() -> Option<PathBuf> {
+    carpeta_config().map(|c| c.join("ficha_propuesta.json"))
+}
+
+impl FichaPropuesta {
+    pub fn cargar(ruta: &Path) -> Self {
+        std::fs::read_to_string(ruta)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+
+    /// Lee, cambia y guarda con bloqueo (el programa y la IA a la vez).
+    pub fn modificar<R>(ruta: &Path, f: impl FnOnce(&mut FichaPropuesta) -> R) -> std::io::Result<R> {
+        con_bloqueo(ruta, || {
+            let mut b = Self::cargar(ruta);
+            let r = f(&mut b);
+            let t = serde_json::to_string_pretty(&b).map_err(std::io::Error::other)?;
+            escribir(ruta, &t)?;
+            Ok(r)
+        })
+    }
+
+    /// Añade o sustituye (por clave) los datos propuestos de una obra.
+    pub fn proponer(&mut self, obra: &str, datos: Vec<DatoPropuesto>) {
+        let v = self.obras.entry(obra.to_owned()).or_default();
+        for d in datos {
+            v.retain(|x| x.clave != d.clave);
+            v.push(d);
+        }
+    }
+
+    /// Quita un dato propuesto (aceptado o descartado).
+    pub fn quitar(&mut self, obra: &str, clave_dato: &str) {
+        if let Some(v) = self.obras.get_mut(obra) {
+            v.retain(|x| x.clave != clave_dato);
+            if v.is_empty() {
+                self.obras.remove(obra);
+            }
+        }
+    }
+}
+
+/// Segundos desde 1970 (para sellar los datos propuestos).
+pub fn ahora_segundos() -> u64 {
+    ahora()
 }
