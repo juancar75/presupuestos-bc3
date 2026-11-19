@@ -5,6 +5,11 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.67] - 2026-11-19
+
+### Cambiado
+- **Materiales siempre a PVP con descuento**: el asistente propone el material de catálogo de fabricante o distribuidor (Saltoki, etc.) a PVP con fabricante, grupo y descuento, como los recursos de Daikin («Tarifa SALTOKI/COBRE: PVP 11,04 € − 70 % = 3,31 € neto»), y nunca a neto. `proponer` y `proponer_lote` avisan de los materiales que quedarían a neto sin tarifa (salvo los marcados «(estimado)») para que se vuelvan a proponer a PVP.
+
 ## [0.1.0-alpha.66] - 2026-11-19
 
 ### Añadido
