@@ -18,6 +18,11 @@
 //!   capítulo indicado (y el capítulo, si falta, detrás de `despues_de`), con
 //!   su unidad, resumen, texto y cantidad: es un contradictorio o adicional.
 //!
+//! Una propuesta puede ser también una **lista de cambios** de la obra
+//! ([`Contenido::Cambios`]): quitar partidas o capítulos, cambiar la cantidad
+//! (o la hoja de medición) de una partida en un capítulo, rehacer su resumen,
+//! texto o unidad, y moverla de capítulo. Se aplican todos o ninguno.
+//!
 //! Si algo no es válido, el presupuesto no cambia.
 
 use crate::concepto::{Concepto, LineaDescomposicion, Naturaleza};
@@ -81,6 +86,61 @@ pub struct LineaPropuesta {
 pub enum Contenido {
     Descompuesto(Vec<LineaPropuesta>),
     PrecioDirecto(Decimal),
+    /// Cambios de la obra (no de precio), en orden.
+    Cambios(Vec<Cambio>),
+}
+
+/// Cambio de la obra propuesto por la IA. `capitulo` es el capítulo padre
+/// de la línea; si se deja vacío y la partida solo está en un sitio, se usa ese.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Cambio {
+    /// Quita la partida (o el capítulo) del capítulo y borra lo que quede sin usar.
+    Borrar {
+        #[serde(default)]
+        capitulo: String,
+        partida: String,
+    },
+    /// Cambia la cantidad de la partida en el capítulo. Con `medicion`, la
+    /// cantidad sale de la hoja de medición; sin ella, se quita la hoja.
+    Cantidad {
+        #[serde(default)]
+        capitulo: String,
+        partida: String,
+        cantidad: Decimal,
+        #[serde(default)]
+        medicion: Vec<crate::medicion::LineaMedicion>,
+    },
+    /// Cambia el resumen, el texto descriptivo o la unidad (los que vengan).
+    Texto {
+        partida: String,
+        #[serde(default)]
+        resumen: Option<String>,
+        #[serde(default)]
+        texto: Option<String>,
+        #[serde(default)]
+        unidad: Option<String>,
+    },
+    /// Mueve la partida (o el capítulo) a otro capítulo, delante de `antes_de`
+    /// o al final.
+    Mover {
+        #[serde(default)]
+        de: String,
+        partida: String,
+        a: String,
+        #[serde(default)]
+        antes_de: Option<String>,
+    },
+}
+
+impl Cambio {
+    pub fn partida(&self) -> &str {
+        match self {
+            Self::Borrar { partida, .. }
+            | Self::Cantidad { partida, .. }
+            | Self::Texto { partida, .. }
+            | Self::Mover { partida, .. } => partida,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,6 +202,11 @@ pub struct Aplicada {
     /// Recursos que ya estaban en la obra a neto y se ligan a la tarifa del
     /// fabricante: (código, neto antes, neto con el descuento).
     pub ligados: Vec<(String, Decimal, Decimal)>,
+    /// Cambios de la obra aplicados, explicados («Borra P01.02 de C01…»).
+    pub cambios: Vec<String>,
+    /// PEM antes y después (solo en propuestas de cambios).
+    pub pem_antes: Decimal,
+    pub pem_despues: Decimal,
 }
 
 impl Presupuesto {
@@ -205,6 +270,9 @@ impl Presupuesto {
     }
 
     fn aplicar_propuesta_sin_deshacer(&mut self, prop: &Propuesta) -> Result<Aplicada, ErrorMotor> {
+        if let Contenido::Cambios(cambios) = &prop.contenido {
+            return self.aplicar_cambios(cambios);
+        }
         let partida = prop.partida.as_str();
         if let Some(n) = &prop.nueva
             && !self.conceptos.contains_key(partida)
@@ -242,6 +310,7 @@ impl Presupuesto {
                 }
                 self.fijar_precio(partida, *precio)?;
             }
+            Contenido::Cambios(_) => unreachable!("se aplican antes"),
             Contenido::Descompuesto(lineas) => {
                 if lineas.is_empty() {
                     return Err(ErrorMotor::ValorInvalido("el descompuesto propuesto está vacío".into()));
@@ -347,5 +416,173 @@ impl Presupuesto {
         self.validar()?;
         out.precio_despues = self.precio(partida)?;
         Ok(out)
+    }
+}
+
+impl Presupuesto {
+    /// Capítulo del que cuelga `codigo`: el indicado (comprobando que está
+    /// ahí) o, si viene vacío, el único donde está.
+    fn padre_de(&self, capitulo: &str, codigo: &str) -> Result<String, ErrorMotor> {
+        self.concepto(codigo)?;
+        let padres = self.padres(codigo);
+        let capitulo = capitulo.trim();
+        if !capitulo.is_empty() {
+            if padres.iter().any(|p| p == capitulo) {
+                return Ok(capitulo.to_owned());
+            }
+            return Err(ErrorMotor::ValorInvalido(format!("«{codigo}» no está en «{capitulo}»")));
+        }
+        match padres.as_slice() {
+            [uno] => Ok(uno.clone()),
+            [] => Err(ErrorMotor::ValorInvalido(format!(
+                "«{codigo}» no cuelga de ningún capítulo"
+            ))),
+            varios => Err(ErrorMotor::ValorInvalido(format!(
+                "«{codigo}» está en varios sitios ({}): indique el capítulo",
+                varios.join(", ")
+            ))),
+        }
+    }
+
+    fn aplicar_cambios(&mut self, cambios: &[Cambio]) -> Result<Aplicada, ErrorMotor> {
+        if cambios.is_empty() {
+            return Err(ErrorMotor::ValorInvalido("la propuesta no trae cambios".into()));
+        }
+        let mut out = Aplicada {
+            pem_antes: self.pem()?,
+            ..Aplicada::default()
+        };
+        for c in cambios {
+            let t = self.aplicar_cambio(c)?;
+            out.cambios.push(t);
+        }
+        self.validar()?;
+        out.pem_despues = self.pem()?;
+        Ok(out)
+    }
+
+    fn aplicar_cambio(&mut self, c: &Cambio) -> Result<String, ErrorMotor> {
+        match c {
+            Cambio::Borrar { capitulo, partida } => {
+                if *partida == self.raiz {
+                    return Err(ErrorMotor::ValorInvalido("no se puede borrar la raíz".into()));
+                }
+                let padre = self.padre_de(capitulo, partida)?;
+                let resumen = self.concepto(partida)?.resumen.clone();
+                let borrados = self.quitar_y_purgar(&padre, partida)?;
+                let mut t = format!("Quita {partida} «{resumen}» de {padre}");
+                if borrados.len() > 1 {
+                    t.push_str(&format!(" (y {} conceptos que quedan sin usar)", borrados.len() - 1));
+                }
+                Ok(t)
+            }
+            Cambio::Cantidad {
+                capitulo,
+                partida,
+                cantidad,
+                medicion,
+            } => {
+                let padre = self.padre_de(capitulo, partida)?;
+                if self.concepto(&padre)?.naturaleza != Naturaleza::Capitulo {
+                    return Err(ErrorMotor::ValorInvalido(format!(
+                        "«{padre}» no es un capítulo: el rendimiento de un descompuesto se cambia con una propuesta de precio"
+                    )));
+                }
+                let antes = self
+                    .concepto(&padre)?
+                    .descomposicion
+                    .iter()
+                    .find(|l| l.hijo == *partida)
+                    .map(LineaDescomposicion::cantidad)
+                    .unwrap_or_default();
+                if medicion.is_empty() {
+                    if *cantidad < Decimal::ZERO {
+                        return Err(ErrorMotor::ValorInvalido(format!("«{partida}» con cantidad negativa")));
+                    }
+                    self.mediciones.remove(&(padre.clone(), partida.clone()));
+                    self.fijar_rendimiento(&padre, partida, *cantidad)?;
+                } else {
+                    self.actualizar_medicion(&padre, partida, crate::medicion::Medicion::new(medicion.clone()))?;
+                    let total = self
+                        .concepto(&padre)?
+                        .descomposicion
+                        .iter()
+                        .find(|l| l.hijo == *partida)
+                        .map(LineaDescomposicion::cantidad)
+                        .unwrap_or_default();
+                    if total != *cantidad {
+                        return Err(ErrorMotor::ValorInvalido(format!(
+                            "la medición de «{partida}» suma {total}, no {cantidad}"
+                        )));
+                    }
+                }
+                let ud = self.concepto(partida)?.unidad.clone();
+                Ok(format!(
+                    "{partida} en {padre}: cantidad {} → {} {ud}{}",
+                    antes.normalize(),
+                    cantidad.normalize(),
+                    if medicion.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" ({} líneas de medición)", medicion.len())
+                    }
+                ))
+            }
+            Cambio::Texto {
+                partida,
+                resumen,
+                texto,
+                unidad,
+            } => {
+                if resumen.is_none() && texto.is_none() && unidad.is_none() {
+                    return Err(ErrorMotor::ValorInvalido(format!(
+                        "«{partida}»: indique resumen, texto o unidad"
+                    )));
+                }
+                let mut partes = Vec::new();
+                if let Some(u) = unidad {
+                    if u.trim().is_empty() {
+                        return Err(ErrorMotor::ValorInvalido(format!("«{partida}» con unidad vacía")));
+                    }
+                    let antes = self.concepto(partida)?.unidad.clone();
+                    self.fijar_unidad(partida, u)?;
+                    partes.push(format!("unidad {antes} → {}", u.trim()));
+                }
+                let c = self.concepto_mut(partida)?;
+                if let Some(r) = resumen {
+                    if r.trim().is_empty() {
+                        return Err(ErrorMotor::ValorInvalido(format!("«{partida}» con resumen vacío")));
+                    }
+                    partes.push(format!("resumen «{}» → «{}»", c.resumen, r.trim()));
+                    c.resumen = r.trim().to_owned();
+                }
+                if let Some(t) = texto {
+                    c.texto = Some(t.trim().to_owned()).filter(|t| !t.is_empty());
+                    partes.push("texto descriptivo nuevo".into());
+                }
+                Ok(format!("{partida}: {}", partes.join("; ")))
+            }
+            Cambio::Mover {
+                de,
+                partida,
+                a,
+                antes_de,
+            } => {
+                let origen = self.padre_de(de, partida)?;
+                if self.concepto(a)?.naturaleza != Naturaleza::Capitulo {
+                    return Err(ErrorMotor::ValorInvalido(format!("«{a}» no es un capítulo")));
+                }
+                if let Some(x) = antes_de
+                    && !self.concepto(a)?.descomposicion.iter().any(|l| &l.hijo == x)
+                {
+                    return Err(ErrorMotor::ValorInvalido(format!("«{x}» no está en «{a}»")));
+                }
+                self.trasladar_linea(&origen, partida, a, antes_de.as_deref())?;
+                Ok(match antes_de {
+                    Some(x) => format!("Mueve {partida} de {origen} a {a}, delante de {x}"),
+                    None => format!("Mueve {partida} de {origen} al final de {a}"),
+                })
+            }
+        }
     }
 }

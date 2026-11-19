@@ -176,7 +176,9 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                     modifican el presupuesto. Para valorar la obra que el usuario tiene abierta en el \
                     programa: abrir_obra_activa, antes de valorar ver_datos_obra (si faltan datos y hay carpeta de documentos: documentos_obra, leer_documento de la memoria y el pliego, y proponer_datos_obra; use también los documentos para marcas, modelos y alcance) y comprobar_recursos (avise al usuario de los huecos: fabricantes sin tarifa o sin descuento, nombres distintos, marcas sin fuente), partidas_sin_precio, ver_concepto/buscar/buscar_tarifas \
                     para reutilizar recursos y precios existentes; ANTES de estimar consulte buscar_biblioteca (partidas, tarifas y ofertas del usuario de obras anteriores), y proponer (una propuesta por partida; para varias partidas, proponer_lote, que acepta hasta 40 en una llamada), \
-                    con confianza y justificación de cada precio y rendimiento). El usuario acepta o \
+                    con confianza y justificación de cada precio y rendimiento). Para quitar partidas que no proceden, \
+                    cambiar cantidades o mediciones, rehacer resúmenes y textos o mover partidas de capítulo: \
+                    proponer_cambios (todo en una propuesta). El usuario acepta o \
                     rechaza cada propuesta en el programa; consulte ver_propuestas. Si el usuario \
                     pide «atiende el asistente» o similar, lea los encargos que dejó en el panel del \
                     programa con leer_mensajes (adjuntos con leer_adjunto), atiéndalos y conteste con \
@@ -389,6 +391,29 @@ fn herramientas() -> Value {
             }, "required": ["propuestas"] }
         },
         {
+            "name": "proponer_cambios",
+            "description": "Propone cambios de la obra activa que no son de precio: quitar partidas o capítulos que no proceden (tipo borrar), cambiar la cantidad de una partida en su capítulo, opcionalmente con líneas de medición (tipo cantidad), rehacer el resumen, el texto descriptivo o la unidad de una partida (tipo texto) y moverla a otro capítulo (tipo mover). NO modifica el presupuesto: queda pendiente hasta que el usuario la acepte en el programa, y se aplican todos los cambios o ninguno. «capitulo» es el capítulo donde está la línea; puede omitirse si la partida solo está en un sitio. Para cambiar el descompuesto o el precio use proponer.",
+            "inputSchema": { "type": "object", "properties": {
+                "cambios": { "type": "array", "items": { "type": "object", "properties": {
+                    "tipo": { "type": "string", "enum": ["borrar", "cantidad", "texto", "mover"] },
+                    "partida": { "type": "string", "description": "Código de la partida (o del capítulo, al borrar o mover)" },
+                    "capitulo": { "type": "string", "description": "Capítulo donde está ahora (borrar, cantidad, mover)" },
+                    "cantidad": num,
+                    "medicion": { "type": "array", "description": "Líneas de medición (cantidad = suma de uds × largo × ancho × alto de los campos rellenos)", "items": { "type": "object", "properties": {
+                        "comentario": { "type": "string" },
+                        "uds": num, "largo": num, "ancho": num, "alto": num
+                    } } },
+                    "resumen": { "type": "string" },
+                    "texto": { "type": "string" },
+                    "unidad": { "type": "string" },
+                    "a": { "type": "string", "description": "Capítulo de destino (mover)" },
+                    "antes_de": { "type": "string", "description": "Colocar delante de esta línea del destino (mover)" }
+                }, "required": ["tipo", "partida"] } },
+                "confianza": { "type": "string", "enum": ["alta", "media", "baja"] },
+                "justificacion": { "type": "string", "description": "Por qué (documento, indicación del usuario...)" }
+            }, "required": ["cambios", "justificacion"] }
+        },
+        {
             "name": "buscar_biblioteca",
             "description": "CONSULTAR ANTES DE ESTIMAR. Busca en la biblioteca de precios del usuario: partidas guardadas de obras anteriores (con su descompuesto y el precio de hoy de cada línea según la tarifa vigente y el descuento del fabricante), y líneas de tarifas (PVP) y ofertas (netos) de fabricantes. Avisa de tarifas de años anteriores.",
             "inputSchema": { "type": "object", "properties": {
@@ -547,6 +572,7 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "buscar_tarifas" => buscar_tarifas(estado, texto(a, "texto")?),
         "proponer" => proponer(estado, a),
         "proponer_lote" => proponer_lote(estado, a),
+        "proponer_cambios" => proponer_cambios(estado, a),
         "buscar_biblioteca" => biblioteca::buscar(estado, a),
         "estado_biblioteca" => biblioteca::estado_biblioteca(estado),
         "registrar_tarifa" => biblioteca::registrar_tarifa(estado, a),
@@ -1369,6 +1395,139 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
             eur(*obra),
             eur(*propuesto)
         );
+    }
+    Ok(t)
+}
+
+/// Máximo de cambios por propuesta.
+const MAX_CAMBIOS: usize = 60;
+
+/// Cambios de la obra (quitar, cantidad/medición, textos, mover) en una
+/// propuesta pendiente de aceptar.
+fn proponer_cambios(estado: &mut Estado, a: &Value) -> Result<String, String> {
+    use ppto_core::propuesta::{Cambio, Confianza, Contenido, EstadoPropuesta, Propuesta};
+    use ppto_core::{LineaMedicion, Medicion};
+    let obra = estado
+        .obra_activa
+        .clone()
+        .ok_or("las propuestas van a la obra abierta en el programa: use antes abrir_obra_activa")?;
+    let p = estado.p()?;
+    let lista = a
+        .get("cambios")
+        .and_then(Value::as_array)
+        .filter(|v| !v.is_empty())
+        .ok_or("indique cambios (lista de {tipo, partida, ...})")?;
+    if lista.len() > MAX_CAMBIOS {
+        return Err(format!("como mucho {MAX_CAMBIOS} cambios por propuesta"));
+    }
+    let confianza = match a.get("confianza").and_then(Value::as_str) {
+        None => Confianza::Media,
+        Some(c) => Confianza::leer(c).ok_or("confianza: alta, media o baja")?,
+    };
+    let justificacion = texto(a, "justificacion")?.trim().to_owned();
+    let opt = |c: &Value, k: &str| c.get(k).and_then(Value::as_str).map(|s| s.trim().to_owned());
+    let mut cambios = Vec::new();
+    for (i, c) in lista.iter().enumerate() {
+        let n = i + 1;
+        let partida = texto(c, "partida")
+            .map_err(|e| format!("cambio {n}: {e}"))?
+            .trim()
+            .to_owned();
+        let capitulo = opt(c, "capitulo").unwrap_or_default();
+        let tipo = texto(c, "tipo").map_err(|e| format!("cambio {n}: {e}"))?;
+        let cambio = match tipo.trim().to_lowercase().as_str() {
+            "borrar" | "quitar" => Cambio::Borrar { capitulo, partida },
+            "cantidad" | "medicion" => {
+                let mut medicion = Vec::new();
+                if let Some(ls) = c.get("medicion").and_then(Value::as_array) {
+                    for l in ls {
+                        medicion.push(LineaMedicion::normal(
+                            l.get("comentario").and_then(Value::as_str).unwrap_or(""),
+                            dec_campo(l, "uds")?,
+                            dec_campo(l, "largo")?,
+                            dec_campo(l, "ancho")?,
+                            dec_campo(l, "alto")?,
+                        ));
+                    }
+                }
+                let cantidad = match dec_campo(c, "cantidad")? {
+                    Some(q) => q,
+                    None if !medicion.is_empty() => {
+                        let unidad = p
+                            .concepto(&partida)
+                            .map_err(|e| format!("cambio {n}: {e}"))?
+                            .unidad
+                            .clone();
+                        Medicion::new(medicion.clone())
+                            .calcular(&p.decimales, &unidad)
+                            .map_err(|e| format!("cambio {n}: {e}"))?
+                            .total
+                    }
+                    None => return Err(format!("cambio {n} ({partida}): indique cantidad o medicion")),
+                };
+                Cambio::Cantidad {
+                    capitulo,
+                    partida,
+                    cantidad,
+                    medicion,
+                }
+            }
+            "texto" => Cambio::Texto {
+                partida,
+                resumen: opt(c, "resumen"),
+                texto: c.get("texto").and_then(Value::as_str).map(str::to_owned),
+                unidad: opt(c, "unidad"),
+            },
+            "mover" => Cambio::Mover {
+                de: capitulo,
+                partida,
+                a: opt(c, "a")
+                    .filter(|x| !x.is_empty())
+                    .ok_or_else(|| format!("cambio {n}: indique el capítulo de destino «a»"))?,
+                antes_de: opt(c, "antes_de").filter(|x| !x.is_empty()),
+            },
+            otro => {
+                return Err(format!(
+                    "cambio {n}: tipo «{otro}» no válido (borrar, cantidad, texto o mover)"
+                ));
+            }
+        };
+        cambios.push(cambio);
+    }
+    let mut codigos: Vec<&str> = cambios.iter().map(Cambio::partida).collect();
+    codigos.dedup();
+    let mut clave = format!("cambios: {}", codigos.join(", "));
+    if clave.chars().count() > 80 {
+        clave = format!("{}…", clave.chars().take(79).collect::<String>());
+    }
+    let prop = Propuesta {
+        id: 0,
+        partida: clave,
+        contenido: Contenido::Cambios(cambios),
+        confianza,
+        justificacion,
+        autor: "IA (MCP)".into(),
+        estado: EstadoPropuesta::Pendiente,
+        descuentos: Default::default(),
+        nueva: None,
+    };
+    let sim = p
+        .simular_propuesta(&prop)
+        .map_err(|e| format!("propuesta no válida (no se ha guardado nada): {e}"))?;
+    let ruta = estado
+        .ruta_bandeja
+        .clone()
+        .ok_or("no se encuentra la carpeta de configuración")?;
+    let id = ppto_propuestas::Bandeja::modificar(&ruta, |b| b.anadir(&obra, prop.clone()))
+        .map_err(|e| format!("no se pudo guardar la propuesta: {e}"))?;
+    let mut t = format!(
+        "Propuesta #{id} con {} cambios (pendiente de que el usuario la acepte en el programa). PEM {} → {} €.",
+        sim.cambios.len(),
+        eur(sim.pem_antes),
+        eur(sim.pem_despues)
+    );
+    for c in &sim.cambios {
+        let _ = write!(t, "\n- {c}");
     }
     Ok(t)
 }

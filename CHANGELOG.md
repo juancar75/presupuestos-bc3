@@ -5,6 +5,9 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Claude propone cambios de la obra** (MCP `proponer_cambios`): además de precios, puede proponer quitar partidas o capítulos que no proceden, cambiar la cantidad de una partida (con o sin líneas de medición), rehacer su resumen, texto descriptivo o unidad y moverla de capítulo. Van en una sola propuesta que se acepta o rechaza entera en «Propuestas IA», con la lista de cambios y el PEM antes y después; se deshace con Ctrl+Z y no entra en «Reaplicar aceptadas».
+
 ## [0.1.0-alpha.65] - 2026-11-19
 
 ### Añadido

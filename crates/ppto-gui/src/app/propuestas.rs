@@ -132,7 +132,8 @@ impl Aplicacion {
     pub(super) fn reaplicables(&self) -> Vec<Propuesta> {
         let mut ult: std::collections::BTreeMap<String, Propuesta> = std::collections::BTreeMap::new();
         for p in self.enlace.bandeja.de_obra(&clave(&self.p)) {
-            if p.estado != EstadoPropuesta::Aceptada {
+            // Los cambios de la obra (borrar, medir, textos) no se reaplican.
+            if p.estado != EstadoPropuesta::Aceptada || matches!(p.contenido, Contenido::Cambios(_)) {
                 continue;
             }
             let vacia = self.p.conceptos.get(&p.partida).is_some_and(|c| {
@@ -249,6 +250,10 @@ impl Aplicacion {
             ui.set_width(ui.available_width());
             let c = self.p.conceptos.get(&prop.partida);
             let sim = self.p.simular_propuesta(prop);
+            if let Contenido::Cambios(cambios) = &prop.contenido {
+                self.tarjeta_cambios(ui, prop, cambios.len(), &sim, acciones);
+                return;
+            }
             ui.horizontal(|ui| {
                 if ui
                     .link(RichText::new(format!(
@@ -417,6 +422,56 @@ impl Aplicacion {
         });
     }
 
+    /// Tarjeta de una propuesta de cambios de la obra (quitar, medir,
+    /// textos, mover): lista de cambios y PEM antes y después.
+    fn tarjeta_cambios(
+        &self,
+        ui: &mut Ui,
+        prop: &Propuesta,
+        n: usize,
+        sim: &Result<ppto_core::propuesta::Aplicada, ppto_core::ErrorMotor>,
+        acciones: &mut Vec<Accion>,
+    ) {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(format!("#{} Cambios en la obra ({n})", prop.id)));
+            ui.label(
+                RichText::new(format!("confianza {}", prop.confianza.nombre())).color(color_confianza(prop.confianza)),
+            );
+        });
+        match sim {
+            Ok(s) => {
+                ui.label(
+                    RichText::new(format!(
+                        "PEM {} € → {} €  ({}{} €)",
+                        eur(s.pem_antes),
+                        eur(s.pem_despues),
+                        if s.pem_despues >= s.pem_antes { "+" } else { "" },
+                        eur(s.pem_despues - s.pem_antes)
+                    ))
+                    .strong(),
+                );
+                for t in &s.cambios {
+                    ui.label(format!("• {t}"));
+                }
+            }
+            Err(e) => {
+                ui.label(RichText::new(format!("No se puede aplicar: {e}")).color(Color32::from_rgb(220, 80, 60)));
+            }
+        }
+        ui.label(RichText::new(&prop.justificacion).italics());
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(sim.is_ok(), egui::Button::new(RichText::new("✔ Aceptar").strong()))
+                .clicked()
+            {
+                acciones.push(Accion::AceptarPropuesta(prop.id));
+            }
+            if ui.button("✖ Rechazar").clicked() {
+                acciones.push(Accion::RechazarPropuesta(prop.id));
+            }
+        });
+    }
+
     /// Aplica una propuesta aceptada. Devuelve el texto para el mensaje.
     pub(super) fn aceptar_propuesta(&mut self, id: u64) -> Result<String, String> {
         let prop = self
@@ -430,6 +485,14 @@ impl Aplicacion {
         }
         let a = self.p.aplicar_propuesta(&prop).map_err(|e| e.to_string())?;
         self.enlace.marcar(id, EstadoPropuesta::Aceptada);
+        if matches!(prop.contenido, Contenido::Cambios(_)) {
+            return Ok(format!(
+                "Propuesta #{id} aceptada: {} cambios; PEM {} € → {} €.",
+                a.cambios.len(),
+                eur(a.pem_antes),
+                eur(a.pem_despues)
+            ));
+        }
         Ok(format!(
             "Propuesta #{id} aceptada: {} pasa de {} € a {} €{}.",
             prop.partida,

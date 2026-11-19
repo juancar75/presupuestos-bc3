@@ -3047,3 +3047,61 @@ fn comparar_con_obras_parecidas() {
     assert_eq!(b.huellas.len(), 4);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn aceptar_propuesta_de_cambios_y_deshacer() {
+    use ppto_core::propuesta::{Cambio, Confianza, Contenido, EstadoPropuesta as E, Propuesta};
+    let mut app = Aplicacion::sin_ventana();
+    app.aplicar(vec![Accion::NuevaPartida {
+        capitulo: "C01".into(),
+        codigo: "P.SOBRA".into(),
+        unidad: "ud".into(),
+        resumen: "Partida que no procede".into(),
+    }]);
+    let obra = ppto_propuestas::clave(&app.p);
+    app.enlace.bandeja.anadir(
+        &obra,
+        Propuesta {
+            id: 0,
+            partida: "cambios: P.SOBRA, SR.COL8".into(),
+            contenido: Contenido::Cambios(vec![
+                Cambio::Borrar {
+                    capitulo: String::new(),
+                    partida: "P.SOBRA".into(),
+                },
+                Cambio::Texto {
+                    partida: "SR.COL8".into(),
+                    resumen: Some("Colector de 8 vías".into()),
+                    texto: None,
+                    unidad: None,
+                },
+            ]),
+            confianza: Confianza::Alta,
+            justificacion: "no procede".into(),
+            autor: "IA".into(),
+            estado: E::Pendiente,
+            descuentos: Default::default(),
+            nueva: None,
+        },
+    );
+    // La tarjeta se pinta sin acciones
+    app.enlace.ventana = true;
+    let ctx = Context::default();
+    for _ in 0..2 {
+        let mut out = ctx.run_ui(RawInput::default(), |ui| {
+            let mut acc = Vec::new();
+            let c = ui.ctx().clone();
+            app.ventana_propuestas(&c, &mut acc);
+            assert!(acc.is_empty());
+        });
+        out.textures_delta.clear();
+    }
+    app.aplicar(vec![Accion::AceptarPropuesta(1)]);
+    assert!(!app.p.conceptos.contains_key("P.SOBRA"));
+    assert_eq!(app.p.concepto("SR.COL8").unwrap().resumen, "Colector de 8 vías");
+    assert_eq!(app.enlace.bandeja.buscar(1).unwrap().estado, E::Aceptada);
+    assert!(app.reaplicables().is_empty(), "los cambios no se reaplican");
+    app.deshacer();
+    assert!(app.p.conceptos.contains_key("P.SOBRA"));
+    assert_eq!(app.enlace.bandeja.buscar(1).unwrap().estado, E::Pendiente);
+}

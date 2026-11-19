@@ -42,6 +42,7 @@ ese presupuesto al arrancar.
 | `buscar_tarifas` | Busca en las tarifas de subcontratas del usuario | No |
 | `proponer` | Propone el descompuesto de una partida (no se admiten precios directos) | No: queda **pendiente** en la bandeja |
 | `proponer_lote` | Hasta 40 propuestas en una llamada: recursos comunes definidos una vez, líneas `["CÓDIGO", rendimiento]` y medios auxiliares automáticos | No: quedan **pendientes** |
+| `proponer_cambios` | Cambios de la obra que no son de precio, en una propuesta: quitar partidas o capítulos que no proceden (`borrar`), cantidad de una partida en su capítulo con o sin líneas de medición (`cantidad`), resumen, texto o unidad (`texto`) y mover de capítulo (`mover`). Se aplican todos o ninguno; la tarjeta muestra cada cambio y el PEM antes y después | No: queda **pendiente** |
 | `buscar_biblioteca` | Partidas de obras anteriores (precio de hoy con la tarifa vigente) y líneas de tarifas y ofertas | No |
 | `estado_biblioteca` | Fabricantes: tarifa vigente por año, descuentos, ofertas, subida estimada | No |
 | `guardar_en_biblioteca` | Guarda las partidas de la obra activa en la biblioteca (versiones) | Solo la biblioteca |
