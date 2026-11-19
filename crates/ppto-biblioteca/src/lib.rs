@@ -170,7 +170,7 @@ pub struct VersionPartida {
     pub precio: Decimal,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct LineaPvp {
     pub descripcion: String,
     #[serde(default)]
@@ -178,6 +178,17 @@ pub struct LineaPvp {
     pub pvp: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grupo: Option<String>,
+    /// Cierto (`Real`: tarifa, Saltoki Online, oferta, obra adjudicada),
+    /// revisado o estimado. Los de antes de marcarlo cuentan como revisados.
+    #[serde(default, skip_serializing_if = "es_revisado")]
+    pub origen: Origen,
+    /// De dónde sale («Saltoki Online 19-11-2026», «Tarifa KOOLAIR 2026-05»).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fuente: Option<String>,
+}
+
+fn es_revisado(o: &Origen) -> bool {
+    *o == Origen::Revisado
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -582,6 +593,17 @@ impl Biblioteca {
         anio: i32,
         lineas: BTreeMap<String, LineaPvp>,
     ) -> Comparacion {
+        // Las líneas de una tarifa son PVP ciertos, salvo que digan otra cosa
+        let lineas: BTreeMap<String, LineaPvp> = lineas
+            .into_iter()
+            .map(|(r, mut l)| {
+                if l.fuente.is_none() && l.origen == Origen::Revisado {
+                    l.origen = Origen::Real;
+                    l.fuente = Some(format!("Tarifa {} {etiqueta}", normalizar(fabricante)));
+                }
+                (r, l)
+            })
+            .collect();
         let fab = self.fabricante_mut(fabricante);
         fab.tarifas.retain(|t| t.etiqueta != etiqueta);
         let anterior = fab.tarifas.last().cloned();
@@ -633,6 +655,59 @@ impl Biblioteca {
         cmp
     }
 
+    /// Añade o cambia precios sueltos de una tarifa (p. ej. consultas a
+    /// Saltoki Online), sin tocar el resto de referencias. La crea si no
+    /// existe. Devuelve (nuevas, cambiadas).
+    pub fn anadir_precios(
+        &mut self,
+        fabricante: &str,
+        etiqueta: &str,
+        anio: i32,
+        lineas: BTreeMap<String, LineaPvp>,
+    ) -> (usize, usize) {
+        let fab = self.fabricante_mut(fabricante);
+        if !fab.tarifas.iter().any(|t| t.etiqueta == etiqueta) {
+            fab.tarifas.push(TarifaFabricante {
+                etiqueta: etiqueta.to_owned(),
+                anio,
+                cargada: hoy(),
+                lineas: BTreeMap::new(),
+            });
+            fab.tarifas
+                .sort_by(|a, b| (a.anio, &a.etiqueta).cmp(&(b.anio, &b.etiqueta)));
+        }
+        let Some(t) = fab.tarifas.iter_mut().find(|t| t.etiqueta == etiqueta) else {
+            return (0, 0);
+        };
+        let (mut nuevas, mut cambiadas) = (0, 0);
+        for (r, l) in lineas {
+            match t.lineas.get(&r) {
+                None => nuevas += 1,
+                Some(a) if *a != l => cambiadas += 1,
+                Some(_) => continue,
+            }
+            t.lineas.insert(r, l);
+        }
+        (nuevas, cambiadas)
+    }
+
+    /// PVP por origen (ciertos, revisados, estimados) de la biblioteca.
+    pub fn recuento_origen(&self) -> (usize, usize, usize) {
+        let (mut r, mut v, mut e) = (0, 0, 0);
+        for f in self.fabricantes.values() {
+            for t in &f.tarifas {
+                for l in t.lineas.values() {
+                    match l.origen {
+                        Origen::Real => r += 1,
+                        Origen::Revisado => v += 1,
+                        Origen::Estimado => e += 1,
+                    }
+                }
+            }
+        }
+        (r, v, e)
+    }
+
     /// PVP vigente de una referencia de un fabricante. Si la tarifa más
     /// reciente es de un año anterior a `anio_actual` y hay subida estimada,
     /// se aplica y se marca como estimado.
@@ -675,6 +750,8 @@ impl Biblioteca {
                     unidad: c.unidad.clone(),
                     pvp: t.pvp,
                     grupo: t.grupo.clone(),
+                    fuente: Some(format!("Base de precios ({etiqueta})")),
+                    ..Default::default()
                 },
             );
         }
@@ -987,6 +1064,7 @@ mod tests {
             unidad: "ud".into(),
             pvp,
             grupo: grupo.map(str::to_owned),
+            ..Default::default()
         }
     }
 

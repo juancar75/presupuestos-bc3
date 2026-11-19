@@ -153,6 +153,8 @@ En la ventana Biblioteca, sección «Kits», se ven sus líneas, precio y últim
 - **Al guardar una obra**: si tiene PVP o descuentos que la biblioteca no tiene o tiene distintos, pregunta si se suben.
 - **Al abrir una obra**: si la biblioteca tiene PVP o descuentos distintos (por ejemplo, los que ha cambiado un compañero), avisa con la lista y quién los cambió; la obra cambia solo si se acepta.
 
+**Precios ciertos y estimados**: cada PVP de la biblioteca lleva su origen y su fuente. **Cierto** si sale de una tarifa, de Saltoki Online, de una oferta o de una obra con oferta registrada; **revisado** si viene de una obra o de una base; **estimado** si no tiene fuente. Cuando le pase a Claude precios de Saltoki o de un fabricante, los guarda en la biblioteca (sin borrar el resto de la tarifa), con la fecha y la fuente, para los dos. La comprobación antes de valorar dice cuántos PVP de la biblioteca son ciertos y avisa de los materiales de la obra con PVP estimado.
+
 ## 8. Venta: indirectos, gastos generales y beneficio
 
 El coste directo (CD) sale de los descompuestos. La venta se monta en «Resumen y venta»:

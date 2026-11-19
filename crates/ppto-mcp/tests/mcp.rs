@@ -507,6 +507,32 @@ fn biblioteca_aprende_de_una_obra_y_de_tarifas_y_ofertas() {
         "{t}"
     );
 
+    // Consultas sueltas a un distribuidor (sintéticas): se suman sin borrar la tarifa
+    let precios = |refs: Vec<(&str, f64)>| {
+        json!({ "fabricante": "DISTRIB", "etiqueta": "2026", "fuente": "Web del distribuidor 19-11-2026",
+                "lineas": refs.iter().map(|(r, p)| json!({"referencia": r, "pvp": p, "grupo": "TUBO"})).collect::<Vec<_>>() })
+    };
+    let (t, err) = llamar(&mut e, "guardar_precios", precios(vec![("A1", 10.0), ("A2", 20.0)]));
+    assert!(!err && t.contains("2 nuevos") && t.contains("real"), "{t}");
+    let (t, err) = llamar(&mut e, "guardar_precios", precios(vec![("A2", 21.0), ("A3", 5.0)]));
+    assert!(!err && t.contains("1 nuevos, 1 cambiados"), "{t}");
+    let b = ppto_biblioteca::Biblioteca::cargar(&dir.join("biblioteca.json"));
+    let t26 = &b.fabricante("DISTRIB").unwrap().tarifas[0];
+    assert_eq!(t26.lineas.len(), 3, "no borra A1");
+    assert_eq!(t26.lineas["A1"].origen, ppto_biblioteca::Origen::Real);
+    assert_eq!(
+        t26.lineas["A1"].fuente.as_deref(),
+        Some("Web del distribuidor 19-11-2026")
+    );
+    let (r, _, _) = b.recuento_origen();
+    assert!(r >= 4, "la tarifa ACME 2027 también cuenta como cierta");
+    let (t, err) = llamar(
+        &mut e,
+        "guardar_precios",
+        json!({ "fabricante": "X", "fuente": "", "lineas": [] }),
+    );
+    assert!(err && t.contains("fuente"), "{t}");
+
     // Oferta en netos de otro fabricante
     let (t, err) = llamar(
         &mut e,
