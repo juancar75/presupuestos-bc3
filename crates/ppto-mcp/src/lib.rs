@@ -176,7 +176,8 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                     modifican el presupuesto. Para valorar la obra que el usuario tiene abierta en el \
                     programa: abrir_obra_activa, antes de valorar ver_datos_obra (si faltan datos y hay carpeta de documentos: documentos_obra, leer_documento de la memoria y el pliego, y proponer_datos_obra; use también los documentos para marcas, modelos y alcance) y comprobar_recursos (avise al usuario de los huecos: fabricantes sin tarifa o sin descuento, nombres distintos, marcas sin fuente), partidas_sin_precio, ver_concepto/buscar/buscar_tarifas \
                     para reutilizar recursos y precios existentes; ANTES de estimar consulte buscar_biblioteca (partidas, tarifas y ofertas del usuario de obras anteriores), y proponer (una propuesta por partida; para varias partidas, proponer_lote, que acepta hasta 40 en una llamada), \
-                    con confianza y justificación de cada precio y rendimiento). Para quitar partidas que no proceden, \
+                    con confianza y justificación de cada precio y rendimiento; el material de catálogo de fabricante o \
+                    distribuidor siempre a PVP con fabricante y descuento, nunca a neto). Para quitar partidas que no proceden, \
                     cambiar cantidades o mediciones, rehacer resúmenes y textos o mover partidas de capítulo: \
                     proponer_cambios (todo en una propuesta). El usuario acepta o \
                     rechaza cada propuesta en el programa; consulte ver_propuestas. Si el usuario \
@@ -335,7 +336,7 @@ fn herramientas() -> Value {
         },
         {
             "name": "proponer",
-            "description": "Propone el precio de una partida de la obra activa como DESCOMPUESTO (lineas): siempre material, mano de obra, maquinaria o subcontrata y medios auxiliares; no se admiten precios directos. NO modifica el presupuesto: queda pendiente hasta que el usuario la acepte en el programa. Reutilice los códigos de recursos que ya existen en la obra (se usan con su precio de la obra); para un recurso nuevo indique naturaleza, unidad, resumen y precio. Para material de catálogo de un fabricante, indique pvp (precio de tarifa) y fabricante en lugar de precio, y en descuentos el descuento estimado del instalador para ese fabricante: el neto se calcula con el descuento de la obra y el usuario lo ajusta después para todos los recursos del fabricante. Para usar una tarifa de subcontrata, código PROVEEDOR.REFERENCIA con naturaleza subcontrata y su precio. Una línea porcentual (medios auxiliares) lleva naturaleza porcentaje y los puntos como rendimiento.",
+            "description": "Propone el precio de una partida de la obra activa como DESCOMPUESTO (lineas): siempre material, mano de obra, maquinaria o subcontrata y medios auxiliares; no se admiten precios directos. NO modifica el presupuesto: queda pendiente hasta que el usuario la acepte en el programa. Reutilice los códigos de recursos que ya existen en la obra (se usan con su precio de la obra); para un recurso nuevo indique naturaleza, unidad, resumen y precio. Material de catálogo de un fabricante o distribuidor (Saltoki, etc.): SIEMPRE a PVP, nunca a neto, porque el usuario quiere ver PVP − descuento en cada recurso. Indique pvp (precio de tarifa) y fabricante (y grupo si la familia tiene descuento propio, p. ej. SALTOKI/COBRE) en lugar de precio, y en descuentos el descuento del instalador; si solo conoce neto y descuento, pvp = neto / (1 − descuento). El neto se calcula con el descuento de la obra y el usuario lo ajusta después para todos los recursos del fabricante. Si un material ya está en la obra a neto, al darle pvp y fabricante se liga a la tarifa. La respuesta avisa de los materiales que quedan a neto (salvo los marcados «(estimado)»). Para usar una tarifa de subcontrata, código PROVEEDOR.REFERENCIA con naturaleza subcontrata y su precio. Una línea porcentual (medios auxiliares) lleva naturaleza porcentaje y los puntos como rendimiento.",
             "inputSchema": { "type": "object", "properties": {
                 "partida": { "type": "string" },
                 "lineas": { "type": "array", "items": { "type": "object", "properties": {
@@ -1396,7 +1397,39 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
             eur(*propuesto)
         );
     }
+    if let Contenido::Descompuesto(lineas) = &prop.contenido {
+        let netos = materiales_a_neto(p, lineas);
+        if !netos.is_empty() {
+            let _ = write!(
+                t,
+                "\n{AVISO_NETO}{}. El usuario quiere ver siempre PVP − descuento: \
+                 si son de catálogo de un fabricante o distribuidor, vuelva a proponer con pvp, fabricante (y grupo) \
+                 y el descuento (si solo conoce el neto y el descuento, pvp = neto / (1 − descuento)). \
+                 Los estimados llevan «(estimado)» en el resumen.",
+                netos.join(", ")
+            );
+        }
+    }
     Ok(t)
+}
+
+/// Inicio del aviso de materiales a neto (el lote lo reconoce y los junta).
+const AVISO_NETO: &str = "Aviso: materiales a precio neto, sin tarifa: ";
+
+/// Materiales de la propuesta que quedarían a precio neto sin tarifa de
+/// fabricante: nuevos sin PVP, o ya en la obra sin tarifa y sin PVP en la
+/// propuesta. No cuenta los marcados como estimados en el resumen.
+fn materiales_a_neto(p: &Presupuesto, lineas: &[ppto_core::propuesta::LineaPropuesta]) -> Vec<String> {
+    let estimado = |r: &str| r.to_lowercase().contains("estimad");
+    lineas
+        .iter()
+        .filter(|l| l.pvp.is_none())
+        .filter(|l| match p.conceptos.get(&l.codigo) {
+            Some(c) => c.naturaleza == Naturaleza::Material && c.tarifa.is_none() && !estimado(&c.resumen),
+            None => l.naturaleza == Some(Naturaleza::Material) && !estimado(&l.resumen),
+        })
+        .map(|l| l.codigo.clone())
+        .collect()
 }
 
 /// Máximo de cambios por propuesta.
@@ -1588,6 +1621,7 @@ fn proponer_lote(estado: &mut Estado, a: &Value) -> Result<String, String> {
     }
     let ma = dec_campo(a, "medios_auxiliares")?;
     let (mut bien, mut mal) = (Vec::new(), Vec::new());
+    let mut netos: Vec<String> = Vec::new();
     for (i, pr) in props.iter().enumerate() {
         let partida = pr
             .get("partida")
@@ -1643,13 +1677,39 @@ fn proponer_lote(estado: &mut Estado, a: &Value) -> Result<String, String> {
             proponer(estado, &uno)
         })();
         match r {
-            Ok(t) => bien.push(t.lines().next().unwrap_or("").to_owned()),
+            Ok(t) => {
+                bien.push(t.lines().next().unwrap_or("").to_owned());
+                // Materiales a neto: se juntan en un solo aviso al final
+                for l in t.lines() {
+                    if let Some(resto) = l.strip_prefix(AVISO_NETO) {
+                        for c in resto
+                            .split(". ")
+                            .next()
+                            .unwrap_or("")
+                            .split(", ")
+                            .filter(|c| !c.is_empty())
+                        {
+                            if !netos.iter().any(|x: &String| x == c) {
+                                netos.push(c.to_owned());
+                            }
+                        }
+                    }
+                }
+            }
             Err(e) => mal.push(format!("{partida}: {e}")),
         }
     }
     let mut t = format!("{} propuestas guardadas, {} con error.", bien.len(), mal.len());
     for b in &bien {
         let _ = write!(t, "\n- {b}");
+    }
+    if !netos.is_empty() {
+        let _ = write!(
+            t,
+            "\n{AVISO_NETO}{}. El usuario quiere ver siempre PVP − descuento: vuelva a proponer los de \
+             catálogo con pvp, fabricante (y grupo) y el descuento.",
+            netos.join(", ")
+        );
     }
     if !mal.is_empty() {
         t.push_str("\nCon error (corríjalas y vuelva a enviarlas):");

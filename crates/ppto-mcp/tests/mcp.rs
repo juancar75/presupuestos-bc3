@@ -719,3 +719,57 @@ fn proponer_cambios_de_la_obra() {
     assert_eq!(ppto_propuestas::Bandeja::cargar(&bandeja).entradas.len(), 1);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn aviso_de_materiales_a_neto() {
+    let dir = std::env::temp_dir().join(format!("mcp-neto-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut p = ppto_core::ejemplos::suelo_radiante();
+    p.nueva_partida("C01", "P.LINEA", "m", "Línea frigorífica").unwrap();
+    p.fijar_precio("P.LINEA", rust_decimal_macros::dec!(10)).unwrap();
+    let activa = dir.join("obra-activa.json");
+    ppto_propuestas::ObraActiva::guardar(&p, &activa).unwrap();
+    let mut e = Estado {
+        ruta_obra_activa: Some(activa),
+        ruta_bandeja: Some(dir.join("propuestas.json")),
+        ruta_tarifas: Some(dir.join("tarifas.json")),
+        ruta_conversaciones: Some(dir.join("asistente.json")),
+        ..Estado::default()
+    };
+    llamar(&mut e, "abrir_obra_activa", json!({}));
+    let mo = json!({ "codigo": "MO.OF", "rendimiento": 0.5, "naturaleza": "mano_obra", "unidad": "h", "resumen": "Oficial", "precio": 30 });
+    // A neto: aviso
+    let (t, err) = llamar(
+        &mut e,
+        "proponer",
+        json!({ "partida": "P.LINEA", "confianza": "alta", "justificacion": "x", "lineas": [
+            { "codigo": "CU38", "rendimiento": 1, "naturaleza": "material", "unidad": "m", "resumen": "Cobre 3/8", "precio": 3.31 },
+            mo.clone()
+        ] }),
+    );
+    assert!(!err, "{t}");
+    assert!(t.contains("materiales a precio neto, sin tarifa: CU38"), "{t}");
+    // Con PVP y fabricante: sin aviso; los estimados tampoco avisan
+    let (t, err) = llamar(
+        &mut e,
+        "proponer_lote",
+        json!({ "confianza": "alta", "justificacion": "x",
+            "descuentos": [{ "fabricante": "SALTOKI/COBRE", "porcentaje": 70 }],
+            "recursos": [
+                { "codigo": "SALTOKI.CU38", "naturaleza": "material", "unidad": "m", "resumen": "Cobre 3/8", "pvp": 11.04, "fabricante": "SALTOKI", "grupo": "COBRE" },
+                { "codigo": "M.PEQ", "naturaleza": "material", "unidad": "ud", "resumen": "Pequeño material (estimado)", "precio": 15 },
+                { "codigo": "CU12", "naturaleza": "material", "unidad": "m", "resumen": "Cobre 1/2", "precio": 4.51 },
+                { "codigo": "MO.OF", "naturaleza": "mano_obra", "unidad": "h", "resumen": "Oficial", "precio": 30 }
+            ],
+            "propuestas": [
+                { "partida": "P.LINEA", "lineas": [["SALTOKI.CU38", 1], ["M.PEQ", 0.1], ["MO.OF", 0.5]] },
+                { "partida": "SR.COL8", "lineas": [["CU12", 1], ["MO.OF", 0.5]] }
+            ] }),
+    );
+    assert!(!err, "{t}");
+    assert!(t.contains("2 propuestas guardadas"), "{t}");
+    assert!(t.contains("sin tarifa: CU12."), "solo CU12 queda a neto: {t}");
+    assert!(!t.contains("SALTOKI.CU38.") && !t.contains("M.PEQ,"), "{t}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
