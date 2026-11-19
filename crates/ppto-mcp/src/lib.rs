@@ -183,7 +183,7 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                     rechaza cada propuesta en el programa; consulte ver_propuestas. Si el usuario \
                     pide «atiende el asistente» o similar, lea los encargos que dejó en el panel del \
                     programa con leer_mensajes (adjuntos con leer_adjunto), atiéndalos y conteste con \
-                    responder; los informes se guardan con guardar_informe. Antes de dar por buena una oferta, comparar_obras con las obras parecidas. Importes en euros con \
+                    responder; los informes se guardan con guardar_informe. Antes de dar por buena una oferta, comparar_obras con las obras parecidas. Cuando el usuario pase precios ciertos (Saltoki, tarifas, ofertas), guárdelos con guardar_precios para que la base común crezca. Importes en euros con \
                     formato español."
             }))
         }
@@ -313,6 +313,23 @@ fn herramientas() -> Value {
                     "fuente": { "type": "string" }
                 }, "required": ["clave", "valor", "fuente"] } }
             }, "required": ["datos"] }
+        },
+        {
+            "name": "guardar_precios",
+            "description": "Guarda en la biblioteca compartida precios sueltos que el usuario le ha dado (consulta a Saltoki Online, web o tarifa de un fabricante, oferta): PVP por referencia, con su fuente y su origen (real = cierto, por defecto; revisado; estimado). Se añaden a la tarifa del año sin tocar el resto, con quién y cuándo, y los ve el compañero. Úselo SIEMPRE que el usuario pase precios ciertos, para que la base crezca. Para Saltoki: fabricante «SALTOKI», referencia = código Saltoki y grupo = familia de descuento.",
+            "inputSchema": { "type": "object", "properties": {
+                "fabricante": { "type": "string" },
+                "etiqueta": { "type": "string", "description": "Tarifa a la que se añaden (por defecto el año en curso)" },
+                "fuente": { "type": "string", "description": "p. ej. «Saltoki Online 19-11-2026»" },
+                "origen": { "type": "string", "enum": ["real", "revisado", "estimado"] },
+                "lineas": { "type": "array", "items": { "type": "object", "properties": {
+                    "referencia": { "type": "string" },
+                    "descripcion": { "type": "string" },
+                    "unidad": { "type": "string" },
+                    "pvp": num,
+                    "grupo": { "type": "string" }
+                }, "required": ["referencia", "pvp"] } }
+            }, "required": ["fabricante", "fuente", "lineas"] }
         },
         {
             "name": "comparar_obras",
@@ -562,6 +579,7 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "abrir_obra_activa" => abrir_obra_activa(estado),
         "comprobar_recursos" => biblioteca::comprobar_recursos(estado),
         "comparar_obras" => biblioteca::comparar_obras(estado),
+        "guardar_precios" => biblioteca::guardar_precios(estado, a),
         "ver_datos_obra" => documentos::ver_datos_obra(estado),
         "documentos_obra" => documentos::documentos_obra(estado),
         "leer_documento" => documentos::leer_documento(estado, a),

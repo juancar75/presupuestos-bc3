@@ -185,6 +185,55 @@ pub(crate) fn estado_biblioteca(estado: &Estado) -> Result<String, String> {
     Ok(t)
 }
 
+/// Precios sueltos ciertos (consulta a Saltoki Online, a un fabricante,
+/// una oferta…): se añaden a la tarifa de la etiqueta sin tocar el resto.
+pub(crate) fn guardar_precios(estado: &Estado, a: &Value) -> Result<String, String> {
+    use ppto_biblioteca::Origen;
+    let fab = texto(a, "fabricante")?.to_owned();
+    let fuente = texto(a, "fuente")?.trim().to_owned();
+    if fuente.is_empty() {
+        return Err("indique la fuente (p. ej. «Saltoki Online 19-11-2026»)".into());
+    }
+    let origen = match cadena(a, "origen").to_lowercase().as_str() {
+        "" | "real" | "cierto" => Origen::Real,
+        "revisado" => Origen::Revisado,
+        "estimado" => Origen::Estimado,
+        o => return Err(format!("origen «{o}» no válido: real, revisado o estimado")),
+    };
+    let etiqueta = Some(cadena(a, "etiqueta"))
+        .filter(|e| !e.is_empty())
+        .unwrap_or_else(|| hoy()[..4].to_owned());
+    let an = anio(&etiqueta);
+    if an < 2000 {
+        return Err("la etiqueta debe empezar por el año (p. ej. 2026)".into());
+    }
+    let mut lineas = BTreeMap::new();
+    for l in a.get("lineas").and_then(Value::as_array).ok_or("indique lineas")? {
+        let r = texto(l, "referencia")?.trim().to_owned();
+        let pvp = dec_campo(l, "pvp")?.ok_or_else(|| format!("{r}: sin pvp"))?;
+        lineas.insert(
+            r,
+            LineaPvp {
+                descripcion: cadena(l, "descripcion"),
+                unidad: cadena(l, "unidad"),
+                pvp,
+                grupo: Some(cadena(l, "grupo")).filter(|g| !g.is_empty()),
+                origen,
+                fuente: Some(fuente.clone()),
+            },
+        );
+    }
+    let n = lineas.len();
+    let (nuevas, cambiadas) = Biblioteca::modificar(&ruta(estado)?, |b| b.anadir_precios(&fab, &etiqueta, an, lineas))
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "{n} precios de {fab} guardados en la biblioteca compartida (tarifa {etiqueta}, {}, fuente «{fuente}»): \
+         {nuevas} nuevos, {cambiadas} cambiados, {} iguales. Los descuentos, con fijar_descuento_biblioteca.",
+        origen.texto(),
+        n - nuevas - cambiadas
+    ))
+}
+
 pub(crate) fn registrar_tarifa(estado: &Estado, a: &Value) -> Result<String, String> {
     let fab = texto(a, "fabricante")?.to_owned();
     let etiqueta = texto(a, "etiqueta")?.to_owned();
@@ -207,6 +256,7 @@ pub(crate) fn registrar_tarifa(estado: &Estado, a: &Value) -> Result<String, Str
                 unidad: cadena(l, "unidad"),
                 pvp,
                 grupo: Some(cadena(l, "grupo")).filter(|g| !g.is_empty()),
+                ..Default::default()
             },
         );
     }

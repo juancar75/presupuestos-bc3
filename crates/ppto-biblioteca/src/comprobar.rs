@@ -42,6 +42,10 @@ pub struct Comprobacion {
     pub a_cero: Vec<(String, String)>,
     /// PVP de la obra distinto del de la biblioteca: código, obra, biblioteca.
     pub pvp_distinto: Vec<(String, Decimal, Decimal)>,
+    /// Materiales cuyo PVP en la biblioteca está marcado como estimado.
+    pub pvp_estimados: Vec<String>,
+    /// PVP de la biblioteca: ciertos, revisados, estimados.
+    pub biblioteca: (usize, usize, usize),
     /// Marcas conocidas que se nombran en partidas sin precio: marca,
     /// partidas, ¿tiene tarifa (carpeta o biblioteca)?, ¿tiene descuento?
     pub marcas: Vec<(String, usize, bool, bool)>,
@@ -73,6 +77,7 @@ pub fn comprobar(p: &Presupuesto, b: &Biblioteca, carpeta: Option<&Carpeta>) -> 
         })
         .collect();
     c.partidas = cant.len();
+    c.biblioteca = b.recuento_origen();
     c.sin_precio = sin_precio.len();
 
     let en_carpeta: BTreeMap<String, String> = carpeta
@@ -112,13 +117,17 @@ pub fn comprobar(p: &Presupuesto, b: &Biblioteca, carpeta: Option<&Carpeta>) -> 
             Some(t) => {
                 *por_fab.entry(normalizar(&t.fabricante)).or_default() += 1;
                 if let Some(r) = Presupuesto::referencia_tarifa(x)
-                    && let Some(pvp) = b
+                    && let Some(l) = b
                         .fabricante(&t.fabricante)
                         .and_then(|f| f.tarifas.iter().rev().find(|y| y.lineas.contains_key(&r)))
-                        .map(|y| y.lineas[&r].pvp)
-                    && pvp != t.pvp
+                        .map(|y| &y.lineas[&r])
                 {
-                    c.pvp_distinto.push((x.codigo.clone(), t.pvp, pvp));
+                    if l.pvp != t.pvp {
+                        c.pvp_distinto.push((x.codigo.clone(), t.pvp, l.pvp));
+                    }
+                    if l.origen == crate::Origen::Estimado {
+                        c.pvp_estimados.push(x.codigo.clone());
+                    }
                 }
             }
             None if x.naturaleza == Naturaleza::Material && !precio.is_zero() => {
@@ -246,6 +255,16 @@ impl Comprobacion {
                 ),
             ));
         }
+        if !self.pvp_estimados.is_empty() {
+            v.push((
+                Nivel::Revisar,
+                format!(
+                    "{} materiales con PVP estimado en la biblioteca: confírmelos con la tarifa u oferta ({}).",
+                    self.pvp_estimados.len(),
+                    lista(self.pvp_estimados.iter().cloned())
+                ),
+            ));
+        }
         if !self.netos_fijos.is_empty() {
             v.push((
                 Nivel::Revisar,
@@ -294,6 +313,10 @@ impl Comprobacion {
             "Comprobación antes de valorar: {} partidas, {} sin precio.\n",
             self.partidas, self.sin_precio
         );
+        let (r, rv, e) = self.biblioteca;
+        if r + rv + e > 0 {
+            t += &format!("Biblioteca: {r} PVP ciertos, {rv} revisados, {e} estimados.\n");
+        }
         for (n, a) in self.avisos() {
             let m = match n {
                 Nivel::Falta => "FALTA",
@@ -365,6 +388,7 @@ mod tests {
                     unidad: "ud".into(),
                     pvp: dec!(110),
                     grupo: None,
+                    ..Default::default()
                 },
             )]),
         );

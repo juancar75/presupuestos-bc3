@@ -233,6 +233,7 @@ impl VentanaBiblioteca {
                                 unidad: l.unidad,
                                 pvp: l.precio,
                                 grupo: None,
+                                ..Default::default()
                             },
                         )
                     })

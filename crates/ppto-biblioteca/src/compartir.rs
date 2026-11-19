@@ -492,6 +492,16 @@ impl Biblioteca {
                         unidad: c.unidad.clone(),
                         pvp: t.pvp,
                         grupo: t.grupo.clone(),
+                        // De una oferta registrada en el recurso: cierto; si no, revisado en la obra
+                        origen: if c.origen.is_some() {
+                            crate::Origen::Real
+                        } else {
+                            crate::Origen::Revisado
+                        },
+                        fuente: Some(match &c.origen {
+                            Some(o) if !o.oferta.is_empty() => format!("Oferta {} {}", o.fabricante, o.oferta),
+                            _ => format!("Obra {obra}"),
+                        }),
                     },
                 );
                 n_pvp += 1;
@@ -532,6 +542,7 @@ mod tests {
             unidad: "ud".into(),
             pvp,
             grupo: None,
+            ..Default::default()
         }
     }
 

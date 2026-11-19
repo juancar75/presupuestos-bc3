@@ -2521,6 +2521,7 @@ fn obra_y_biblioteca_al_guardar_y_al_abrir() {
                     unidad: "ud".into(),
                     pvp: dec!(120),
                     grupo: None,
+                    ..Default::default()
                 },
             )]),
         )
@@ -2599,6 +2600,7 @@ fn valorar_a_mano_buscador_y_atajos() {
                 unidad: "ud".into(),
                 pvp: dec!(128),
                 grupo: Some("REG".into()),
+                ..Default::default()
             },
         )]),
     );
@@ -2833,6 +2835,7 @@ fn lo_que_viene_de_una_base_se_pone_al_dia_con_la_biblioteca() {
                     unidad: "ud".into(),
                     pvp: dec!(120),
                     grupo: None,
+                    ..Default::default()
                 },
             )]),
         );
