@@ -3105,3 +3105,68 @@ fn aceptar_propuesta_de_cambios_y_deshacer() {
     assert!(app.p.conceptos.contains_key("P.SOBRA"));
     assert_eq!(app.enlace.bandeja.buscar(1).unwrap().estado, E::Pendiente);
 }
+
+#[test]
+fn escribir_comentario_en_la_hoja_de_medicion() {
+    use eframe::egui::{Event, Key, Modifiers};
+    let mut app = Aplicacion::sin_ventana();
+    let m = app.p.mediciones[&("C01".to_owned(), "SR.M2".to_owned())].clone();
+    let ctx = Context::default();
+    let mut acciones = Vec::new();
+    let pasos: Vec<(Vec<Event>, bool)> = vec![
+        (vec![], false),
+        // Tab lleva el foco al primer campo: el comentario de la primera línea
+        (
+            vec![Event::Key {
+                key: Key::Tab,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            }],
+            false,
+        ),
+        (
+            vec![Event::Key {
+                key: Key::A,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::COMMAND,
+            }],
+            false,
+        ),
+        (vec![Event::Text("Cubierta".into())], false),
+        (vec![Event::Text(" bajo bandeja".into())], false),
+        (
+            vec![Event::Key {
+                key: Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            }],
+            false,
+        ),
+        (vec![], false),
+    ];
+    for (eventos, enfocar) in pasos {
+        let entrada = RawInput {
+            events: eventos,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(entrada, |ui| {
+            let _ = enfocar;
+            app.hoja_medicion(ui, "C01", "SR.M2", "m2", m.clone(), &mut acciones);
+        });
+        out.textures_delta.clear();
+    }
+    let nueva = acciones
+        .iter()
+        .find_map(|a| match a {
+            Accion::Medicion(_, h, m) if h == "SR.M2" => Some(m.clone()),
+            _ => None,
+        })
+        .expect("se confirma el comentario");
+    assert_eq!(nueva.lineas[0].comentario, "Cubierta bajo bandeja");
+}

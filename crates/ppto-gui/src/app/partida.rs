@@ -602,15 +602,18 @@ impl Aplicacion {
                 "Parcial",
                 "",
             ] {
-                ui.label(RichText::new(t).weak());
+                let r = ui.label(RichText::new(t).weak());
+                if t == "Fórmula" {
+                    r.on_hover_text("p.ej. a*b*c — variables: a=uds, b=longitud, c=anchura, d=altura, p=π");
+                }
             }
             ui.end_row();
             for (i, l) in nueva.lineas.iter_mut().enumerate() {
-                let mut com = l.comentario.clone();
-                if ui
-                    .add_sized([ancho_comentario, 20.0], egui::TextEdit::singleline(&mut com))
-                    .lost_focus()
-                    && com != l.comentario
+                // Celda con búfer: un TextEdit sobre una copia que se rehace en
+                // cada fotograma perdía lo tecleado y no dejaba escribir.
+                if let Some(com) =
+                    self.edicion
+                        .texto_izq(ui, &format!("m|{padre}|{hijo}|{i}|c"), &l.comentario, ancho_comentario)
                 {
                     l.comentario = com;
                     cambio = true;
@@ -636,17 +639,11 @@ impl Aplicacion {
                             cambio = true;
                         }
                     }
-                    let mut f = l.formula.clone().unwrap_or_default();
-                    if ui
-                        .add(
-                            egui::TextEdit::singleline(&mut f)
-                                .desired_width(110.0)
-                                .hint_text("p.ej. a*b*c"),
-                        )
-                        .on_hover_text("Variables: a=uds, b=longitud, c=anchura, d=altura, p=π")
-                        .lost_focus()
+                    let f = l.formula.clone().unwrap_or_default();
+                    if let Some(f) = self
+                        .edicion
+                        .texto_izq(ui, &format!("m|{padre}|{hijo}|{i}|f"), &f, 110.0)
                     {
-                        let f = f.trim().to_owned();
                         let nueva_f = (!f.is_empty()).then_some(f);
                         if nueva_f != l.formula {
                             l.tipo = if nueva_f.is_some() {
