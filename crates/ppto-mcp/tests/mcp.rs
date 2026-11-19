@@ -646,3 +646,76 @@ fn datos_y_documentos_de_la_obra() {
     assert!(!err && t.contains("Aún no hay obras del mismo tipo"), "{t}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn proponer_cambios_de_la_obra() {
+    let dir = std::env::temp_dir().join(format!("mcp-cambios-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut p = ppto_core::ejemplos::suelo_radiante();
+    p.nueva_partida("C01", "P.INERCIA", "ud", "Depósito de inercia")
+        .unwrap();
+    p.fijar_precio("P.INERCIA", rust_decimal_macros::dec!(500)).unwrap();
+    p.nueva_partida("C01", "P.LINEA", "m", "Línea frigorífica").unwrap();
+    p.fijar_precio("P.LINEA", rust_decimal_macros::dec!(10)).unwrap();
+    let activa = dir.join("obra-activa.json");
+    ppto_propuestas::ObraActiva::guardar(&p, &activa).unwrap();
+    let bandeja = dir.join("propuestas.json");
+    let mut e = Estado {
+        ruta_obra_activa: Some(activa),
+        ruta_bandeja: Some(bandeja.clone()),
+        ruta_tarifas: Some(dir.join("tarifas.json")),
+        ruta_conversaciones: Some(dir.join("asistente.json")),
+        ..Estado::default()
+    };
+    llamar(&mut e, "abrir_obra_activa", json!({}));
+    let (t, err) = llamar(
+        &mut e,
+        "proponer_cambios",
+        json!({
+            "confianza": "alta",
+            "justificacion": "Indicación del usuario",
+            "cambios": [
+                { "tipo": "borrar", "partida": "P.INERCIA" },
+                { "tipo": "cantidad", "partida": "P.LINEA", "medicion": [
+                    { "comentario": "Cubierta", "uds": 1, "largo": 10 },
+                    { "comentario": "Patinillo", "uds": 1, "largo": "19,5" },
+                    { "comentario": "Falso techo", "uds": 1, "largo": 20 }
+                ] },
+                { "tipo": "texto", "partida": "P.LINEA", "resumen": "Línea frigorífica 3 tubos" }
+            ]
+        }),
+    );
+    assert!(!err, "{t}");
+    assert!(
+        t.contains("3 cambios") && t.contains("Quita P.INERCIA") && t.contains("49.5"),
+        "{t}"
+    );
+    // No cambia la obra: queda en la bandeja
+    let b = ppto_propuestas::Bandeja::cargar(&bandeja);
+    assert_eq!(b.entradas.len(), 1);
+    let prop = &b.entradas[0].propuesta;
+    assert!(matches!(prop.contenido, ppto_core::propuesta::Contenido::Cambios(ref c) if c.len() == 3));
+    let mut q = p.clone();
+    let a = q.aplicar_propuesta(prop).unwrap();
+    // PEM: −500 (inercia) + 10 × 48,5 (línea de 1 a 49,5 m) = −15
+    assert_eq!(a.pem_despues - a.pem_antes, rust_decimal_macros::dec!(-15));
+    // Un cambio no válido: no se guarda nada
+    let (t, err) = llamar(
+        &mut e,
+        "proponer_cambios",
+        json!({ "justificacion": "x", "cambios": [
+            { "tipo": "borrar", "partida": "P.INERCIA" },
+            { "tipo": "borrar", "partida": "NO.EXISTE" }
+        ] }),
+    );
+    assert!(err && t.contains("no se ha guardado nada"), "{t}");
+    let (t, err) = llamar(
+        &mut e,
+        "proponer_cambios",
+        json!({ "justificacion": "x", "cambios": [{ "tipo": "renombrar", "partida": "P.LINEA" }] }),
+    );
+    assert!(err && t.contains("no válido"), "{t}");
+    assert_eq!(ppto_propuestas::Bandeja::cargar(&bandeja).entradas.len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
