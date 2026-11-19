@@ -16,14 +16,14 @@ pub struct Edicion {
 }
 
 impl Edicion {
-    fn celda(&mut self, ui: &mut egui::Ui, clave: &str, mostrado: String, ancho: f32) -> Option<String> {
+    fn celda(&mut self, ui: &mut egui::Ui, clave: &str, mostrado: String, ancho: f32, alin: Align) -> Option<String> {
         let editando = self.clave.as_deref() == Some(clave);
         let mut texto = if editando { self.texto.clone() } else { mostrado };
         let r = ui.add(
             TextEdit::singleline(&mut texto)
                 .id(ui.make_persistent_id(clave))
                 .desired_width(ancho)
-                .horizontal_align(Align::RIGHT),
+                .horizontal_align(alin),
         );
         if r.has_focus() {
             self.clave = Some(clave.to_owned());
@@ -39,13 +39,20 @@ impl Edicion {
 
     /// Celda obligatoria. Devuelve `Some(nuevo)` al confirmar un valor válido distinto.
     pub fn decimal(&mut self, ui: &mut egui::Ui, clave: &str, valor: Decimal, dec: u32, ancho: f32) -> Option<Decimal> {
-        let t = self.celda(ui, clave, num(valor, dec), ancho)?;
+        let t = self.celda(ui, clave, num(valor, dec), ancho, Align::RIGHT)?;
         leer(&t).filter(|v| *v != valor)
     }
 
     /// Celda de texto corto. Devuelve `Some(nuevo)` al confirmar un cambio.
     pub fn texto(&mut self, ui: &mut egui::Ui, clave: &str, valor: &str, ancho: f32) -> Option<String> {
-        let t = self.celda(ui, clave, valor.to_owned(), ancho)?;
+        let t = self.celda(ui, clave, valor.to_owned(), ancho, Align::RIGHT)?;
+        let t = t.trim().to_owned();
+        (t != valor).then_some(t)
+    }
+
+    /// Como [`Self::texto`], alineada a la izquierda (comentarios, fórmulas).
+    pub fn texto_izq(&mut self, ui: &mut egui::Ui, clave: &str, valor: &str, ancho: f32) -> Option<String> {
+        let t = self.celda(ui, clave, valor.to_owned(), ancho, Align::LEFT)?;
         let t = t.trim().to_owned();
         (t != valor).then_some(t)
     }
@@ -60,7 +67,7 @@ impl Edicion {
         ancho: f32,
     ) -> Option<Option<Decimal>> {
         let mostrado = valor.map(|v| cant(v, dec)).unwrap_or_default();
-        let t = self.celda(ui, clave, mostrado, ancho)?;
+        let t = self.celda(ui, clave, mostrado, ancho, Align::RIGHT)?;
         let nuevo = if t.trim().is_empty() { None } else { Some(leer(&t)?) };
         (nuevo != valor).then_some(nuevo)
     }
