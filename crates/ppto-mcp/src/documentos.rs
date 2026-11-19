@@ -113,7 +113,11 @@ fn recorrer(dir: &Path, base: &Path, nivel: u8, out: &mut Vec<(String, u64, Stri
         let nota = if LEGIBLES.contains(&ext.as_str()) {
             "se lee".to_owned()
         } else if ext == "dwg" {
-            "no se lee: exportar a DXF o PDF".to_owned()
+            if crate::dxf::conversor_dwg().is_some() {
+                "plano: leer_plano (se convierte a DXF)".to_owned()
+            } else {
+                "plano DWG: falta LibreDWG (dwg2dxf.exe) o guardarlo como DXF".to_owned()
+            }
         } else if ext == "dxf" {
             "plano: leer_plano (bloques, leyendas, distancias)".to_owned()
         } else {
@@ -195,12 +199,12 @@ pub(crate) fn leer_plano(estado: &Estado, a: &Value) -> Result<String, String> {
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_default();
-    if ext == "dwg" {
-        return Err(
-            "los DWG no se leen: pida al usuario que lo guarde como DXF (GstarCAD/AutoCAD: Guardar como → DXF)".into(),
-        );
-    }
-    if ext != "dxf" {
+    let (r, convertido) = if ext == "dwg" {
+        (crate::dxf::dxf_de_dwg(&r)?, true)
+    } else {
+        (r, false)
+    };
+    if !convertido && ext != "dxf" {
         return Err("leer_plano es para DXF; los planos en PDF, con leer_documento (solo sus textos)".into());
     }
     let p = crate::dxf::leer(&r)?;
@@ -208,11 +212,14 @@ pub(crate) fn leer_plano(estado: &Estado, a: &Value) -> Result<String, String> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    Ok(crate::dxf::resumen(
-        &p,
-        &nombre,
-        a.get("bloque").and_then(Value::as_str),
-    ))
+    let mut t = crate::dxf::resumen(&p, &nombre, a.get("bloque").and_then(Value::as_str));
+    if convertido {
+        t.push_str(
+            "\n(Leído del DWG convertido a DXF con LibreDWG. Los bloques con nombre automático, «A$C…» o «*U», \
+             identifíquelos por su capa y la leyenda; compruebe los conteos con la leyenda del plano.)",
+        );
+    }
+    Ok(t)
 }
 
 /// Texto de un documento de la carpeta de la obra, por trozos.

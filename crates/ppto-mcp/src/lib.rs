@@ -294,7 +294,7 @@ fn herramientas() -> Value {
         },
         {
             "name": "leer_plano",
-            "description": "Lee un plano DXF de la carpeta de la obra: bloques insertados por nombre y capa (cuántos detectores, BIE, extintores, rejillas…), los textos (leyendas, rótulos) y, con «bloque», la distancia de cada uno al más cercano (mín., mediana, máx., en m) y la superficie que ocupan, para comprobar coberturas frente a la medición y la norma. Los DWG no se leen (guardar como DXF).",
+            "description": "Lee un plano DXF de la carpeta de la obra: bloques insertados por nombre y capa (cuántos detectores, BIE, extintores, rejillas…), los textos (leyendas, rótulos) y, con «bloque», la distancia de cada uno al más cercano (mín., mediana, máx., en m) y la superficie que ocupan, para comprobar coberturas frente a la medición y la norma. Los DWG se convierten solos a DXF si está LibreDWG (dwg2dxf.exe junto al programa); si no, guardarlos como DXF.",
             "inputSchema": { "type": "object", "properties": {
                 "ruta": { "type": "string", "description": "Tal cual sale en documentos_obra" },
                 "bloque": { "type": "string", "description": "Nombre del bloque para distancias y cobertura" }

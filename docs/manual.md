@@ -175,7 +175,7 @@ Al cliente solo le llega el precio de venta repercutido: las observaciones y los
 
 Claude hace la misma comparación (`comparar_obras`) y explica cada desviación antes de dar la oferta por buena.
 
-**Planos DXF**: si la carpeta de documentos tiene planos en DXF, Claude cuenta los aparatos dibujados (bloques por nombre y capa: detectores, BIE, extintores, rejillas…), lee las leyendas y mide la distancia de cada aparato al más cercano y la superficie que cubren, para comprobar la medición del cliente y las coberturas. Los planos en PDF solo aportan sus textos; los DWG, guardarlos como DXF.
+**Planos DXF**: si la carpeta de documentos tiene planos en DXF, Claude cuenta los aparatos dibujados (bloques por nombre y capa: detectores, BIE, extintores, rejillas…), lee las leyendas y mide la distancia de cada aparato al más cercano y la superficie que cubren, para comprobar la medición del cliente y las coberturas. Los planos en PDF solo aportan sus textos. Los **DWG** se convierten solos a DXF (en la misma carpeta) si está LibreDWG: descargue el paquete de Windows (win64) de https://github.com/LibreDWG/libredwg/releases (libre, GPL-3) y deje `dwg2dxf.exe` y sus DLL junto a `ppto-gui.exe`; si no, guárdelos como DXF desde el CAD.
 
 ## 9. Trabajar con Claude: propuestas IA
 
@@ -235,5 +235,5 @@ El BC3 exportado vale exactamente lo mismo que la obra; en Presto hay que pulsar
 - **Una partida sale como sin precio pero no quiero valorarla.** Márcala como «Excluida» o «Incluida».
 - **No encuentro una partida en la base.** Comprueba que la base está añadida y con su especialidad, o usa «Todas a la vez».
 - **🖹 no aparece junto a un material.** Ese fabricante no tiene carpeta en la carpeta de tarifas, o el nombre no coincide.
-- **Claude no encuentra los documentos de la obra.** Elige la carpeta en Obra → «Datos de la obra…» (📁). Lee PDF, Word, Excel y planos DXF; los DWG hay que guardarlos como DXF (GstarCAD o AutoCAD: Guardar como → DXF).
+- **Claude no encuentra los documentos de la obra.** Elige la carpeta en Obra → «Datos de la obra…» (📁). Lee PDF, Word, Excel y planos DXF; los DWG, con LibreDWG (`dwg2dxf.exe` junto a `ppto-gui.exe`) o guardándolos como DXF (Guardar como → DXF).
 - **Claude dice que no hay presupuesto abierto.** Abre la obra en el programa y pídele que se conecte otra vez.

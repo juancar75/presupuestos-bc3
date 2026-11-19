@@ -595,7 +595,10 @@ fn datos_y_documentos_de_la_obra() {
     );
     assert!(t.contains("2.7 m"), "{t}");
     let (t, err) = llamar(&mut e, "documentos_obra", json!({}));
-    assert!(!err && t.contains("memoria.txt") && t.contains("exportar a DXF"), "{t}");
+    assert!(
+        !err && t.contains("memoria.txt") && t.contains("guardarlo como DXF"),
+        "{t}"
+    );
     assert!(
         t.contains("01 Proyecto: no existe") && t.contains("Crear carpetas"),
         "{t}"
@@ -614,7 +617,7 @@ fn datos_y_documentos_de_la_obra() {
         "{t}"
     );
     let (t, err) = llamar(&mut e, "leer_plano", json!({"ruta": "plano.dwg"}));
-    assert!(err && t.contains("DXF"), "{t}");
+    assert!(err && t.contains("DXF"), "{t}"); // sin LibreDWG: explica cómo
     let (t, err) = llamar(&mut e, "leer_documento", json!({"ruta": "../fuera.txt"}));
     assert!(err && t.contains("carpeta de la obra"), "{t}");
     let (t, err) = llamar(

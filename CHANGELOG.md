@@ -5,6 +5,9 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Planos DWG**: `leer_plano` convierte el DWG a DXF en la misma carpeta con LibreDWG (`dwg2dxf.exe` junto a `ppto-gui.exe`, en el PATH o en `PPTO_DWG2DXF`) y lo lee; si ya hay un DXF más nuevo al lado, usa ese. LibreDWG no se distribuye con el programa: se descarga aparte (GPL-3, compatible). Sin él, explica cómo conseguirlo o guardar el plano como DXF.
+
 ## [0.1.0-alpha.64] - 2026-11-18
 
 ### Añadido
