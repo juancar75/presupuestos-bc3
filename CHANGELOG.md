@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.68] - 2026-11-19
+
 ### Añadido
 - **Precios ciertos y estimados en la biblioteca**: cada PVP lleva su origen (cierto, revisado, estimado) y su fuente. Las tarifas cargadas cuentan como ciertas; lo que sube una obra, como revisado (cierto si el recurso tiene oferta registrada); lo de una base, como revisado.
 - Claude (MCP) `guardar_precios`: guarda precios sueltos (consultas a Saltoki Online, web o tarifa de un fabricante, ofertas) en la tarifa del año sin borrar el resto, con su fuente y origen, para que la base común crezca.
