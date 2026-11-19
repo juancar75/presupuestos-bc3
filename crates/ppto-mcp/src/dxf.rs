@@ -282,6 +282,67 @@ pub fn resumen(p: &Plano, nombre: &str, bloque: Option<&str>) -> String {
     t
 }
 
+/// Programa de LibreDWG que convierte DWG a DXF: la variable
+/// `PPTO_DWG2DXF`, junto al ejecutable del programa o en el PATH.
+pub fn conversor_dwg() -> Option<std::path::PathBuf> {
+    let nombre = if cfg!(windows) { "dwg2dxf.exe" } else { "dwg2dxf" };
+    if let Some(r) = std::env::var_os("PPTO_DWG2DXF").map(std::path::PathBuf::from)
+        && r.is_file()
+    {
+        return Some(r);
+    }
+    let junto = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.join(nombre)))
+        .filter(|r| r.is_file());
+    junto.or_else(|| {
+        std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join(nombre)).find(|r| r.is_file()))
+    })
+}
+
+/// Cómo conseguir el conversor (para el aviso).
+pub const SIN_CONVERSOR: &str = "Para leer DWG hace falta dwg2dxf.exe de LibreDWG (libre, GPL-3): descargue el \
+paquete de Windows (win64) de https://github.com/LibreDWG/libredwg/releases y deje dwg2dxf.exe y sus DLL junto a \
+ppto-gui.exe. Mientras, guarde el plano como DXF (GstarCAD/AutoCAD: Guardar como → DXF).";
+
+/// DXF de un DWG: el `.dxf` que ya haya al lado (si es más nuevo que el
+/// DWG) o uno nuevo convertido con LibreDWG en la misma carpeta.
+pub fn dxf_de_dwg(dwg: &Path) -> Result<std::path::PathBuf, String> {
+    let dxf = dwg.with_extension("dxf");
+    let fecha = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    if dxf.is_file() && fecha(&dxf) >= fecha(dwg) {
+        return Ok(dxf);
+    }
+    let conv = conversor_dwg().ok_or_else(|| SIN_CONVERSOR.to_owned())?;
+    let mut hijo = std::process::Command::new(&conv)
+        .arg("-y")
+        .arg("-o")
+        .arg(&dxf)
+        .arg(dwg)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("no se pudo ejecutar {}: {e}", conv.display()))?;
+    // Como mucho 3 minutos (planos muy grandes)
+    let inicio = std::time::Instant::now();
+    loop {
+        match hijo.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if inicio.elapsed() > std::time::Duration::from_secs(180) => {
+                let _ = hijo.kill();
+                return Err("la conversión del DWG tarda demasiado: guárdelo como DXF desde el CAD".into());
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(200)),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    if dxf.is_file() && std::fs::metadata(&dxf).is_ok_and(|m| m.len() > 0) {
+        Ok(dxf)
+    } else {
+        Err("LibreDWG no ha podido convertir este DWG: guárdelo como DXF desde el CAD".into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,6 +377,25 @@ mod tests {
         assert!(t.contains("| DET_OPT | PCI-DETECCION | 4 |"), "{t}");
         assert!(t.contains("mediana 8.0 m"), "{t}");
         assert!(leer_texto("hola").is_err());
+    }
+
+    #[test]
+    fn dwg_con_su_dxf_al_lado() {
+        let dir = std::env::temp_dir().join(format!("dwg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dwg = dir.join("planta.dwg");
+        std::fs::write(&dwg, b"AC1032").unwrap();
+        // Sin DXF ni conversor (en las pruebas no hay LibreDWG): explica cómo
+        if conversor_dwg().is_none() {
+            let e = dxf_de_dwg(&dwg).unwrap_err();
+            assert!(e.contains("LibreDWG") && e.contains("DXF"), "{e}");
+        }
+        // Con un DXF más nuevo al lado, se usa ese
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join("planta.dxf"), dxf()).unwrap();
+        assert_eq!(dxf_de_dwg(&dwg).unwrap(), dir.join("planta.dxf"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
