@@ -120,6 +120,8 @@ fn recorrer(dir: &Path, base: &Path, nivel: u8, out: &mut Vec<(String, u64, Stri
             }
         } else if ext == "dxf" {
             "plano: leer_plano (bloques, leyendas, distancias)".to_owned()
+        } else if ext == "ifc" {
+            "modelo IFC: leer_plano (elementos por tipo y planta, metros, m²)".to_owned()
         } else {
             "no se lee".to_owned()
         };
@@ -164,7 +166,7 @@ pub(crate) fn documentos_obra(estado: &Estado) -> Result<String, String> {
     }
     t.push_str(
         "\nLea primero 01 Proyecto (memoria descriptiva y de cálculo, pliego: datos del edificio, marcas, \
-         modelos y alcance), luego 02 Mediciones y los planos DXF de 03 Planos (leer_plano). \
+         modelos y alcance), luego 02 Mediciones y los planos DXF, DWG o IFC de 03 Planos (leer_plano). \
          leer_documento con la ruta tal cual sale aquí. Avise al usuario de los AVISOS de la carpeta.",
     );
     Ok(t)
@@ -199,13 +201,27 @@ pub(crate) fn leer_plano(estado: &Estado, a: &Value) -> Result<String, String> {
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_default();
+    if ext == "ifc" {
+        let m = crate::ifc::leer(&r)?;
+        let nombre = r
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        return Ok(crate::ifc::resumen(
+            &m,
+            &nombre,
+            a.get("bloque").and_then(Value::as_str),
+        ));
+    }
     let (r, convertido) = if ext == "dwg" {
         (crate::dxf::dxf_de_dwg(&r)?, true)
     } else {
         (r, false)
     };
     if !convertido && ext != "dxf" {
-        return Err("leer_plano es para DXF; los planos en PDF, con leer_documento (solo sus textos)".into());
+        return Err(
+            "leer_plano es para DXF, DWG e IFC; los planos en PDF, con leer_documento (solo sus textos)".into(),
+        );
     }
     let p = crate::dxf::leer(&r)?;
     let nombre = r
