@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.70] - 2026-11-20
+
 ### Añadido
 - **Modelos IFC (BIM)** en `leer_plano`: elementos de instalaciones por clase, tipo, tamaño y planta, con uds y metros de conducto y tubería (de las propiedades o de la extrusión de la geometría), otros elementos por clase y m² de espacios por planta. IFC2x3 e IFC4 en texto; lector propio, sin dependencias.
 
