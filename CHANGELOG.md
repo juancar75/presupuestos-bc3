@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.69] - 2026-11-20
+
 ### Añadido
 - **Legalización: visita y jornada propias de las memorias.** El baremo admite horas de visita a obra para memorias (0 = como en proyectos) y horas por jornada para memorias (0 = sin redondeo a jornadas), para que una memoria pequeña no se redondee a jornadas completas como un proyecto.
 - **Importar baremo…** en la ventana de legalización: trae un `legalizacion.json` (de un compañero o de Claude) y cada año que trae sustituye al mismo año del baremo propio.
