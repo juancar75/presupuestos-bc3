@@ -1,0 +1,31 @@
+[package]
+name = "ppto-legalizacion-app"
+description = "Programa independiente de costes de legalización (RITE, PCI, RSIF); presupuestos-bc3 lo abre en una ventana aparte y recibe la partida"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "ppto_legalizacion_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ppto-legalizacion"
+path = "src/main.rs"
+
+[dependencies]
+ppto-core.workspace = true
+ppto-legalizacion.workspace = true
+rust_decimal.workspace = true
+serde.workspace = true
+serde_json = "1.0"
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+
+[dev-dependencies]
+rust_decimal_macros.workspace = true
+
+[lints]
+workspace = true

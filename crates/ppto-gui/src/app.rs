@@ -416,6 +416,8 @@ pub struct Aplicacion {
     docs: ofertas::CacheDocumentos,
     ventana_comparar: Option<comparar::VentanaComparar>,
     ventana_legalizacion: Option<legalizacion::VentanaLegalizacion>,
+    /// Programa de legalización abierto en una ventana aparte.
+    legalizacion_externa: Option<legalizacion::Externa>,
     dificultad: dificultad::FormDificultad,
     /// Cambios que se anotan en la auditoría al guardar la revisión.
     notas_revision: Vec<String>,
@@ -631,6 +633,7 @@ impl Aplicacion {
             docs: ofertas::CacheDocumentos::default(),
             ventana_comparar: None,
             ventana_legalizacion: None,
+            legalizacion_externa: None,
             dificultad: dificultad::FormDificultad::default(),
             notas_revision: Vec::new(),
             enlace: propuestas::Enlace::sin_disco(),

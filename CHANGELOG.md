@@ -5,6 +5,16 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Legalización en un programa aparte** (`ppto-legalizacion`, crate `ppto-legalizacion-app`): Precios → «Legalización…» lo abre en una ventana nueva con los capítulos, los datos leídos de las mediciones y los márgenes de la obra; cada «Crear la partida» llega a la obra abierta como `LEG-RITE` o `LEG-PCI` (se puede deshacer). Abierto solo calcula con el PEM a mano y copia el descompuesto. Si no está el ejecutable, la misma ventana se abre dentro del programa. Se instala junto a `ppto-gui.exe`.
+- **Trabajo base por alcance** (clima y ventilación, ACS, PCI detección, PCI extinción) en memorias y proyectos: sustituye a las horas fijas; la parte por PEM se mantiene. Se edita en «Editar honorarios».
+
+### Cambiado
+- Legalización, **proyecto de otro técnico**: se firma como instalador; sin visado ni dirección de obra propios.
+- Legalización, **climatización con primario** (split, multisplit, bibloc, VRF): expediente RITE único con EICI «con primario»; el registro frigorífico solo se propone con frío industrial o comercial. Los compactos y monobloc no llevan primario.
+- Legalización, **ventilación de garaje (SCTEH)**: se lee de las mediciones, va en el expediente PCI y exige certificado y proyecto.
+- Legalización PCI: las pruebas de presión y su acta se citan solo si hay BIE.
+
 ## [0.1.0-alpha.68] - 2026-11-19
 
 ### Añadido

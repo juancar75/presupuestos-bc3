@@ -176,6 +176,78 @@ impl Horas {
     }
 }
 
+/// Alcances de un expediente: cada uno tiene su trabajo base (horas mínimas
+/// para hacer la memoria o el proyecto de ese alcance), que se suma a la
+/// parte proporcional al PEM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Alcances {
+    /// RITE: climatización y ventilación.
+    pub clima_ventilacion: bool,
+    /// RITE: producción de ACS.
+    pub acs: bool,
+    /// PCI: detección y alarma.
+    pub deteccion: bool,
+    /// PCI: extinción (extintores, BIE, rociadores, abastecimiento…).
+    pub extincion: bool,
+}
+
+impl Alcances {
+    pub fn ninguno(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Alcances marcados con su nombre.
+    pub fn nombres(&self) -> Vec<&'static str> {
+        [
+            (self.clima_ventilacion, "clima y ventilación"),
+            (self.acs, "ACS"),
+            (self.deteccion, "PCI detección"),
+            (self.extincion, "PCI extinción"),
+        ]
+        .into_iter()
+        .filter_map(|(si, n)| si.then_some(n))
+        .collect()
+    }
+}
+
+/// Trabajo base (horas mínimas) por alcance, para memorias o para proyectos.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HorasAlcance {
+    pub clima_ventilacion: Decimal,
+    pub acs: Decimal,
+    pub deteccion: Decimal,
+    pub extincion: Decimal,
+}
+
+impl HorasAlcance {
+    /// Horas base de los alcances marcados y su explicación; `None` si el
+    /// baremo no tiene horas para ninguno de ellos.
+    fn de(&self, a: &Alcances) -> Option<(Decimal, String)> {
+        let partes: Vec<(Decimal, &str)> = [
+            (a.clima_ventilacion, self.clima_ventilacion, "clima y ventilación"),
+            (a.acs, self.acs, "ACS"),
+            (a.deteccion, self.deteccion, "detección"),
+            (a.extincion, self.extincion, "extinción"),
+        ]
+        .into_iter()
+        .filter(|(si, h, _)| *si && !h.is_zero())
+        .map(|(_, h, n)| (h, n))
+        .collect();
+        if partes.is_empty() {
+            return None;
+        }
+        let total = partes.iter().map(|p| p.0).sum();
+        let txt = partes
+            .iter()
+            .map(|(h, n)| format!("{n} {} h", corto(*h)))
+            .collect::<Vec<_>>()
+            .join(" + ");
+        Some((total, txt))
+    }
+}
+
 /// Quién factura la legalización: el instalador (dentro del presupuesto de
 /// obra: la partida va a coste y el margen es el de la obra) o la ingeniería
 /// (margen propio según el tamaño del encargo).
@@ -243,6 +315,12 @@ pub struct Baremo {
     pub rsif_minimo: Decimal,
 
     // --- horas por tarea (forman el precio)
+    /// Trabajo base por alcance (clima y ventilación, ACS, detección,
+    /// extinción) en memorias y en proyectos. Si el expediente marca algún
+    /// alcance con horas aquí, sustituye a las horas fijas de la memoria o de
+    /// la tramitación; la parte por PEM y por vivienda se mantiene.
+    pub horas_alcance_memoria: HorasAlcance,
+    pub horas_alcance_proyecto: HorasAlcance,
     pub horas_memoria: Horas,
     pub horas_tramitacion: Horas,
     /// Redacción del proyecto: memoria, presupuesto, pliego de condiciones y
@@ -389,6 +467,8 @@ impl Default for Baremo {
             coste_documentacion: z,
             margen: z,
             reparto_tramitacion: reparto_tramitacion(),
+            horas_alcance_memoria: HorasAlcance::default(),
+            horas_alcance_proyecto: HorasAlcance::default(),
             horas_memoria: Horas::default(),
             horas_tramitacion: Horas::default(),
             horas_redaccion: Horas::default(),
@@ -846,6 +926,13 @@ pub struct Expediente {
     pub rol: Rol,
     /// Rol ingeniería: tamaño del encargo para el margen (`None` = según las horas).
     pub tamano: Option<Tamano>,
+    /// Alcances del expediente (trabajo base por alcance).
+    #[serde(default)]
+    pub alcances: Alcances,
+    /// PCI: incluye la ventilación del garaje (control de humos, SCTEH):
+    /// siempre certificado y proyecto, tramitado en el expediente PCI.
+    #[serde(default)]
+    pub ventilacion_garaje: bool,
 }
 
 impl Expediente {
@@ -894,7 +981,42 @@ impl Expediente {
             repercutir: true,
             rol: Rol::Instalador,
             tamano: None,
+            alcances: Alcances {
+                clima_ventilacion: disciplina == Disciplina::Rite,
+                ..Alcances::default()
+            },
+            ventilacion_garaje: false,
         }
+    }
+
+    /// Firma como instalador sobre el proyecto de otro técnico: no hay
+    /// redacción, visado ni dirección de obra propios.
+    pub fn firma_instalador(&self) -> bool {
+        self.proyecto() && self.ajeno
+    }
+
+    /// Alcances que cuentan en la disciplina del expediente (los de la otra
+    /// disciplina se ignoran).
+    pub fn alcances_validos(&self) -> Alcances {
+        let a = self.alcances;
+        match self.disciplina {
+            Disciplina::Rite => Alcances {
+                deteccion: false,
+                extincion: false,
+                ..a
+            },
+            Disciplina::Pci => Alcances {
+                clima_ventilacion: false,
+                acs: false,
+                ..a
+            },
+        }
+    }
+
+    /// PCI que exige proyecto aunque se haya elegido memoria: la ventilación
+    /// del garaje (SCTEH) siempre va con certificado y proyecto.
+    pub fn pci_exige_proyecto(&self) -> bool {
+        self.disciplina == Disciplina::Pci && self.ventilacion_garaje
     }
 
     /// Potencia que decide la documentación RITE: la mayor de la suma de
@@ -925,6 +1047,28 @@ impl Expediente {
     /// límites → memoria; nivel 2 → proyecto).
     pub fn avisos_documentacion(&self) -> Vec<String> {
         let mut a = Vec::new();
+        if self.pci_exige_proyecto() && !self.proyecto() {
+            a.push(
+                "Ventilación de garaje (SCTEH): siempre certificado y proyecto, tramitado en el expediente PCI; \
+                 no basta memoria."
+                    .into(),
+            );
+        }
+        if self.firma_instalador() {
+            a.push(
+                "Proyecto de otro técnico: se firma como instalador; el visado y la dirección de obra son del \
+                 autor del proyecto y no se incluyen."
+                    .into(),
+            );
+        }
+        if self.disciplina == Disciplina::Rite && self.primario_frio && self.registro_if.is_some() {
+            a.push(
+                "Climatización con primario frigorífico (split, multisplit, bibloc o VRF): se tramita en un único \
+                 expediente RITE con la EICI «con primario», sin registro frigorífico ni tasa aparte salvo que \
+                 haya frío industrial o comercial."
+                    .into(),
+            );
+        }
         if self.disciplina == Disciplina::Pci {
             let mut motivos = Vec::new();
             if self.pci_bie {
@@ -1245,7 +1389,14 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     let n_viv = d(viviendas);
 
     // 1. Memoria técnica, o tramitación y dirección de la instalación
-    let (titulo, que, horas, reparto) = if proyecto {
+    let (titulo, que, horas, reparto) = if e.firma_instalador() {
+        (
+            "Tramitación del proyecto de otro técnico (firma como instalador)",
+            "tramitación como instalador del proyecto de otro técnico",
+            &b.horas_tramitacion,
+            &b.reparto_tramitacion,
+        )
+    } else if proyecto {
         (
             "Tramitación y dirección de la instalación",
             "tramitación y dirección de la instalación",
@@ -1266,8 +1417,25 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     } else {
         horas
     };
+    // Trabajo base por alcance: sustituye a las horas fijas.
+    let por_alcance = if proyecto {
+        &b.horas_alcance_proyecto
+    } else {
+        &b.horas_alcance_memoria
+    };
+    let (horas, base_alcances) = match por_alcance.de(&e.alcances_validos()) {
+        Some((base, txt)) => (Horas { base, ..*horas }, Some(txt)),
+        None => (*horas, None),
+    };
     let mut h = horas.de(e.pem, n_viv);
     let mut regla = horas.texto(n_viv);
+    if let Some(txt) = base_alcances {
+        regla = regla.replacen(
+            &format!("{} h", corto(horas.base)),
+            &format!("{} h de base por alcance ({txt})", corto(horas.base)),
+            1,
+        );
+    }
     if pci_memoria && !b.horas_pci_instalacion.is_zero() {
         let n = e.instalaciones_pci.max(1);
         h += d(n) * b.horas_pci_instalacion;
@@ -1454,7 +1622,7 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
                 format!(
                     "{}: {} en obra",
                     Perfil::Tecnico.nombre(),
-                    if proyecto {
+                    if proyecto && !e.ajeno {
                         "dirección de la instalación"
                     } else {
                         "comprobación"
@@ -1652,7 +1820,7 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
 
     c.resumen = format!("Legalización de {} mediante {doc}", e.disciplina.nombre());
     let tasas = if e.repercutir {
-        if proyecto {
+        if proyecto && !e.ajeno {
             ", con tasas, inspección de la EICI y visados"
         } else {
             ", con tasas e inspección de la EICI"
@@ -1660,48 +1828,87 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     } else {
         ""
     };
+    // Proyecto propio: dirección de la instalación; de otro técnico, se firma como instalador.
+    let direccion = if e.ajeno {
+        "certificado de la empresa instaladora (firma como instalador; la dirección de obra y el visado son del \
+         autor del proyecto)"
+    } else {
+        "dirección de la instalación y certificado final"
+    };
+    let primario = if e.disciplina == Disciplina::Rite && e.primario_frio {
+        " La instalación con circuito primario frigorífico (split, multisplit, bibloc o VRF) se tramita en el mismo \
+         expediente RITE, con la inspección «con primario»."
+    } else {
+        ""
+    };
+    let bie = if e.pci_bie {
+        ", pruebas de presión de la red de BIE y su acta de pruebas"
+    } else {
+        ""
+    };
+    let garaje = if e.disciplina == Disciplina::Pci && e.ventilacion_garaje {
+        " Incluye la ventilación del garaje (control de humos), con su certificado, en el mismo expediente."
+    } else {
+        ""
+    };
+    let alcances = e.alcances_validos();
+    let alcance = if alcances.ninguno() {
+        String::new()
+    } else {
+        format!(" Alcance: {}.", alcances.nombres().join(", "))
+    };
     c.texto = match (e.disciplina, proyecto) {
         (Disciplina::Rite, true) => format!(
-            "Legalización de las instalaciones térmicas (RITE) mediante proyecto{}. Incluye memoria, presupuesto, \
-             pliego de condiciones, estudio de seguridad y salud y anexos (certificados, fichas y manuales), \
-             dirección de la instalación y certificado final, planos as-built, cálculos justificativos, libro de uso y \
-             mantenimiento, cumplimentación de la documentación 3.1.5, aportación del CIE del instalador \
-             eléctrico, asistencia a la inspección de la OCA, desplazamientos y gestión del expediente ante \
-             el órgano competente de la Comunidad Autónoma{tasas}.",
+            "Legalización de las instalaciones térmicas (RITE) mediante proyecto{}. Incluye {}{direccion}, \
+             planos as-built, {}libro de uso y mantenimiento, cumplimentación de la documentación 3.1.5, \
+             aportación del CIE del instalador eléctrico, asistencia a la inspección de la OCA, desplazamientos y \
+             gestión del expediente ante el órgano competente de la Comunidad Autónoma{tasas}.{primario}{alcance}",
             if e.ajeno {
                 " de otro técnico"
             } else {
                 ", incluida su redacción sobre la instalación ejecutada (as-built)"
-            }
+            },
+            if e.ajeno {
+                "anexos (certificados, fichas y manuales), "
+            } else {
+                "memoria, presupuesto, pliego de condiciones, estudio de seguridad y salud y anexos (certificados, \
+                 fichas y manuales), "
+            },
+            if e.ajeno { "" } else { "cálculos justificativos, " }
         ),
         (Disciplina::Rite, false) => format!(
             "Legalización de las instalaciones térmicas (RITE) mediante memoria técnica sobre la instalación ejecutada (as-built). Incluye elaboración \
              de la memoria con la justificación del RITE y, en su caso, del RSIF, comprobación en obra, planos as-built, libro de uso \
              y mantenimiento, cumplimentación de la documentación 3.1.5, aportación del CIE del instalador \
              eléctrico, desplazamientos y gestión del expediente ante el órgano competente de la Comunidad \
-             Autónoma{tasas}."
+             Autónoma{tasas}.{primario}{alcance}"
         ),
         (Disciplina::Pci, true) => format!(
             "Legalización de las instalaciones de protección contra incendios (RIPCI) mediante proyecto{}. \
-             Incluye dirección de la instalación y certificado final, planos as-built, cálculos \
-             justificativos, manual de uso y mantenimiento, asistencia a la inspección de la OCA, \
-             desplazamientos y gestión del expediente ante el órgano competente de la Comunidad \
-             Autónoma{tasas}.",
+             Incluye {direccion}, planos as-built, {}manual de uso y mantenimiento{bie}, asistencia a la \
+             inspección de la OCA, desplazamientos y gestión del expediente ante el órgano competente de la \
+             Comunidad Autónoma{tasas}.{garaje}{alcance}",
             if e.ajeno {
                 " de otro técnico"
             } else {
                 ", incluida su redacción sobre la instalación ejecutada (as-built)"
-            }
+            },
+            if e.ajeno { "" } else { "cálculos justificativos, " }
         ),
         (Disciplina::Pci, false) => format!(
             "Legalización de las instalaciones de protección contra incendios (RIPCI) mediante memoria \
              técnica{}. Incluye elaboración de la memoria, solicitud de conformidad de la instalación \
-             (firmada por el titular), certificado de la empresa instaladora y acta de pruebas a presión, \
+             (firmada por el titular), certificado de la empresa instaladora{}, \
              certificado de dirección y terminación de obra, comprobación en obra, planos as-built, manual \
              de uso y mantenimiento, desplazamientos y gestión del expediente ante el órgano competente de \
-             la Comunidad Autónoma{tasas}.",
+             la Comunidad Autónoma{tasas}.{garaje}{alcance}",
             if e.pci_inspeccionable {
                 " inspeccionable, con asistencia a la inspección de la OCA"
+            } else {
+                ""
+            },
+            if e.pci_bie {
+                ", pruebas de presión de la red de BIE y su acta de pruebas"
             } else {
                 ""
             }
@@ -1897,7 +2104,8 @@ fn repercutidos(b: &Baremo, e: &Expediente, avisos: &mut Vec<String>) -> Vec<Lin
             }
         }
     }
-    if proyecto {
+    // Firmando como instalador el proyecto de otro técnico, el visado es del autor.
+    if proyecto && !e.ajeno {
         let visado: Decimal = por_tramos(&b.visado, e.pem)
             .iter()
             .map(|(_, _, k, parte)| *parte * *k)
@@ -2454,5 +2662,89 @@ mod tests {
         assert_eq!(parcial.versiones[0].horas_memoria.base, dec!(5));
         assert!(parcial.versiones[0].visado_direccion_obra);
         assert_eq!(parcial.versiones[0].reparto_tramitacion.tecnico, dec!(30));
+    }
+
+    #[test]
+    fn base_por_alcance_sustituye_a_las_horas_fijas() {
+        let mut bar = b();
+        bar.horas_alcance_memoria = HorasAlcance {
+            clima_ventilacion: dec!(6),
+            acs: dec!(3),
+            deteccion: dec!(5),
+            extincion: dec!(2),
+        };
+        // Memoria RITE de 100.000 €: 0,4 h por 10.000 € = 4 h + base.
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(100000));
+        assert!(e.alcances.clima_ventilacion);
+        assert_eq!(horas(&calcular(&bar, &e), "Elaboración"), dec!(10)); // 6 + 4
+        e.alcances.acs = true;
+        let c = calcular(&bar, &e);
+        assert_eq!(horas(&c, "Elaboración"), dec!(13)); // 6 + 3 + 4
+        assert!(bloque(&c, "Elaboración").unwrap().regla.contains("base por alcance"));
+        assert!(c.texto.contains("Alcance: clima y ventilación, ACS"));
+        // Sin horas por alcance en el baremo, las fijas de siempre (4 h).
+        assert_eq!(horas(&calcular(&b(), &e), "Elaboración"), dec!(8));
+    }
+
+    #[test]
+    fn proyecto_de_otro_tecnico_firma_como_instalador() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(200000));
+        e.potencia_calor_kw = dec!(250);
+        e.ajeno = true;
+        let c = calcular(&b(), &e);
+        assert!(bloque(&c, "Tramitación del proyecto de otro técnico").is_some());
+        assert!(!c.lineas().any(|l| l.resumen.contains("visado")));
+        assert!(!c.lineas().any(|l| l.resumen.contains("dirección de la instalación")));
+        assert!(c.texto.contains("firma como instalador"));
+        assert!(c.avisos.iter().any(|a| a.contains("se firma como instalador")));
+        // Tasa 50 + EICI 800, sin visados.
+        assert_eq!(c.repercutidos, dec!(850));
+    }
+
+    #[test]
+    fn vrf_con_primario_en_expediente_rite_unico() {
+        let mut e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(60000));
+        e.primario_frio = true;
+        let c = calcular(&b(), &e);
+        assert!(c.lineas().any(|l| l.resumen.contains("con primario frigorífico")));
+        assert!(c.texto.contains("mismo expediente RITE"));
+        e.circuitos_rsif = 2;
+        e.registro_if = Some(RegistroIf::MemoriaA2l);
+        assert!(
+            calcular(&b(), &e)
+                .avisos
+                .iter()
+                .any(|a| a.contains("único expediente RITE"))
+        );
+    }
+
+    #[test]
+    fn garaje_va_en_pci_con_proyecto_y_bie_con_acta() {
+        let mut e = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(40000));
+        e.ventilacion_garaje = true;
+        assert!(e.pci_exige_proyecto());
+        assert!(e.avisos_documentacion()[0].contains("Ventilación de garaje"));
+        e.documento = Documento::Proyecto;
+        e.pci_bie = true;
+        let c = calcular(&b(), &e);
+        assert!(c.texto.contains("ventilación del garaje"));
+        assert!(c.texto.contains("acta de pruebas"));
+        assert!(
+            !e.avisos_documentacion()
+                .iter()
+                .any(|a| a.contains("Ventilación de garaje"))
+        );
+        let sin_bie = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(10000));
+        assert!(!calcular(&b(), &sin_bie).texto.contains("acta de pruebas"));
+    }
+
+    #[test]
+    fn expediente_antiguo_sin_campos_nuevos() {
+        let e = Expediente::nuevo(Disciplina::Pci, Documento::Memoria, dec!(1000));
+        let mut v = serde_json::to_value(&e).unwrap();
+        v.as_object_mut().unwrap().remove("alcances");
+        v.as_object_mut().unwrap().remove("ventilacion_garaje");
+        let leido: Expediente = serde_json::from_value(v).unwrap();
+        assert!(leido.alcances.ninguno() && !leido.ventilacion_garaje);
     }
 }
