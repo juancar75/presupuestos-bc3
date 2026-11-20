@@ -26,6 +26,7 @@ pub mod asistente;
 mod biblioteca;
 mod documentos;
 pub mod dxf;
+pub mod ifc;
 
 /// Versión del protocolo MCP que se anuncia si el cliente no pide otra.
 pub const PROTOCOLO: &str = "2025-06-18";
@@ -297,10 +298,10 @@ fn herramientas() -> Value {
         },
         {
             "name": "leer_plano",
-            "description": "Lee un plano DXF de la carpeta de la obra: bloques insertados por nombre y capa (cuántos detectores, BIE, extintores, rejillas…), los textos (leyendas, rótulos) y, con «bloque», la distancia de cada uno al más cercano (mín., mediana, máx., en m) y la superficie que ocupan, para comprobar coberturas frente a la medición y la norma. Los DWG se convierten solos a DXF si está LibreDWG (dwg2dxf.exe junto al programa); si no, guardarlos como DXF.",
+            "description": "Lee un plano DXF de la carpeta de la obra: bloques insertados por nombre y capa (cuántos detectores, BIE, extintores, rejillas…), los textos (leyendas, rótulos) y, con «bloque», la distancia de cada uno al más cercano (mín., mediana, máx., en m) y la superficie que ocupan, para comprobar coberturas frente a la medición y la norma. Los DWG se convierten solos a DXF si está LibreDWG (dwg2dxf.exe junto al programa); si no, guardarlos como DXF. Los modelos IFC (BIM) se leen también: elementos de instalaciones por clase, tipo, tamaño y planta, con uds y metros de conducto y tubería si el modelo trae la longitud, otros elementos por clase y m² de espacios por planta; en IFC «bloque» filtra por clase, tipo o tamaño.",
             "inputSchema": { "type": "object", "properties": {
                 "ruta": { "type": "string", "description": "Tal cual sale en documentos_obra" },
-                "bloque": { "type": "string", "description": "Nombre del bloque para distancias y cobertura" }
+                "bloque": { "type": "string", "description": "DXF/DWG: nombre del bloque para distancias y cobertura. IFC: texto para filtrar (clase, tipo o tamaño)" }
             }, "required": ["ruta"] }
         },
         {

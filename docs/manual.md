@@ -35,7 +35,7 @@ La configuración (bases, especialidades, recientes, carpeta de tarifas) vive en
 | --- | --- |
 | 01 Proyecto | Memoria descriptiva, memoria de cálculo y pliego (PDF o Word) |
 | 02 Mediciones | Ciego o mediciones del cliente (BC3 o Excel) |
-| 03 Planos | Planos en DXF (mejor) y PDF; los DWG, guardarlos también como DXF |
+| 03 Planos | Planos en DXF (mejor), DWG y PDF; modelos BIM en IFC |
 | 04 Ofertas | Ofertas de proveedores y subcontratas de esta obra |
 | 05 Cliente | Correos, actas, aclaraciones y contrato |
 
@@ -179,6 +179,8 @@ Claude hace la misma comparación (`comparar_obras`) y explica cada desviación 
 
 **Planos DXF**: si la carpeta de documentos tiene planos en DXF, Claude cuenta los aparatos dibujados (bloques por nombre y capa: detectores, BIE, extintores, rejillas…), lee las leyendas y mide la distancia de cada aparato al más cercano y la superficie que cubren, para comprobar la medición del cliente y las coberturas. Los planos en PDF solo aportan sus textos. Los **DWG** se convierten solos a DXF (en la misma carpeta) si está LibreDWG: descargue el paquete de Windows (win64) de https://github.com/LibreDWG/libredwg/releases (libre, GPL-3) y deje `dwg2dxf.exe` y sus DLL junto a `ppto-gui.exe`; si no, guárdelos como DXF desde el CAD.
 
+**Modelos IFC (BIM)**: si hay un `.ifc` (IFC2x3 o IFC4, sin comprimir), Claude cuenta los elementos de instalaciones por clase, tipo, tamaño y planta (difusores, detectores, BIE, unidades, válvulas…), suma los metros de conductos y tuberías cuando el modelo trae la longitud (en sus propiedades o por la extrusión de la geometría) y da los m² de los espacios por planta. Pídale, por ejemplo, «cuenta los elementos del IFC» o «filtra el IFC por detector». Si un modelo no trae longitudes, cuenta las piezas pero no las mide.
+
 ### Legalización (RITE, PCI)
 
 La ventana de legalización calcula la partida de un expediente con el baremo propio: horas por tarea a coste de cada perfil, desplazamientos, y tasas, EICI y visados repercutidos sin margen. Como instalador va a coste y el margen lo pone la obra.
@@ -244,5 +246,5 @@ El BC3 exportado vale exactamente lo mismo que la obra; en Presto hay que pulsar
 - **Una partida sale como sin precio pero no quiero valorarla.** Márcala como «Excluida» o «Incluida».
 - **No encuentro una partida en la base.** Comprueba que la base está añadida y con su especialidad, o usa «Todas a la vez».
 - **🖹 no aparece junto a un material.** Ese fabricante no tiene carpeta en la carpeta de tarifas, o el nombre no coincide.
-- **Claude no encuentra los documentos de la obra.** Elige la carpeta en Obra → «Datos de la obra…» (📁). Lee PDF, Word, Excel y planos DXF; los DWG, con LibreDWG (`dwg2dxf.exe` junto a `ppto-gui.exe`) o guardándolos como DXF (Guardar como → DXF).
+- **Claude no encuentra los documentos de la obra.** Elige la carpeta en Obra → «Datos de la obra…» (📁). Lee PDF, Word, Excel, planos DXF y modelos IFC; los DWG, con LibreDWG (`dwg2dxf.exe` junto a `ppto-gui.exe`) o guardándolos como DXF (Guardar como → DXF).
 - **Claude dice que no hay presupuesto abierto.** Abre la obra en el programa y pídele que se conecte otra vez.
