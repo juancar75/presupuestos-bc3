@@ -222,6 +222,13 @@ impl Aplicacion {
                                     }
                                     let n = if marcada { elegidas.len() } else { 1 };
                                     super::arbol::editar_codigo(ui, r.id.with("codigo"), &l.hijo, acciones);
+                                    if ui
+                                        .button(format!("Sustituir {} en todo el presupuesto por…", l.hijo))
+                                        .clicked()
+                                    {
+                                        acciones.push(Accion::PedirSustituir(l.hijo.clone()));
+                                        ui.close();
+                                    }
                                     ui.separator();
                                     if ui.button(format!("Copiar {n} líneas (Ctrl+C)")).clicked() {
                                         menu = Some(1);

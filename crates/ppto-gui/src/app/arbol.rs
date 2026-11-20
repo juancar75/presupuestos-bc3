@@ -404,7 +404,9 @@ impl Aplicacion {
                         }
                     });
             } else {
-                let elegido = self.sel.as_ref() == Some(&(capitulo.to_owned(), l.hijo.clone()));
+                let par = (capitulo.to_owned(), l.hijo.clone());
+                let en_varias = self.arbol_sel.contains(&par);
+                let elegido = self.sel.as_ref() == Some(&par) || en_varias;
                 let carga = Arrastre {
                     origen: capitulo.to_owned(),
                     hijo: l.hijo.clone(),
@@ -471,9 +473,20 @@ impl Aplicacion {
                     .small(),
                 );
                 if r.clicked() {
-                    acciones.push(Accion::Seleccionar(capitulo.to_owned(), l.hijo.clone()));
+                    let m = ui.input(|i| i.modifiers);
+                    acciones.push(if m.command || m.ctrl {
+                        Accion::ElegirArbol(capitulo.to_owned(), l.hijo.clone(), false)
+                    } else if m.shift {
+                        Accion::ElegirArbol(capitulo.to_owned(), l.hijo.clone(), true)
+                    } else {
+                        Accion::Seleccionar(capitulo.to_owned(), l.hijo.clone())
+                    });
                 }
-                r.context_menu(|ui| menu_linea(ui, capitulo, &l.hijo, false, acciones));
+                if en_varias && self.arbol_sel.len() > 1 {
+                    r.context_menu(|ui| self.menu_varias(ui, acciones));
+                } else {
+                    r.context_menu(|ui| menu_linea(ui, capitulo, &l.hijo, false, acciones));
+                }
             }
         }
     }
@@ -506,5 +519,125 @@ pub(super) fn editar_codigo(ui: &mut Ui, id: egui::Id, codigo: &str, acciones: &
         ui.data_mut(|d| d.remove::<String>(id));
     } else {
         ui.data_mut(|d| d.insert_temp(id, c));
+    }
+}
+
+impl Aplicacion {
+    /// Capítulos en el orden del árbol, con sangría por nivel.
+    fn capitulos_en_orden(&self) -> Vec<(String, String)> {
+        fn recorrer(a: &Aplicacion, padre: &str, nivel: usize, out: &mut Vec<(String, String)>) {
+            for l in a.calc.lineas.get(padre).into_iter().flatten() {
+                if let Some(c) = a.p.conceptos.get(&l.hijo)
+                    && c.naturaleza == Naturaleza::Capitulo
+                    && nivel < 8
+                {
+                    out.push((
+                        l.hijo.clone(),
+                        format!("{}{}  {}", "   ".repeat(nivel), c.codigo, corto(&c.resumen, 40)),
+                    ));
+                    recorrer(a, &l.hijo, nivel + 1, out);
+                }
+            }
+        }
+        let mut v = Vec::new();
+        recorrer(self, &self.p.raiz, 0, &mut v);
+        v
+    }
+
+    /// Menú con varias partidas elegidas (Ctrl o Mayús + clic).
+    fn menu_varias(&self, ui: &mut Ui, acciones: &mut Vec<Accion>) {
+        let sel = &self.arbol_sel;
+        let suma: Decimal = sel
+            .iter()
+            .filter_map(|(c, h)| {
+                self.calc
+                    .lineas
+                    .get(c)?
+                    .iter()
+                    .find(|l| &l.hijo == h)
+                    .map(|l| l.importe)
+            })
+            .sum();
+        ui.label(RichText::new(format!("{} partidas elegidas · {} €", sel.len(), eur(suma))).strong());
+        ui.separator();
+        let capitulos = self.capitulos_en_orden();
+        let lote = |que: String, v: Vec<Accion>, acciones: &mut Vec<Accion>| {
+            if !v.is_empty() {
+                acciones.push(Accion::Lote(que, v));
+            }
+        };
+        ui.menu_button("Mover a…", |ui| {
+            egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+                for (cap, rotulo) in &capitulos {
+                    if ui.button(rotulo).clicked() {
+                        let v = sel
+                            .iter()
+                            .filter(|(c, _)| c != cap)
+                            .map(|(c, h)| Accion::Trasladar(c.clone(), h.clone(), cap.clone(), None))
+                            .collect();
+                        lote(format!("mover {} partidas a {cap}", sel.len()), v, acciones);
+                        ui.close();
+                    }
+                }
+            });
+        });
+        ui.menu_button("Copiar a…", |ui| {
+            egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+                for (cap, rotulo) in &capitulos {
+                    if ui.button(rotulo).clicked() {
+                        let v = sel
+                            .iter()
+                            .filter(|(c, _)| c != cap)
+                            .map(|(c, h)| Accion::Copiar(c.clone(), h.clone(), cap.clone()))
+                            .collect();
+                        lote(format!("copiar {} partidas a {cap}", sel.len()), v, acciones);
+                        ui.close();
+                    }
+                }
+            });
+        });
+        ui.separator();
+        let mut partidas: Vec<&String> = sel.iter().map(|(_, h)| h).collect();
+        partidas.sort();
+        partidas.dedup();
+        for (rotulo, f) in [
+            (
+                "Excluir de la oferta",
+                Accion::Excluir as fn(String, bool) -> Accion,
+                true,
+            ),
+            ("Quitar «excluida»", Accion::Excluir, false),
+            ("Marcar «incluida en otra»", Accion::Incluir, true),
+            ("Quitar «incluida»", Accion::Incluir, false),
+        ]
+        .map(|(r, f, b)| (r, move |h: &String| f(h.clone(), b)))
+        {
+            if ui.button(rotulo).clicked() {
+                let v = partidas.iter().map(|h| f(h)).collect();
+                lote(
+                    format!("{} ({} partidas)", rotulo.to_lowercase(), partidas.len()),
+                    v,
+                    acciones,
+                );
+                ui.close();
+            }
+        }
+        ui.separator();
+        if ui
+            .button(format!("Quitar las {} partidas", sel.len()))
+            .on_hover_text("Lo que quede sin usar en ningún otro sitio se borra. Se puede deshacer.")
+            .clicked()
+        {
+            let v = sel
+                .iter()
+                .map(|(c, h)| Accion::QuitarLinea(c.clone(), h.clone(), true))
+                .collect();
+            lote(format!("quitar {} partidas", sel.len()), v, acciones);
+            ui.close();
+        }
+        if ui.button("Dejar de elegir   Esc").clicked() {
+            acciones.push(Accion::DejarDeElegir);
+            ui.close();
+        }
     }
 }

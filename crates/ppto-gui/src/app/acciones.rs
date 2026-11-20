@@ -7,6 +7,7 @@ impl Aplicacion {
     pub(super) fn aplicar(&mut self, acciones: Vec<Accion>) {
         for a in acciones {
             let guardado = match describir(&a) {
+                Some(_) if self.en_lote => false,
                 Some((que, grupo)) => self.historial.antes(&self.p, que, grupo),
                 None => {
                     if !matches!(
@@ -16,6 +17,9 @@ impl Aplicacion {
                             | Accion::SiguienteSinPrecio
                             | Accion::AnteriorSinPrecio
                             | Accion::CapituloActivo(_)
+                            | Accion::ElegirArbol(..)
+                            | Accion::DejarDeElegir
+                            | Accion::PedirSustituir(_)
                     ) {
                         self.historial.grupo = None;
                     }
@@ -33,7 +37,42 @@ impl Aplicacion {
             )
             .then(|| self.p.conceptos.keys().cloned().collect());
             let r = match a {
+                Accion::ElegirArbol(padre, hijo, bloque) => {
+                    self.elegir_arbol(padre, hijo, bloque);
+                    continue;
+                }
+                Accion::DejarDeElegir => {
+                    self.arbol_sel.clear();
+                    continue;
+                }
+                Accion::PedirSustituir(c) => {
+                    self.sustituir = Some(sustituir::FormSustituir::new(c));
+                    continue;
+                }
+                Accion::Lote(_, v) => {
+                    let copia = self.p.clone();
+                    let errores = self.errores_lote;
+                    let n = v.len();
+                    self.en_lote = true;
+                    self.aplicar(v);
+                    self.en_lote = false;
+                    if self.errores_lote > errores {
+                        self.p = copia;
+                        let m = self.mensaje.as_ref().map(|(t, _)| t.clone()).unwrap_or_default();
+                        Err(ppto_core::ErrorMotor::ValorInvalido(format!("{m} No se ha cambiado nada.")))
+                    } else {
+                        self.arbol_sel.clear();
+                        self.info(format!("Hecho en {n} partidas."));
+                        Ok(())
+                    }
+                }
+                Accion::Sustituir(viejo, nuevo) => self.p.sustituir(&viejo, &nuevo).map(|n| {
+                    self.info(format!(
+                        "{viejo} sustituido por {nuevo} en {n} conceptos. {viejo} queda en la obra sin usar."
+                    ));
+                }),
                 Accion::Seleccionar(padre, hijo) => {
+                    self.arbol_sel.clear();
                     self.capitulo_activo = Some(padre.clone());
                     self.sel = Some((padre, hijo));
                     self.pestana = Pestana::Partida;
@@ -432,6 +471,9 @@ impl Aplicacion {
             match r {
                 Ok(()) => self.marcar_cambio(),
                 Err(e) => {
+                    if self.en_lote {
+                        self.errores_lote += 1;
+                    }
                     // El motor no cambia nada si falla: fuera la copia
                     if guardado {
                         self.historial.deshacer.pop();
@@ -558,6 +600,51 @@ impl Aplicacion {
         if let Some((a, b, _)) = &mut self.portapapeles {
             cambia(a);
             cambia(b);
+        }
+    }
+}
+
+impl Aplicacion {
+    /// Ctrl + clic: añade o quita la partida; Mayús + clic: el bloque desde la
+    /// última elegida en el mismo capítulo.
+    fn elegir_arbol(&mut self, padre: String, hijo: String, bloque: bool) {
+        if self.arbol_sel.is_empty()
+            && let Some(s) = self.sel.clone()
+            && self
+                .calc
+                .lineas
+                .get(&s.0)
+                .is_some_and(|v| v.iter().any(|l| l.hijo == s.1))
+        {
+            self.arbol_sel.push(s);
+        }
+        let ancla = self.arbol_sel.last().cloned();
+        let par = (padre.clone(), hijo.clone());
+        if bloque
+            && let Some((ap, ah)) = ancla.filter(|(ap, _)| *ap == padre)
+            && let Some(v) = self.calc.lineas.get(&padre)
+        {
+            let pos = |h: &str| v.iter().position(|l| l.hijo == h);
+            if let (Some(a), Some(b)) = (pos(&ah), pos(&hijo)) {
+                let (a, b) = (a.min(b), a.max(b));
+                for l in &v[a..=b] {
+                    let x = (ap.clone(), l.hijo.clone());
+                    let es_partida = self
+                        .p
+                        .conceptos
+                        .get(&l.hijo)
+                        .is_some_and(|c| c.naturaleza != Naturaleza::Capitulo);
+                    if es_partida && !self.arbol_sel.contains(&x) {
+                        self.arbol_sel.push(x);
+                    }
+                }
+                return;
+            }
+        }
+        if let Some(i) = self.arbol_sel.iter().position(|x| *x == par) {
+            self.arbol_sel.remove(i);
+        } else {
+            self.arbol_sel.push(par);
         }
     }
 }

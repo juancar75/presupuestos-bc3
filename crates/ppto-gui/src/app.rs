@@ -35,6 +35,7 @@ mod ratio;
 mod recientes;
 mod recuperacion;
 mod sincronizar;
+mod sustituir;
 mod tarifa_doc;
 mod tarifas;
 mod tema;
@@ -81,6 +82,15 @@ enum Accion {
     Resumen(String, String),
     /// Cambiar el código de un concepto (viejo, nuevo) en todo el presupuesto.
     Renombrar(String, String),
+    /// Elegir en el árbol con Ctrl (añadir o quitar) o Mayús (`true`: bloque).
+    ElegirArbol(String, String, bool),
+    DejarDeElegir,
+    /// Varios cambios como uno solo (un deshacer); si uno falla, ninguno.
+    Lote(String, Vec<Accion>),
+    /// Abrir la ventana para sustituir un concepto en todo el presupuesto.
+    PedirSustituir(String),
+    /// Sustituir (viejo, nuevo) en todas las partidas.
+    Sustituir(String, String),
     /// Renumerar los capítulos con un prefijo («C» → C01, C02, C01.01…).
     RenumerarCapitulos(String),
     QuitarOferta(usize),
@@ -310,6 +320,13 @@ pub struct Aplicacion {
     cambios: bool,
     titulo: String,
     sel: Option<(String, String)>,
+    /// Partidas elegidas en el árbol con Ctrl o Mayús (capítulo, partida).
+    arbol_sel: Vec<(String, String)>,
+    /// Ventana «Sustituir … por…».
+    sustituir: Option<sustituir::FormSustituir>,
+    /// Aplicando un lote: sin copia propia en el historial.
+    en_lote: bool,
+    errores_lote: usize,
     pestana: Pestana,
     /// Capítulos plegados en la vista «Presupuesto».
     plegados: std::collections::HashSet<String>,
@@ -470,6 +487,8 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::Medicion(_, h, _) => (format!("medición de {h}"), None),
         Accion::Resumen(c, _) => (format!("resumen de {c}"), Some(format!("resumen|{c}"))),
         Accion::Renombrar(v, n) => (format!("código {v} → {n}"), None),
+        Accion::Lote(que, _) => (que.clone(), None),
+        Accion::Sustituir(v, n) => (format!("sustituir {v} por {n}"), None),
         Accion::RenumerarCapitulos(_) => ("renumerar capítulos".into(), None),
         Accion::Texto(c, _) => (format!("texto de {c}"), Some(format!("texto|{c}"))),
         Accion::Unidad(c, _) => (format!("unidad de {c}"), Some(format!("unidad|{c}"))),
@@ -597,6 +616,10 @@ impl Aplicacion {
             copiar_a: None,
             pegado_pendiente: None,
             guardar_kit: None,
+            arbol_sel: Vec::new(),
+            sustituir: None,
+            en_lote: false,
+            errores_lote: 0,
             carpeta_tarifas: None,
             abriendo_tarifa: None,
             copiar_al_sistema: None,
@@ -868,6 +891,13 @@ impl Aplicacion {
                 self.rehacer();
             }
         }
+        // Esc: deja de elegir varias partidas del árbol
+        if !self.arbol_sel.is_empty()
+            && !ui.ctx().egui_wants_keyboard_input()
+            && ui.ctx().input(|i| i.key_pressed(egui::Key::Escape))
+        {
+            self.arbol_sel.clear();
+        }
         // Atajos de Archivo y Ctrl+F (buscar)
         if ui
             .ctx()
@@ -1014,6 +1044,7 @@ impl Aplicacion {
         self.ventana_biblioteca(&ctx);
         self.ventana_sincro(&ctx);
         self.ventana_copiar_a(&ctx, &mut acciones);
+        self.ventana_sustituir(&ctx, &mut acciones);
         self.ventana_pegado_pendiente(&ctx, &mut acciones);
         self.ventana_guardar_kit(&ctx);
         self.sondear_tarifa(&ctx);
@@ -1074,6 +1105,14 @@ fn menu_linea(ui: &mut Ui, padre: &str, hijo: &str, es_capitulo: bool, acciones:
                 hijo.to_owned(),
             ));
         }
+        if ui.button("Sustituir en todo el presupuesto por…").clicked() {
+            acciones.push(Accion::PedirSustituir(hijo.to_owned()));
+        }
+        ui.label(
+            RichText::new("Ctrl + clic o Mayús + clic: elegir varias")
+                .weak()
+                .small(),
+        );
         ui.separator();
     }
     if ui

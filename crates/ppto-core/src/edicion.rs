@@ -448,6 +448,65 @@ impl Presupuesto {
         Ok(())
     }
 
+    /// Sustituye `viejo` por `nuevo` en todas las partidas y capítulos donde
+    /// está, con la misma cantidad. Si `nuevo` ya está en esa misma
+    /// descomposición, se suman las cantidades. Los dos deben ser del mismo
+    /// tipo: recursos (mano de obra, material…) o partidas. `viejo` queda en
+    /// el presupuesto sin usar. Devuelve en cuántos conceptos se ha cambiado.
+    pub fn sustituir(&mut self, viejo: &str, nuevo: &str) -> Result<usize, ErrorMotor> {
+        if viejo == nuevo {
+            return Ok(0);
+        }
+        let (v, n) = (self.concepto(viejo)?, self.concepto(nuevo)?);
+        let tipo = |c: &Concepto| match c.naturaleza {
+            Naturaleza::Capitulo => 0,
+            Naturaleza::Partida => 1,
+            _ => 2,
+        };
+        if tipo(v) == 0 || tipo(v) != tipo(n) {
+            return Err(ErrorMotor::ValorInvalido(format!(
+                "solo se sustituye un recurso por otro recurso, o una partida por otra partida («{viejo}» y «{nuevo}» no lo son)"
+            )));
+        }
+        let copia = self.clone();
+        let padres = self.padres(viejo);
+        let r = (|| {
+            for pa in &padres {
+                let c = self.concepto_mut(pa)?;
+                let Some(i) = c.descomposicion.iter().position(|l| l.hijo == viejo) else {
+                    continue;
+                };
+                if let Some(j) = c.descomposicion.iter().position(|l| l.hijo == nuevo) {
+                    let lv = c.descomposicion.remove(i);
+                    let j = if j > i { j - 1 } else { j };
+                    let ln = &mut c.descomposicion[j];
+                    if ln.factor != lv.factor {
+                        return Err(ErrorMotor::ValorInvalido(format!(
+                            "en «{pa}» ya está «{nuevo}» con otro factor: sustitúyalo a mano"
+                        )));
+                    }
+                    ln.rendimiento += lv.rendimiento;
+                    if self.mediciones.remove(&(pa.clone(), viejo.to_owned())).is_some() {
+                        return Err(ErrorMotor::ValorInvalido(format!(
+                            "en «{pa}» las dos tienen medición: sustitúyalo a mano"
+                        )));
+                    }
+                } else {
+                    nuevo.clone_into(&mut c.descomposicion[i].hijo);
+                    if let Some(m) = self.mediciones.remove(&(pa.clone(), viejo.to_owned())) {
+                        self.mediciones.insert((pa.clone(), nuevo.to_owned()), m);
+                    }
+                }
+            }
+            self.validar()
+        })();
+        if let Err(e) = r {
+            *self = copia;
+            return Err(e);
+        }
+        Ok(padres.len())
+    }
+
     /// Renumera los capítulos por orden: los de primer nivel
     /// `prefijo` + 2 cifras («C01», «C02»…) y los subcapítulos con el código
     /// del padre, un punto y 2 cifras («C01.01»…). Las partidas no cambian.
