@@ -571,12 +571,12 @@ impl Aplicacion {
         if ui
             .button("Legalización…")
             .on_hover_text(
-                "Tramitación, visitas de la OCA, justificación RITE/RSIF, desplazamientos, tasas, EICI y visado",
+                "Abre el programa de legalización en una ventana aparte: tramitación, visitas de la OCA, justificación RITE/RSIF, desplazamientos, tasas, EICI y visado",
             )
             .clicked()
         {
             ui.close();
-            self.ventana_legalizacion = Some(legalizacion::VentanaLegalizacion::abrir(&self.p));
+            self.abrir_legalizacion();
         }
     }
 

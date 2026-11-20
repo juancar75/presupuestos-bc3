@@ -1777,7 +1777,9 @@ fn se_pintan_las_ventanas_sin_pruebas() {
     // Recursos (dificultad y descuentos): que se abran y se pinten sin
     // romperse con el ejemplo.
     let mut app = Aplicacion::sin_ventana();
-    app.ventana_legalizacion = Some(legalizacion::VentanaLegalizacion::abrir(&app.p));
+    app.ventana_legalizacion = Some(legalizacion::VentanaLegalizacion::nueva(legalizacion::encargo(
+        &app.p, app.gg, app.bi,
+    )));
     app.abrir_tarifas();
     let ctx = Context::default();
     for _ in 0..3 {
@@ -3172,4 +3174,26 @@ fn escribir_comentario_en_la_hoja_de_medicion() {
         })
         .expect("se confirma el comentario");
     assert_eq!(nueva.lineas[0].comentario, "Cubierta bajo bandeja");
+}
+
+#[test]
+fn legalizacion_aparte_entrega_y_partida() {
+    use ppto_legalizacion::{Baremo, Disciplina, Documento, Expediente};
+    use ppto_legalizacion_app::Entrega;
+    let mut app = Aplicacion::sin_ventana();
+    let enc = legalizacion::encargo(&app.p, app.gg, app.bi);
+    assert!(!enc.capitulos.is_empty());
+    assert!(enc.lectura.is_some() && enc.existentes.is_empty());
+    let e = Entrega {
+        anio: 2026,
+        expediente: Expediente::nuevo(Disciplina::Rite, Documento::Memoria, Decimal::from(30_000)),
+    };
+    let total = app.aplicar_entrega_con(&Baremo::ejemplo(2026), &e).unwrap();
+    assert!(total > Decimal::ZERO);
+    assert!(app.p.conceptos.contains_key("LEG-RITE"));
+    assert_eq!(app.historial.deshacer.len(), 1);
+    // Volver a entregar la sustituye y el encargo la marca como existente.
+    app.aplicar_entrega_con(&Baremo::ejemplo(2026), &e).unwrap();
+    assert_eq!(app.p.padres("LEG-RITE").len(), 1);
+    assert_eq!(legalizacion::encargo(&app.p, app.gg, app.bi).existentes, ["LEG-RITE"]);
 }

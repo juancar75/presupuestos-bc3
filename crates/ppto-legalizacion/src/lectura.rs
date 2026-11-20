@@ -12,10 +12,11 @@ use ppto_core::formato::num;
 use ppto_core::{Naturaleza, Presupuesto};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Un dato propuesto y de dónde sale.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pista {
     pub dato: String,
     pub fuente: String,
@@ -24,7 +25,8 @@ pub struct Pista {
 }
 
 /// Datos sacados del presupuesto.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Lectura {
     /// Capítulos de primer nivel que parecen de cada disciplina (base del PEM).
     pub capitulos_rite: Vec<String>,
@@ -44,7 +46,14 @@ pub struct Lectura {
     pub if_kw_total: Decimal,
     pub atmosfera_artificial: bool,
     // PCI
-    pub sistemas_pci: Vec<&'static str>,
+    pub sistemas_pci: Vec<String>,
+    /// Ventilación del garaje (extracción, detección de CO): va en el
+    /// expediente PCI con certificado y proyecto.
+    pub ventilacion_garaje: bool,
+    /// Alcances leídos: climatización y ventilación, ACS, detección y extinción.
+    pub clima_ventilacion: bool,
+    pub acs: bool,
+    pub extincion: bool,
     pub bie: u32,
     pub detectores: u32,
     pub deteccion: bool,
@@ -62,8 +71,11 @@ impl Lectura {
     /// Registro frigorífico que corresponde a lo leído (memoria A2L o L1 en
     /// nivel 1; proyecto en nivel 2), si hay instalación frigorífica o
     /// refrigerante A2L.
+    ///
+    /// Solo con frío industrial o comercial (centrales, cámaras, murales): la
+    /// climatización con split o VRF va en el expediente RITE «con primario».
     pub fn registro_if(&self) -> Option<RegistroIf> {
-        if !self.frigorifica && self.refrigerante != Some(Refrigerante::A2l) {
+        if !self.frigorifica {
             return None;
         }
         let nivel2 = self.if_kw_sistema > Decimal::from(30)
@@ -110,6 +122,17 @@ impl Lectura {
         e.pci_bie |= self.bie > 0;
         e.pci_deteccion |= self.deteccion;
         e.presion_diferencial |= self.presion_diferencial;
+        match e.disciplina {
+            Disciplina::Rite => {
+                e.alcances.clima_ventilacion |= self.clima_ventilacion;
+                e.alcances.acs |= self.acs;
+            }
+            Disciplina::Pci => {
+                e.alcances.deteccion |= self.deteccion;
+                e.alcances.extincion |= self.extincion;
+                e.ventilacion_garaje |= self.ventilacion_garaje;
+            }
+        }
     }
 }
 
@@ -663,7 +686,7 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
                 continue;
             }
             let r = normalizar(&c.resumen);
-            if alguna(&r, &["incendio", "pci", "contraincendio", "proteccion contra"]) {
+            if alguna(&r, &["incendio", "pci", "contraincendio", "proteccion contra"]) || es_garaje(&r) {
                 l.capitulos_pci.push(c.codigo.clone());
             } else if alguna(
                 &r,
@@ -713,6 +736,19 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
         if t.contains("sala de maquinas") && !l.sala_maquinas {
             l.sala_maquinas = true;
             pista(&mut l, "Sala de máquinas".into(), fuente(&m), false);
+        }
+        if equipo && es_garaje(&t) && !l.ventilacion_garaje {
+            l.ventilacion_garaje = true;
+            pista(
+                &mut l,
+                "Ventilación de garaje: expediente PCI con certificado y proyecto".into(),
+                fuente(&m),
+                true,
+            );
+        }
+        if equipo && es_acs(&t) && !l.acs {
+            l.acs = true;
+            pista(&mut l, "Alcance: producción de ACS".into(), fuente(&m), false);
         }
         if t.contains("primario") && (t.contains("frigorific") || t.contains("enfriadora")) && !l.primario_frio {
             l.primario_frio = true;
@@ -801,9 +837,20 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
                     );
                 }
             }
+            l.clima_ventilacion = true;
             if g != Generador::Calor {
                 l.circuitos += entero(m.cantidad);
                 modelos.insert(m.codigo.clone());
+                if con_primario(&t) && !l.primario_frio {
+                    l.primario_frio = true;
+                    pista(
+                        &mut l,
+                        "Primario frigorífico (split/VRF): expediente RITE «con primario», sin registro frigorífico aparte"
+                            .into(),
+                        fuente(&m),
+                        true,
+                    );
+                }
             }
         }
 
@@ -836,11 +883,23 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
         }
     }
     l.modelos = modelos.len() as u32;
-    l.deteccion = sistemas.contains("detección");
+    l.deteccion = sistemas.contains("detección") || sistemas.contains("alarma");
+    l.extincion = [
+        "extintores",
+        "BIE",
+        "hidrantes",
+        "columna seca",
+        "rociadores",
+        "abastecimiento de agua",
+        "extinción automática",
+    ]
+    .iter()
+    .any(|s| sistemas.contains(s));
     l.sistemas_pci = SISTEMAS_PCI
         .iter()
         .map(|s| s.0)
         .filter(|s| sistemas.contains(s))
+        .map(str::to_owned)
         .collect();
     if l.bie > 0 {
         let n = l.bie;
@@ -856,6 +915,65 @@ pub fn leer_presupuesto(p: &Presupuesto) -> Lectura {
         );
     }
     l
+}
+
+/// Ventilación de garaje o aparcamiento (extracción, ventiladores, detección de CO).
+fn es_garaje(t: &str) -> bool {
+    alguna(t, &["garaje", "aparcamiento", "parking"])
+        && alguna(
+            t,
+            &[
+                "ventilacion",
+                "extraccion",
+                "extractor",
+                "ventilador",
+                "monoxido",
+                "deteccion de co",
+            ],
+        )
+}
+
+/// Producción de ACS («ACS» como palabra, agua caliente sanitaria, acumuladores).
+fn es_acs(t: &str) -> bool {
+    alguna(
+        t,
+        &[
+            "agua caliente sanitaria",
+            "interacumulador",
+            "acumulador de acs",
+            "termo electrico",
+        ],
+    ) || t.split(|c: char| !c.is_alphanumeric()).any(|w| w == "acs")
+}
+
+/// Equipo con circuito primario frigorífico: split, multisplit, bibloc o VRF
+/// (no los compactos ni los monobloc).
+fn con_primario(t: &str) -> bool {
+    alguna(
+        t,
+        &[
+            "split",
+            "vrf",
+            "vrv",
+            "bibloc",
+            "unidad exterior",
+            "ud exterior",
+            "ud. exterior",
+            "u. exterior",
+        ],
+    ) && !alguna(
+        t,
+        &[
+            "compacto",
+            "monobloc",
+            "monobloque",
+            "autonomo",
+            "rooftop",
+            "roof-top",
+            "roof top",
+            "enfriadora",
+        ],
+    )
 }
 
 fn rank(r: Refrigerante) -> u8 {
@@ -980,5 +1098,67 @@ mod tests {
         assert_eq!(refrigerante("gas R-410A").map(|r| r.0), Some(Refrigerante::L1));
         assert_eq!(refrigerante("R32 y R-290").map(|r| r.0), Some(Refrigerante::L3));
         assert_eq!(refrigerante("PR32 sin gas"), None);
+    }
+
+    #[test]
+    fn vrf_con_primario_sin_registro_frigorifico_y_garaje_a_pci() {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Gimnasio de prueba");
+        p.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN").unwrap();
+        p.nuevo_capitulo("OBRA", "C02", "VENTILACIÓN GARAJE").unwrap();
+        partida(
+            &mut p,
+            "C01",
+            "E01",
+            "Ud. Unidad exterior VRF bomba de calor R-32, potencia frigorífica 50,4 kW, calorífica 50,4 kW",
+            dec!(2),
+        );
+        partida(&mut p, "C01", "E02", "Ud. Termo eléctrico para ACS 100 l", dec!(1));
+        partida(
+            &mut p,
+            "C02",
+            "G01",
+            "Ud. Extractor helicoidal para ventilación de garaje F400",
+            dec!(2),
+        );
+        let l = leer_presupuesto(&p);
+        assert!(l.primario_frio);
+        assert_eq!(l.registro_if(), None);
+        assert!(l.acs && l.clima_ventilacion);
+        assert!(l.ventilacion_garaje);
+        assert_eq!(l.capitulos_pci, ["C02"]);
+        let mut e = Expediente::nuevo(Disciplina::Rite, crate::Documento::Memoria, dec!(80000));
+        l.rellenar(&mut e);
+        assert!(e.primario_frio && e.registro_if.is_none() && e.alcances.acs);
+        let mut e = Expediente::nuevo(Disciplina::Pci, crate::Documento::Memoria, dec!(10000));
+        l.rellenar(&mut e);
+        assert!(e.ventilacion_garaje && e.pci_exige_proyecto());
+    }
+
+    #[test]
+    fn compacto_y_monobloc_sin_primario() {
+        let mut p = Presupuesto::new("sintético", "OBRA", "Local");
+        p.nuevo_capitulo("OBRA", "C01", "CLIMATIZACIÓN").unwrap();
+        partida(
+            &mut p,
+            "C01",
+            "E01",
+            "Ud. Equipo compacto bomba de calor R-32, 12 kW frío, 13 kW calor",
+            dec!(1),
+        );
+        partida(
+            &mut p,
+            "C01",
+            "E02",
+            "Ud. Bomba de calor aerotermia monobloc R-290, 9 kW",
+            dec!(1),
+        );
+        assert!(!leer_presupuesto(&p).primario_frio);
+    }
+
+    #[test]
+    fn lectura_viaja_en_json() {
+        let l = leer_presupuesto(&supermercado());
+        let texto = serde_json::to_string(&l).unwrap();
+        assert_eq!(serde_json::from_str::<Lectura>(&texto).unwrap(), l);
     }
 }

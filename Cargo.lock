@@ -3629,6 +3629,7 @@ dependencies = [
  "ppto-db",
  "ppto-informes",
  "ppto-legalizacion",
+ "ppto-legalizacion-app",
  "ppto-modelo",
  "ppto-pdf",
  "ppto-propuestas",
@@ -3657,6 +3658,19 @@ version = "0.1.0-alpha.68"
 dependencies = [
  "ppto-core",
  "ppto-propuestas",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ppto-legalizacion-app"
+version = "0.1.0-alpha.68"
+dependencies = [
+ "eframe",
+ "ppto-core",
+ "ppto-legalizacion",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",

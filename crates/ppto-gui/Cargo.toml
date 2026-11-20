@@ -24,6 +24,7 @@ ppto-propuestas.workspace = true
 ppto-asistente.workspace = true
 ppto-biblioteca.workspace = true
 ppto-legalizacion.workspace = true
+ppto-legalizacion-app.workspace = true
 ppto-modelo.workspace = true
 ppto-actualizar.workspace = true
 serde.workspace = true
