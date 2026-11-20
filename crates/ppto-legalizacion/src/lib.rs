@@ -279,9 +279,13 @@ pub struct Baremo {
     pub rsif_horas_repetido: Decimal,
     /// Horas del técnico en cada visita a obra.
     pub horas_visita_obra: Decimal,
+    /// Horas del técnico en la visita de una memoria (0 = como en proyectos).
+    pub horas_visita_memoria: Decimal,
     /// Horas de la jornada: el total de horas se redondea al alza a jornadas
     /// completas (0 = sin redondeo).
     pub horas_jornada: Decimal,
+    /// Horas de la jornada en las memorias (0 = sin redondeo a jornadas).
+    pub horas_jornada_memoria: Decimal,
     /// Margen (costes indirectos, gestión y beneficio) según tamaño del
     /// encargo: `margen` para pequeños; 0 en mediano o grande = el de pequeño.
     pub margen_mediano: Decimal,
@@ -415,7 +419,9 @@ impl Default for Baremo {
             rsif_horas_modelo: z,
             rsif_horas_repetido: z,
             horas_visita_obra: z,
+            horas_visita_memoria: z,
             horas_jornada: z,
+            horas_jornada_memoria: z,
             margen_mediano: z,
             margen_grande: z,
             horas_mediano: z,
@@ -552,7 +558,9 @@ impl Baremo {
             rsif_horas_modelo: d(1),
             rsif_horas_repetido: Decimal::new(25, 2),
             horas_visita_obra: d(2),
+            horas_visita_memoria: Decimal::ZERO,
             horas_jornada: d(8),
+            horas_jornada_memoria: d(8),
             oca_horas: d(2),
             viaje_km: d(40),
             viaje_horas: d(1),
@@ -1446,10 +1454,15 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     }
 
     // 4. Visitas: de obra y de la OCA
-    if e.visitas_obra > 0 && !b.horas_visita_obra.is_zero() {
+    let horas_visita = if !proyecto && !b.horas_visita_memoria.is_zero() {
+        b.horas_visita_memoria
+    } else {
+        b.horas_visita_obra
+    };
+    if e.visitas_obra > 0 && !horas_visita.is_zero() {
         c.bloques.push(Bloque {
             titulo: format!("Visitas a obra ({})", e.visitas_obra),
-            regla: format!("{} h por visita", corto(b.horas_visita_obra)),
+            regla: format!("{} h por visita", corto(horas_visita)),
             lineas: vec![por_unidad(
                 format!(
                     "{}: {} en obra",
@@ -1461,7 +1474,7 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
                     }
                 ),
                 "h",
-                b.horas_visita_obra * d(e.visitas_obra),
+                horas_visita * d(e.visitas_obra),
                 b.coste_tecnico,
                 Tipo::ManoObra,
             )],
@@ -1538,9 +1551,14 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
     // 5b. Jornadas completas: el total de horas se redondea al alza a jornadas
     // y la diferencia va en un bloque propio, repartida como la tarea principal.
     let mut horas_mo: Decimal = c.lineas().filter(|l| l.unidad == "h").map(|l| l.cantidad).sum();
-    if b.horas_jornada > Decimal::ZERO && horas_mo > Decimal::ZERO {
-        let jornadas = (horas_mo / b.horas_jornada).ceil();
-        let extra = jornadas * b.horas_jornada - horas_mo;
+    let jornada = if proyecto {
+        b.horas_jornada
+    } else {
+        b.horas_jornada_memoria
+    };
+    if jornada > Decimal::ZERO && horas_mo > Decimal::ZERO {
+        let jornadas = (horas_mo / jornada).ceil();
+        let extra = jornadas * jornada - horas_mo;
         if extra > Decimal::ZERO {
             let mut nuevas = horas_perfil(b, "ajuste a jornada completa", extra, reparto);
             // El redondeo de cada línea no debe descuadrar el total.
@@ -1555,12 +1573,12 @@ fn calcular_sin_revisiones(b: &Baremo, e: &Expediente) -> Calculo {
                     "{} h para completar {} jornadas de {} h ({} h de trabajo)",
                     num(extra, 1),
                     jornadas,
-                    corto(b.horas_jornada),
+                    corto(jornada),
                     num(horas_mo, 1)
                 ),
                 lineas: nuevas,
             });
-            horas_mo = jornadas * b.horas_jornada;
+            horas_mo = jornadas * jornada;
         }
     }
 
@@ -1995,6 +2013,7 @@ mod tests {
     fn b() -> Baremo {
         Baremo {
             horas_jornada: Decimal::ZERO,
+            horas_jornada_memoria: Decimal::ZERO,
             ..Baremo::ejemplo(2026)
         }
     }
@@ -2177,6 +2196,26 @@ mod tests {
         assert_eq!(horas(&c, "Elaboración"), dec!(4.28));
         // Sin jornada no se redondea.
         assert!(calcular(&b(), &e).horas < dec!(11));
+        // Jornada propia de las memorias: sin redondeo en la memoria y con
+        // él en el proyecto.
+        let mut bm = Baremo::ejemplo(2026);
+        bm.horas_jornada_memoria = Decimal::ZERO;
+        assert!(calcular(&bm, &e).horas < dec!(11));
+        let p = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(7000));
+        assert!(bloque(&calcular(&bm, &p), "Ajuste a jornada completa").is_some());
+    }
+
+    #[test]
+    fn visita_de_memoria() {
+        let mut bm = b();
+        bm.horas_visita_memoria = dec!(1.25);
+        let e = Expediente::nuevo(Disciplina::Rite, Documento::Memoria, dec!(30000));
+        assert_eq!(horas(&calcular(&bm, &e), "Visitas a obra"), dec!(1.25));
+        // En proyectos manda la visita general (2 visitas × 2 h).
+        let p = Expediente::nuevo(Disciplina::Pci, Documento::Proyecto, dec!(80000));
+        assert_eq!(horas(&calcular(&bm, &p), "Visitas a obra"), dec!(4));
+        // Sin valor propio, la memoria usa la general.
+        assert_eq!(horas(&calcular(&b(), &e), "Visitas a obra"), dec!(2));
     }
 
     #[test]
