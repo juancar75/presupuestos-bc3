@@ -666,6 +666,21 @@ impl Baremos {
             .or_else(|| self.versiones.iter().min_by_key(|b| b.anio))
     }
 
+    /// Trae los baremos de `otro` (un fichero que pasa un compañero): cada año
+    /// importado sustituye al del mismo año. Devuelve los años importados.
+    pub fn importar(&mut self, otro: Baremos) -> Vec<i32> {
+        let mut anios = Vec::new();
+        for b in otro.versiones {
+            anios.push(b.anio);
+            self.versiones.retain(|v| v.anio != b.anio);
+            self.versiones.push(b);
+        }
+        self.versiones.sort_by_key(|b| b.anio);
+        anios.sort_unstable();
+        anios.dedup();
+        anios
+    }
+
     /// Crea (copiando el último) o devuelve el baremo de `anio`.
     pub fn del_anio(&mut self, anio: i32) -> &mut Baremo {
         if let Some(i) = self.versiones.iter().position(|b| b.anio == anio) {
@@ -2203,6 +2218,22 @@ mod tests {
         assert!(calcular(&bm, &e).horas < dec!(11));
         let p = Expediente::nuevo(Disciplina::Rite, Documento::Proyecto, dec!(7000));
         assert!(bloque(&calcular(&bm, &p), "Ajuste a jornada completa").is_some());
+    }
+
+    #[test]
+    fn importar_sustituye_el_mismo_anio() {
+        let mut bs = Baremos {
+            versiones: vec![Baremo::ejemplo(2025), Baremo::ejemplo(2026)],
+        };
+        let mut nuevo = Baremo::ejemplo(2026);
+        nuevo.aparcamiento = Decimal::ZERO;
+        let anios = bs.importar(Baremos {
+            versiones: vec![nuevo, Baremo::ejemplo(2027)],
+        });
+        assert_eq!(anios, vec![2026, 2027]);
+        assert_eq!(bs.versiones.len(), 3);
+        assert!(bs.vigente(2026).unwrap().aparcamiento.is_zero());
+        assert!(!bs.vigente(2025).unwrap().aparcamiento.is_zero());
     }
 
     #[test]

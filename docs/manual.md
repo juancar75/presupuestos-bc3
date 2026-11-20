@@ -179,6 +179,13 @@ Claude hace la misma comparación (`comparar_obras`) y explica cada desviación 
 
 **Planos DXF**: si la carpeta de documentos tiene planos en DXF, Claude cuenta los aparatos dibujados (bloques por nombre y capa: detectores, BIE, extintores, rejillas…), lee las leyendas y mide la distancia de cada aparato al más cercano y la superficie que cubren, para comprobar la medición del cliente y las coberturas. Los planos en PDF solo aportan sus textos. Los **DWG** se convierten solos a DXF (en la misma carpeta) si está LibreDWG: descargue el paquete de Windows (win64) de https://github.com/LibreDWG/libredwg/releases (libre, GPL-3) y deje `dwg2dxf.exe` y sus DLL junto a `ppto-gui.exe`; si no, guárdelos como DXF desde el CAD.
 
+### Legalización (RITE, PCI)
+
+La ventana de legalización calcula la partida de un expediente con el baremo propio: horas por tarea a coste de cada perfil, desplazamientos, y tasas, EICI y visados repercutidos sin margen. Como instalador va a coste y el margen lo pone la obra.
+
+- **Editar el baremo**: horas por tarea, costes por perfil, viajes y tablas. Las memorias tienen su propia visita a obra y su propia jornada (0 = sin redondeo a jornadas).
+- **Importar baremo…**: trae un `legalizacion.json` (de un compañero o de Claude). Cada año que trae sustituye al mismo año del baremo propio; los demás años se quedan.
+
 ## 9. Trabajar con Claude: propuestas IA
 
 Claude se conecta a la obra abierta en el programa y propone precios, pero nunca cambia nada por su cuenta: todo queda como propuesta hasta que la aceptas.
