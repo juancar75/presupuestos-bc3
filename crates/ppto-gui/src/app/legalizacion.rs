@@ -390,6 +390,42 @@ impl VentanaLegalizacion {
         }
     }
 
+    fn importar_baremo(&mut self, f: &std::path::Path) {
+        let Some(r) = self.ruta.clone() else {
+            self.mensaje = Some(("No se encuentra la carpeta de configuración.".into(), true));
+            return;
+        };
+        let otro = match Baremos::cargar(f) {
+            Ok(b) if !b.versiones.is_empty() => b,
+            Ok(_) => {
+                self.mensaje = Some(("El fichero no trae ningún baremo.".into(), true));
+                return;
+            }
+            Err(e) => {
+                self.mensaje = Some((format!("No se pudo leer el baremo: {e}"), true));
+                return;
+            }
+        };
+        // Se relee el propio para no pisar cambios hechos desde otro equipo.
+        let mut bs = match Baremos::cargar(&r) {
+            Ok(b) => b,
+            Err(e) => {
+                self.mensaje = Some((e.to_string(), true));
+                return;
+            }
+        };
+        let anios = bs.importar(otro);
+        match bs.guardar(&r) {
+            Ok(()) => {
+                self.baremos = bs;
+                self.cargar_edicion();
+                let lista: Vec<String> = anios.iter().map(ToString::to_string).collect();
+                self.mensaje = Some((format!("Baremo importado: {}.", lista.join(", ")), false));
+            }
+            Err(e) => self.mensaje = Some((format!("No se pudo guardar el baremo: {e}"), true)),
+        }
+    }
+
     fn crear_plantilla(&mut self) {
         let Some(r) = self.ruta.clone() else {
             return;
@@ -539,6 +575,18 @@ impl Aplicacion {
                             ui.horizontal(|ui| {
                                 if ui.button(format!("Guardar baremo {}", v.anio)).clicked() {
                                     v.guardar_baremo();
+                                }
+                                if ui
+                                    .button("Importar baremo…")
+                                    .on_hover_text(
+                                        "Trae un legalizacion.json (de un compañero o de Claude): cada año que \
+                                         trae sustituye al mismo año de su baremo; los demás se quedan",
+                                    )
+                                    .clicked()
+                                    && let Some(f) =
+                                        rfd::FileDialog::new().add_filter("Baremo", &["json"]).pick_file()
+                                {
+                                    v.importar_baremo(&f);
                                 }
                             });
                         });
