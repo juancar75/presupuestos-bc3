@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.72] - 2026-11-20
+
 ### Añadido
 - **Elegir varias partidas en el árbol** (Ctrl + clic, Mayús + clic, Esc): suma, mover o copiar a otro capítulo, excluir/incluir y quitar, de una vez y con un solo deshacer; si una falla, no se hace ninguna.
 - **Sustituir en todo el presupuesto**: un recurso por otro (o una partida por otra) en todas las partidas, con la misma cantidad (si ya estaba, se suman).
