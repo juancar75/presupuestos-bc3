@@ -5,6 +5,10 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Cambiar el código** de un capítulo, partida o recurso (clic derecho → «Código»): cambia en todas sus líneas, mediciones y en el seguimiento, con deshacer.
+- **Renumerar capítulos** (clic derecho en el nombre de la obra): C01, C02… y subcapítulos C01.01…, por orden; se pueden intercambiar códigos sin conflictos.
+
 ## [0.1.0-alpha.70] - 2026-11-20
 
 ### Añadido

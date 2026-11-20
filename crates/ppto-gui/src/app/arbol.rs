@@ -114,6 +114,16 @@ impl Aplicacion {
             if ui.button("Nuevo capítulo").clicked() {
                 acciones.push(Accion::Alta(TipoAlta::Capitulo { padre: raiz.clone() }));
             }
+            if ui
+                .button("Renumerar capítulos (C01, C02, C01.01…)")
+                .on_hover_text(
+                    "Pone los códigos de los capítulos en orden; las partidas no cambian. Se puede deshacer.",
+                )
+                .clicked()
+            {
+                acciones.push(Accion::RenumerarCapitulos("C".into()));
+                ui.close();
+            }
             if let Some((o, h, cortar)) = &self.portapapeles
                 && ui.button(format!("Pegar aquí {h}")).clicked()
             {
@@ -356,6 +366,7 @@ impl Aplicacion {
                         } else {
                             ui.data_mut(|d| d.insert_temp(id_t, titulo));
                         }
+                        editar_codigo(ui, cab.id.with("codigo"), &l.hijo, acciones);
                         ui.separator();
                         if ui.button("Nueva partida aquí").clicked() {
                             acciones.push(Accion::Alta(TipoAlta::Partida {
@@ -465,5 +476,35 @@ impl Aplicacion {
                 r.context_menu(|ui| menu_linea(ui, capitulo, &l.hijo, false, acciones));
             }
         }
+    }
+}
+
+/// Campo «Código» con su botón: cambia el código del concepto en todo el
+/// presupuesto (líneas, mediciones y seguimiento).
+pub(super) fn editar_codigo(ui: &mut Ui, id: egui::Id, codigo: &str, acciones: &mut Vec<Accion>) {
+    let mut c = ui
+        .data_mut(|d| d.get_temp::<String>(id))
+        .unwrap_or_else(|| codigo.to_owned());
+    ui.horizontal(|ui| {
+        ui.label("Código:");
+        let t = ui.add(egui::TextEdit::singleline(&mut c).desired_width(120.0));
+        let enter = t.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if (ui
+            .button("Cambiar")
+            .on_hover_text("Cambia el código en todo el presupuesto. Se puede deshacer.")
+            .clicked()
+            || enter)
+            && c.trim() != codigo
+            && !c.trim().is_empty()
+        {
+            acciones.push(Accion::Renombrar(codigo.to_owned(), c.trim().to_owned()));
+            ui.data_mut(|d| d.remove::<String>(id));
+            ui.close();
+        }
+    });
+    if ui.should_close() {
+        ui.data_mut(|d| d.remove::<String>(id));
+    } else {
+        ui.data_mut(|d| d.insert_temp(id, c));
     }
 }

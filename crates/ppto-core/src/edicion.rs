@@ -384,6 +384,131 @@ impl Presupuesto {
         Ok(())
     }
 
+    /// Cambia el código de un concepto (capítulo, partida o recurso) en todo
+    /// el presupuesto: sus líneas, sus mediciones y el seguimiento.
+    pub fn renombrar(&mut self, viejo: &str, nuevo: &str) -> Result<(), ErrorMotor> {
+        if viejo == nuevo {
+            return Ok(());
+        }
+        validar_codigo(nuevo)?;
+        self.concepto(viejo)?;
+        if self.conceptos.contains_key(nuevo) {
+            return Err(ErrorMotor::ValorInvalido(format!(
+                "ya hay un concepto con el código «{nuevo}»"
+            )));
+        }
+        let cambia = |x: &mut String| {
+            if x == viejo {
+                nuevo.clone_into(x);
+            }
+        };
+        let mut c = self
+            .conceptos
+            .remove(viejo)
+            .ok_or_else(|| ErrorMotor::ConceptoInexistente(viejo.into()))?;
+        nuevo.clone_into(&mut c.codigo);
+        self.conceptos.insert(nuevo.to_owned(), c);
+        for c in self.conceptos.values_mut() {
+            for l in &mut c.descomposicion {
+                cambia(&mut l.hijo);
+            }
+        }
+        cambia(&mut self.raiz);
+        self.mediciones = std::mem::take(&mut self.mediciones)
+            .into_iter()
+            .map(|((mut pa, mut hi), m)| {
+                cambia(&mut pa);
+                cambia(&mut hi);
+                ((pa, hi), m)
+            })
+            .collect();
+        // Seguimiento (contradictorios, certificaciones, pedidos…): todo texto
+        // o clave que sea exactamente el código viejo.
+        if !self.seguimiento.esta_vacio()
+            && let Ok(mut v) = serde_json::to_value(&self.seguimiento)
+        {
+            fn cambiar(v: &mut serde_json::Value, viejo: &str, nuevo: &str) {
+                match v {
+                    serde_json::Value::String(s) if s == viejo => nuevo.clone_into(s),
+                    serde_json::Value::Array(a) => a.iter_mut().for_each(|x| cambiar(x, viejo, nuevo)),
+                    serde_json::Value::Object(o) => {
+                        if let Some(x) = o.remove(viejo) {
+                            o.insert(nuevo.to_owned(), x);
+                        }
+                        o.values_mut().for_each(|x| cambiar(x, viejo, nuevo));
+                    }
+                    _ => {}
+                }
+            }
+            cambiar(&mut v, viejo, nuevo);
+            if let Ok(s) = serde_json::from_value(v) {
+                self.seguimiento = s;
+            }
+        }
+        Ok(())
+    }
+
+    /// Renumera los capítulos por orden: los de primer nivel
+    /// `prefijo` + 2 cifras («C01», «C02»…) y los subcapítulos con el código
+    /// del padre, un punto y 2 cifras («C01.01»…). Las partidas no cambian.
+    /// Devuelve los cambios (viejo, nuevo).
+    pub fn renumerar_capitulos(&mut self, prefijo: &str) -> Result<Vec<(String, String)>, ErrorMotor> {
+        fn recorrer(p: &Presupuesto, padre: &str, base: &str, nivel: usize, out: &mut Vec<(String, String)>) {
+            let Some(c) = p.conceptos.get(padre) else { return };
+            let mut n = 0;
+            for l in &c.descomposicion {
+                if p.conceptos
+                    .get(&l.hijo)
+                    .is_some_and(|h| h.naturaleza == Naturaleza::Capitulo)
+                    && !out.iter().any(|(v, _)| v == &l.hijo)
+                {
+                    n += 1;
+                    let codigo = if nivel == 0 {
+                        format!("{base}{n:02}")
+                    } else {
+                        format!("{base}.{n:02}")
+                    };
+                    out.push((l.hijo.clone(), codigo.clone()));
+                    if nivel < 8 {
+                        recorrer(p, &l.hijo, &codigo, nivel + 1, out);
+                    }
+                }
+            }
+        }
+        validar_codigo(&format!("{prefijo}01"))?;
+        let mut plan = Vec::new();
+        let raiz = self.raiz.clone();
+        recorrer(self, &raiz, prefijo, 0, &mut plan);
+        plan.retain(|(v, n)| v != n);
+        // Un código nuevo no puede ser de un concepto que no se renumera.
+        if let Some((_, n)) = plan
+            .iter()
+            .find(|(_, n)| self.conceptos.contains_key(n) && !plan.iter().any(|(v, _)| v == n))
+        {
+            return Err(ErrorMotor::ValorInvalido(format!(
+                "el código «{n}» ya lo usa otro concepto; cámbielo antes"
+            )));
+        }
+        let copia = self.clone();
+        // En dos pasos (a un código temporal y luego al definitivo) para
+        // poder intercambiar C01 y C02.
+        let temporal = |i: usize| format!("__renumerar_{i}");
+        let r = (|| {
+            for (i, (v, _)) in plan.iter().enumerate() {
+                self.renombrar(v, &temporal(i))?;
+            }
+            for (i, (_, n)) in plan.iter().enumerate() {
+                self.renombrar(&temporal(i), n)?;
+            }
+            self.validar()
+        })();
+        if let Err(e) = r {
+            *self = copia;
+            return Err(e);
+        }
+        Ok(plan)
+    }
+
     /// Conceptos que contienen a `codigo` en su descomposición.
     pub fn padres(&self, codigo: &str) -> Vec<String> {
         self.conceptos

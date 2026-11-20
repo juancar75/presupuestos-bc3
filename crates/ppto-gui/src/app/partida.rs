@@ -126,7 +126,10 @@ impl Aplicacion {
             ui.label(RichText::new(ruta.join("  >  ")).weak().small());
         });
         ui.horizontal(|ui| {
-            ui.label(RichText::new(&c.codigo).strong().size(16.0));
+            let r = ui
+                .add(egui::Label::new(RichText::new(&c.codigo).strong().size(16.0)).sense(egui::Sense::click()))
+                .on_hover_text("Clic derecho: cambiar el código");
+            r.context_menu(|ui| super::arbol::editar_codigo(ui, r.id.with("codigo"), &c.codigo, acciones));
             let mut unidad = c.unidad.clone();
             if ui
                 .add(egui::TextEdit::singleline(&mut unidad).desired_width(40.0))
@@ -218,6 +221,8 @@ impl Aplicacion {
                                         clic = Some((l.hijo.clone(), egui::Modifiers::NONE));
                                     }
                                     let n = if marcada { elegidas.len() } else { 1 };
+                                    super::arbol::editar_codigo(ui, r.id.with("codigo"), &l.hijo, acciones);
+                                    ui.separator();
                                     if ui.button(format!("Copiar {n} líneas (Ctrl+C)")).clicked() {
                                         menu = Some(1);
                                         ui.close();
