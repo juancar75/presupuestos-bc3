@@ -65,6 +65,10 @@ En las tablas, las celdas con recuadro se editan: escribe y pulsa Intro.
 
 **Cambiar códigos**: clic derecho en un capítulo del árbol, en el código de la partida (arriba en la pestaña Partida) o en una línea del descompuesto → «Código» → escribe el nuevo y «Cambiar». Cambia en todo el presupuesto (líneas, mediciones, contradictorios y certificaciones). Clic derecho en el nombre de la obra → **Renumerar capítulos** los deja en orden: C01, C02… y los subcapítulos C01.01, C01.02… (las partidas no cambian). Las dos cosas se deshacen con Ctrl+Z.
 
+**Elegir varias partidas** en el árbol: Ctrl + clic añade o quita una; Mayús + clic elige el bloque desde la última, dentro del mismo capítulo (Esc deja de elegir). Clic derecho sobre una de ellas: cuánto suman, **Mover a…** o **Copiar a…** otro capítulo, excluir o quitar «excluida», marcar o quitar «incluida en otra», o quitarlas. Todo se hace de una vez y se deshace con un solo Ctrl+Z; si algo falla, no se cambia nada.
+
+**Sustituir en todo el presupuesto**: clic derecho en una línea del descompuesto (o en una partida del árbol) → «Sustituir … por…», y elija el recurso o la partida nueva (del mismo tipo). Se pone con la misma cantidad en todas las partidas donde estaba (si ya estaba, se suman las cantidades). Por ejemplo, cambiar un detector de una marca por el de otra en toda la obra.
+
 ## 4. Comprobar antes de valorar
 
 Lo primero, antes de poner precios: **Precios → «Comprobar antes de valorar…»** (se abre sola al importar un ciego). Lee la obra y dice si están los recursos para sacar los precios:

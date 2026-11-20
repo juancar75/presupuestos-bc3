@@ -3195,3 +3195,73 @@ fn cambiar_codigo_y_renumerar_capitulos() {
     app.deshacer();
     assert!(app.p.conceptos.contains_key("C01"));
 }
+
+#[test]
+fn elegir_varias_partidas_y_moverlas_de_una_vez() {
+    let mut app = Aplicacion::sin_ventana();
+    let pem = app.calc.pem;
+    app.aplicar(vec![Accion::NuevoCapitulo {
+        padre: "OBRA".into(),
+        codigo: "C02".into(),
+        resumen: "Destino".into(),
+    }]);
+    // Clic en la primera y Mayús + clic en la segunda: el bloque
+    app.aplicar(vec![Accion::Seleccionar("C01".into(), "SR.M2".into())]);
+    app.aplicar(vec![Accion::ElegirArbol("C01".into(), "SR.COL8".into(), true)]);
+    assert_eq!(app.arbol_sel.len(), 2);
+    // Ctrl + clic quita una y la vuelve a poner
+    app.aplicar(vec![Accion::ElegirArbol("C01".into(), "SR.COL8".into(), false)]);
+    assert_eq!(app.arbol_sel.len(), 1);
+    app.aplicar(vec![Accion::ElegirArbol("C01".into(), "SR.COL8".into(), false)]);
+    let n = app.historial.deshacer.len();
+    let v = app
+        .arbol_sel
+        .iter()
+        .map(|(c, h)| Accion::Trasladar(c.clone(), h.clone(), "C02".into(), None))
+        .collect();
+    app.aplicar(vec![Accion::Lote("mover".into(), v)]);
+    assert!(app.p.conceptos["C01"].descomposicion.is_empty());
+    assert_eq!(app.p.conceptos["C02"].descomposicion.len(), 2);
+    assert_eq!(app.calc.pem, pem);
+    assert!(app.arbol_sel.is_empty());
+    // Un solo deshacer para todo el lote
+    assert_eq!(app.historial.deshacer.len(), n + 1);
+    app.deshacer();
+    assert_eq!(app.p.conceptos["C01"].descomposicion.len(), 2);
+    // Si una falla, no se hace ninguna
+    let antes = app.p.clone();
+    app.aplicar(vec![Accion::Lote(
+        "mover".into(),
+        vec![
+            Accion::Trasladar("C01".into(), "SR.M2".into(), "C02".into(), None),
+            Accion::Trasladar("C01".into(), "NO-EXISTE".into(), "C02".into(), None),
+        ],
+    )]);
+    assert_eq!(app.p, antes);
+    assert_eq!(app.historial.deshacer.len(), n);
+}
+
+#[test]
+fn sustituir_un_recurso_desde_la_interfaz() {
+    let mut app = Aplicacion::sin_ventana();
+    let de = app.p.conceptos["SR.M2"].descomposicion[0].hijo.clone();
+    let por = app
+        .p
+        .conceptos
+        .values()
+        .find(|c| {
+            c.codigo != de
+                && c.naturaleza == app.p.conceptos[&de].naturaleza
+                && !app.p.conceptos["SR.M2"]
+                    .descomposicion
+                    .iter()
+                    .any(|l| l.hijo == c.codigo)
+        })
+        .map(|c| c.codigo.clone())
+        .unwrap();
+    app.aplicar(vec![Accion::Sustituir(de.clone(), por.clone())]);
+    assert!(app.p.padres(&de).is_empty());
+    assert!(app.p.conceptos["SR.M2"].descomposicion.iter().any(|l| l.hijo == por));
+    app.deshacer();
+    assert!(!app.p.padres(&de).is_empty());
+}

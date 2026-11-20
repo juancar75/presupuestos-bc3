@@ -653,3 +653,32 @@ fn renombrar_y_renumerar_capitulos() {
     // Otra vez: ya está numerado
     assert!(p.renumerar_capitulos("C").unwrap().is_empty());
 }
+
+#[test]
+fn sustituir_un_recurso_en_todas_las_partidas() {
+    let mut p = Presupuesto::new("Nueva", "OBRA", "Obra nueva");
+    p.nuevo_capitulo("OBRA", "C01", "PCI").unwrap();
+    for pt in ["P1", "P2"] {
+        p.nueva_partida("C01", pt, "ud", "Detector").unwrap();
+    }
+    p.nuevo_recurso("DET-A", "ud", "Detector marca A", Naturaleza::Material, dec!(30))
+        .unwrap();
+    p.nuevo_recurso("DET-B", "ud", "Detector marca B", Naturaleza::Material, dec!(25))
+        .unwrap();
+    p.nuevo_recurso("MO", "h", "Oficial", Naturaleza::ManoObra, dec!(20))
+        .unwrap();
+    p.anadir_linea("P1", "DET-A", dec!(1)).unwrap();
+    p.anadir_linea("P2", "DET-A", dec!(2)).unwrap();
+    p.anadir_linea("P2", "DET-B", dec!(1)).unwrap();
+    assert_eq!(p.sustituir("DET-A", "DET-B").unwrap(), 2);
+    assert_eq!(p.precio("P1").unwrap(), dec!(25));
+    // En P2 ya estaba DET-B: se suman (2 + 1) × 25
+    assert_eq!(p.precio("P2").unwrap(), dec!(75));
+    assert!(p.padres("DET-A").is_empty());
+    // Tipos distintos: no
+    let antes = p.clone();
+    assert!(p.sustituir("DET-B", "P1").is_err());
+    assert_eq!(p, antes);
+    // Material por mano de obra sí (los dos son recursos)
+    assert_eq!(p.sustituir("DET-B", "MO").unwrap(), 2);
+}
