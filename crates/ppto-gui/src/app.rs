@@ -79,6 +79,10 @@ enum Accion {
     Rendimiento(String, String, Decimal),
     Medicion(String, String, Medicion),
     Resumen(String, String),
+    /// Cambiar el código de un concepto (viejo, nuevo) en todo el presupuesto.
+    Renombrar(String, String),
+    /// Renumerar los capítulos con un prefijo («C» → C01, C02, C01.01…).
+    RenumerarCapitulos(String),
     QuitarOferta(usize),
     Ir(String),
     Ci(Decimal),
@@ -465,6 +469,8 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::Rendimiento(p, h, _) => (format!("cantidad de {h} en {p}"), None),
         Accion::Medicion(_, h, _) => (format!("medición de {h}"), None),
         Accion::Resumen(c, _) => (format!("resumen de {c}"), Some(format!("resumen|{c}"))),
+        Accion::Renombrar(v, n) => (format!("código {v} → {n}"), None),
+        Accion::RenumerarCapitulos(_) => ("renumerar capítulos".into(), None),
         Accion::Texto(c, _) => (format!("texto de {c}"), Some(format!("texto|{c}"))),
         Accion::Unidad(c, _) => (format!("unidad de {c}"), Some(format!("unidad|{c}"))),
         Accion::Naturaleza(c, _) => (format!("tipo de {c}"), None),

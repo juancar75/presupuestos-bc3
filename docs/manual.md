@@ -63,6 +63,8 @@ A la izquierda, el árbol de capítulos y partidas; a la derecha, las pestañas 
 
 En las tablas, las celdas con recuadro se editan: escribe y pulsa Intro.
 
+**Cambiar códigos**: clic derecho en un capítulo del árbol, en el código de la partida (arriba en la pestaña Partida) o en una línea del descompuesto → «Código» → escribe el nuevo y «Cambiar». Cambia en todo el presupuesto (líneas, mediciones, contradictorios y certificaciones). Clic derecho en el nombre de la obra → **Renumerar capítulos** los deja en orden: C01, C02… y los subcapítulos C01.01, C01.02… (las partidas no cambian). Las dos cosas se deshacen con Ctrl+Z.
+
 ## 4. Comprobar antes de valorar
 
 Lo primero, antes de poner precios: **Precios → «Comprobar antes de valorar…»** (se abre sola al importar un ciego). Lee la obra y dice si están los recursos para sacar los precios:

@@ -612,3 +612,44 @@ fn kit_como_subpartida() {
     assert!(pegar_como_subpartida(&mut q, &f, "KIT.01", "ud", "x", "SR.COL8", dec!(1)).is_err());
     assert_eq!(q, r);
 }
+
+#[test]
+fn renombrar_y_renumerar_capitulos() {
+    let mut p = Presupuesto::new("Nueva", "OBRA", "Obra nueva");
+    p.nuevo_capitulo("OBRA", "CAP-B", "Ventilación").unwrap();
+    p.nuevo_capitulo("OBRA", "C01", "Fontanería").unwrap();
+    p.nuevo_capitulo("CAP-B", "SUB", "Extracción").unwrap();
+    p.nueva_partida("SUB", "P1", "ud", "Extractor").unwrap();
+    p.nuevo_recurso("MT1", "ud", "Extractor", Naturaleza::Material, dec!(100))
+        .unwrap();
+    p.anadir_linea("P1", "MT1", dec!(1)).unwrap();
+    p.fijar_rendimiento("SUB", "P1", dec!(3)).unwrap();
+    let pem = p.pem().unwrap();
+
+    // Renombrar un recurso: cambia en la partida
+    p.renombrar("MT1", "MT-EXT").unwrap();
+    assert_eq!(p.concepto("P1").unwrap().descomposicion[0].hijo, "MT-EXT");
+    assert!(p.renombrar("MT-EXT", "P1").is_err(), "código ya usado");
+    assert!(p.renombrar("MT-EXT", "A|B").is_err(), "reservado");
+
+    // Renumerar: CAP-B → C01, C01 → C02 (intercambio), SUB → C01.01
+    let plan = p.renumerar_capitulos("C").unwrap();
+    assert_eq!(plan.len(), 3);
+    let hijos: Vec<_> = p
+        .concepto("OBRA")
+        .unwrap()
+        .descomposicion
+        .iter()
+        .map(|l| l.hijo.clone())
+        .collect();
+    assert_eq!(hijos, ["C01", "C02"]);
+    assert_eq!(p.concepto("C01").unwrap().resumen, "Ventilación");
+    assert_eq!(p.concepto("C02").unwrap().resumen, "Fontanería");
+    assert_eq!(p.concepto("C01.01").unwrap().resumen, "Extracción");
+    // Medición y PEM intactos
+    assert_eq!(p.pem().unwrap(), pem);
+    assert!(p.mediciones.keys().all(|(pa, _)| pa != "SUB"));
+    p.validar().unwrap();
+    // Otra vez: ya está numerado
+    assert!(p.renumerar_capitulos("C").unwrap().is_empty());
+}

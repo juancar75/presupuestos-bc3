@@ -127,6 +127,23 @@ impl Aplicacion {
                     Err(e) => Err(ppto_core::ErrorMotor::ValorInvalido(e)),
                 },
                 Accion::Margen(c, m) => self.p.fijar_margen(&c, m),
+                Accion::Renombrar(viejo, nuevo) => {
+                    let nuevo = nuevo.trim().to_owned();
+                    self.p.renombrar(&viejo, &nuevo).map(|()| {
+                        self.cambiar_codigo_en_vista(&viejo, &nuevo);
+                        self.info(format!("Código {viejo} cambiado a {nuevo} en todo el presupuesto."));
+                    })
+                }
+                Accion::RenumerarCapitulos(prefijo) => self.p.renumerar_capitulos(prefijo.trim()).map(|plan| {
+                    for (v, n) in &plan {
+                        self.cambiar_codigo_en_vista(v, n);
+                    }
+                    if plan.is_empty() {
+                        self.info("Los capítulos ya estaban numerados.");
+                    } else {
+                        self.info(format!("{} capítulos renumerados.", plan.len()));
+                    }
+                }),
                 Accion::Excluir(c, e) => self.p.fijar_excluida(&c, e),
                 Accion::Incluir(c, i) => self.p.fijar_incluida(&c, i),
                 Accion::VentaFija(c, v) => self.p.fijar_venta(&c, v),
@@ -519,5 +536,28 @@ impl Aplicacion {
         }
         self.marcar_cambio();
         self.info(mensaje);
+    }
+}
+
+impl Aplicacion {
+    /// Tras cambiar un código, la selección, el capítulo activo y el
+    /// portapapeles apuntan al nuevo.
+    fn cambiar_codigo_en_vista(&mut self, viejo: &str, nuevo: &str) {
+        let cambia = |x: &mut String| {
+            if x == viejo {
+                nuevo.clone_into(x);
+            }
+        };
+        if let Some((a, b)) = &mut self.sel {
+            cambia(a);
+            cambia(b);
+        }
+        if let Some(c) = &mut self.capitulo_activo {
+            cambia(c);
+        }
+        if let Some((a, b, _)) = &mut self.portapapeles {
+            cambia(a);
+            cambia(b);
+        }
     }
 }

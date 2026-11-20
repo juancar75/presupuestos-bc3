@@ -3173,3 +3173,25 @@ fn escribir_comentario_en_la_hoja_de_medicion() {
         .expect("se confirma el comentario");
     assert_eq!(nueva.lineas[0].comentario, "Cubierta bajo bandeja");
 }
+
+#[test]
+fn cambiar_codigo_y_renumerar_capitulos() {
+    let mut app = Aplicacion::sin_ventana();
+    let pem = app.calc.pem;
+    // La partida elegida sigue elegida con su código nuevo
+    app.aplicar(vec![Accion::Renombrar("SR.M2".into(), "SR-M2".into())]);
+    assert!(app.p.conceptos.contains_key("SR-M2"));
+    assert_eq!(app.sel.as_ref().map(|s| s.1.as_str()), Some("SR-M2"));
+    assert_eq!(app.calc.pem, pem);
+    app.deshacer();
+    assert!(app.p.conceptos.contains_key("SR.M2"));
+    // Un código ocupado no se acepta
+    app.aplicar(vec![Accion::Renombrar("SR.M2".into(), "C01".into())]);
+    assert!(app.p.conceptos.contains_key("SR.M2"));
+    // Renumerar con otro prefijo y deshacer
+    app.aplicar(vec![Accion::RenumerarCapitulos("CAP".into())]);
+    assert!(app.p.conceptos.contains_key("CAP01"));
+    assert_eq!(app.calc.pem, pem);
+    app.deshacer();
+    assert!(app.p.conceptos.contains_key("C01"));
+}
