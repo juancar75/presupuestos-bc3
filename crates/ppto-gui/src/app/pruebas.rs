@@ -3265,3 +3265,46 @@ fn sustituir_un_recurso_desde_la_interfaz() {
     app.deshacer();
     assert!(!app.p.padres(&de).is_empty());
 }
+
+#[test]
+fn certificaciones_del_cliente_con_deshacer() {
+    use ppto_core::pedido_cliente::{LineaPedido, PedidoCliente};
+    let mut app = Aplicacion::sin_ventana();
+    let mut p = PedidoCliente {
+        numero: "PED-1".into(),
+        lineas: vec![LineaPedido {
+            linea: "10".into(),
+            descripcion: "Unidad".into(),
+            cantidad: Decimal::from(4),
+            precio: Decimal::from(100),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    p.nueva_certificacion("2026-10");
+    p.certificaciones[0].origen.insert("10".into(), Decimal::from(2));
+    app.aplicar(vec![Accion::PedidosCliente(vec![p])]);
+    assert_eq!(
+        app.p.seguimiento.pedidos_cliente[0].mes(1).unwrap().total,
+        Decimal::from(200)
+    );
+    assert!(!app.p.seguimiento.esta_vacio());
+    app.deshacer();
+    assert!(app.p.seguimiento.pedidos_cliente.is_empty());
+    app.abrir_pedidos();
+    assert!(app.ventana_pedidos.is_some());
+    // La ventana se pinta con un pedido y una línea negativa
+    app.rehacer();
+    assert_eq!(app.p.seguimiento.pedidos_cliente.len(), 1);
+    app.ventana_pedidos.as_mut().unwrap().cert = Some(1);
+    let ctx = Context::default();
+    let mut acciones = Vec::new();
+    for _ in 0..2 {
+        let mut salida = ctx.run_ui(RawInput::default(), |ui| {
+            let c = ui.ctx().clone();
+            app.ventana_pedidos(&c, &mut acciones);
+        });
+        salida.textures_delta.clear();
+    }
+    assert!(app.ventana_pedidos.is_some());
+}

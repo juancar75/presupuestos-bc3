@@ -33,6 +33,9 @@ pub struct Seguimiento {
     /// Pedidos registrados (ver [`crate::compras`]).
     #[serde(default)]
     pub pedidos: Vec<crate::compras::PedidoRegistrado>,
+    /// Pedidos del cliente certificados a origen (ver [`crate::pedido_cliente`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pedidos_cliente: Vec<crate::pedido_cliente::PedidoCliente>,
     /// Gastos reales (ver [`crate::coste_real`]).
     #[serde(default)]
     pub gastos: Vec<crate::coste_real::Gasto>,
@@ -60,6 +63,7 @@ impl Seguimiento {
         self.contradictorios.is_empty()
             && self.certificaciones.is_empty()
             && self.pedidos.is_empty()
+            && self.pedidos_cliente.is_empty()
             && self.gastos.is_empty()
             && self.descuento.is_none()
             && self.contrato.is_none()

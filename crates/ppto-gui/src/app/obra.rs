@@ -387,6 +387,17 @@ impl Aplicacion {
             self.ventana_clientes = Some(super::clientes::VentanaClientes::abrir());
         }
         ui.separator();
+        if ui
+            .button("Certificaciones del cliente (pedido a origen)…")
+            .on_hover_text(
+                "Con la proforma del cliente: lo que se factura cada mes (origen − anterior, también en negativo), \
+                 la proforma rellena y el control de facturas y abonos",
+            )
+            .clicked()
+        {
+            ui.close();
+            self.abrir_pedidos();
+        }
         let t = if self.p.seguimiento.contrato.is_some() {
             "Contrato 🔒…"
         } else {

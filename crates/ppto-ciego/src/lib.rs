@@ -16,6 +16,8 @@
 //!    fórmulas y el resto del libro quedan como estaban, y Excel recalcula
 //!    los importes al abrirlo.
 
+pub mod proforma;
+
 use calamine::{Data, Reader};
 use ppto_core::{Decimal, ErrorMotor, LineaMedicion, Medicion, Naturaleza, Presupuesto, redondear};
 use quick_xml::events::{BytesStart, BytesText, Event};
