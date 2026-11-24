@@ -11,6 +11,7 @@ mod asistente;
 mod ayuda;
 mod bases;
 mod biblioteca;
+mod certificar_pedido;
 mod ciego;
 mod clientes;
 mod comparar;
@@ -89,6 +90,8 @@ enum Accion {
     Lote(String, Vec<Accion>),
     /// Abrir la ventana para sustituir un concepto en todo el presupuesto.
     PedirSustituir(String),
+    /// Pedidos del cliente con sus certificaciones a origen y facturas.
+    PedidosCliente(Vec<ppto_core::pedido_cliente::PedidoCliente>),
     /// Sustituir (viejo, nuevo) en todas las partidas.
     Sustituir(String, String),
     /// Renumerar los capítulos con un prefijo («C» → C01, C02, C01.01…).
@@ -324,6 +327,8 @@ pub struct Aplicacion {
     arbol_sel: Vec<(String, String)>,
     /// Ventana «Sustituir … por…».
     sustituir: Option<sustituir::FormSustituir>,
+    /// Ventana «Certificaciones del cliente».
+    ventana_pedidos: Option<certificar_pedido::VentanaPedidos>,
     /// Aplicando un lote: sin copia propia en el historial.
     en_lote: bool,
     errores_lote: usize,
@@ -489,6 +494,7 @@ fn describir(a: &Accion) -> Option<(String, Option<String>)> {
         Accion::Renombrar(v, n) => (format!("código {v} → {n}"), None),
         Accion::Lote(que, _) => (que.clone(), None),
         Accion::Sustituir(v, n) => (format!("sustituir {v} por {n}"), None),
+        Accion::PedidosCliente(_) => ("certificación del cliente".into(), None),
         Accion::RenumerarCapitulos(_) => ("renumerar capítulos".into(), None),
         Accion::Texto(c, _) => (format!("texto de {c}"), Some(format!("texto|{c}"))),
         Accion::Unidad(c, _) => (format!("unidad de {c}"), Some(format!("unidad|{c}"))),
@@ -618,6 +624,7 @@ impl Aplicacion {
             guardar_kit: None,
             arbol_sel: Vec::new(),
             sustituir: None,
+            ventana_pedidos: None,
             en_lote: false,
             errores_lote: 0,
             carpeta_tarifas: None,
@@ -1045,6 +1052,7 @@ impl Aplicacion {
         self.ventana_sincro(&ctx);
         self.ventana_copiar_a(&ctx, &mut acciones);
         self.ventana_sustituir(&ctx, &mut acciones);
+        self.ventana_pedidos(&ctx, &mut acciones);
         self.ventana_pegado_pendiente(&ctx, &mut acciones);
         self.ventana_guardar_kit(&ctx);
         self.sondear_tarifa(&ctx);

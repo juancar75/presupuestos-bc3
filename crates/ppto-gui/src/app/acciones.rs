@@ -66,6 +66,10 @@ impl Aplicacion {
                         Ok(())
                     }
                 }
+                Accion::PedidosCliente(v) => {
+                    self.p.seguimiento.pedidos_cliente = v;
+                    Ok(())
+                }
                 Accion::Sustituir(viejo, nuevo) => self.p.sustituir(&viejo, &nuevo).map(|n| {
                     self.info(format!(
                         "{viejo} sustituido por {nuevo} en {n} conceptos. {viejo} queda en la obra sin usar."

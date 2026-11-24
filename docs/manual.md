@@ -187,6 +187,17 @@ Claude hace la misma comparación (`comparar_obras`) y explica cada desviación 
 
 **Modelos IFC (BIM)**: si hay un `.ifc` (IFC2x3 o IFC4, sin comprimir), Claude cuenta los elementos de instalaciones por clase, tipo, tamaño y planta (difusores, detectores, BIE, unidades, válvulas…), suma los metros de conductos y tuberías cuando el modelo trae la longitud (en sus propiedades o por la extrusión de la geometría) y da los m² de los espacios por planta. Pídale, por ejemplo, «cuenta los elementos del IFC» o «filtra el IFC por detector». Si un modelo no trae longitudes, cuenta las piezas pero no las mide.
 
+### Certificaciones del cliente (pedido a origen)
+
+Para clientes que mandan su pedido y cada mes una **proforma de certificación a origen** en Excel (Nº línea, descripción, cantidad, precio y «Cantidad a facturar a origen»). Obra → **Certificaciones del cliente (pedido a origen)…**
+
+1. **Importar proforma del cliente…**: crea el pedido (o lo actualiza y dice qué líneas o precios han cambiado) y, si trae cantidades a origen, la certificación de ese mes (el mes sale del nombre del fichero, p. ej. `2026-10_PROFORMA_CERT02.xlsx`). Importe también las de meses anteriores para tener el histórico.
+2. **+ Nueva** certificación del mes: empieza con el origen de la anterior; cambie la columna **A origen**. En rojo, lo que pasa del pedido.
+3. Lo que se factura es **origen − anterior** línea a línea, **también en negativo** si una línea baja. Avisos: líneas que bajan, excesos sobre el pedido, cambios de precio del cliente y facturas que no cuadran con el origen anterior.
+4. **Rellenar proforma del cliente…**: escribe las cantidades a origen en su mismo Excel (solo esa columna).
+5. **Detalle de la factura (Excel)…**: para administración, con las líneas del mes, los totales y los avisos.
+6. Apunte cada **factura** y cada **abono** (en negativo) en su certificación: el programa avisa si lo facturado no coincide con lo certificado.
+
 ### Legalización (RITE, PCI)
 
 La ventana de legalización calcula la partida de un expediente con el baremo propio: horas por tarea a coste de cada perfil, desplazamientos, y tasas, EICI y visados repercutidos sin margen. Como instalador va a coste y el margen lo pone la obra.

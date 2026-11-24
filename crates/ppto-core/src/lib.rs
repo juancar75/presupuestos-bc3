@@ -34,6 +34,7 @@ pub mod ficha;
 pub mod formato;
 pub mod fragmento;
 pub mod medicion;
+pub mod pedido_cliente;
 pub mod pedidos;
 pub mod plantillas;
 pub mod presupuesto;
