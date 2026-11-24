@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.73] - 2026-11-24
+
 ### Añadido
 - **Certificaciones del cliente (pedido a origen)**: importar la proforma del cliente (pedido y cantidades a origen), certificación de cada mes con lo que se factura (origen − anterior, también en negativo), avisos (líneas que bajan, excesos sobre el pedido, cambios de precio, facturas y abonos que no cuadran), proforma del cliente rellena en su mismo Excel y detalle de la factura en Excel.
 
