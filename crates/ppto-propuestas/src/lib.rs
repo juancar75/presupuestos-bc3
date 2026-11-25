@@ -199,6 +199,39 @@ pub struct Entrada {
     /// Segundos desde 1970.
     pub creada: u64,
     pub propuesta: Propuesta,
+    /// Opiniones de otros agentes (o del usuario) sobre la propuesta.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comentarios: Vec<Comentario>,
+}
+
+/// Opinión sobre una propuesta: de otro agente que la revisa o de un compañero.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Comentario {
+    pub autor: String,
+    pub texto: String,
+    /// `Some(true)` de acuerdo, `Some(false)` en contra, `None` solo comenta.
+    #[serde(default)]
+    pub de_acuerdo: Option<bool>,
+    pub creada: u64,
+}
+
+/// Nombre del agente según el cliente MCP que se conecta
+/// («codex-mcp-client» → «ChatGPT», «claude-ai» → «Claude»).
+pub fn autor_de_cliente(nombre: &str) -> String {
+    let n = nombre.to_lowercase();
+    if n.contains("codex") || n.contains("openai") || n.contains("chatgpt") {
+        "ChatGPT".into()
+    } else if n.contains("claude") || n.contains("anthropic") {
+        "Claude".into()
+    } else if n.contains("gemini") {
+        "Gemini".into()
+    } else if n.contains("copilot") {
+        "Copilot".into()
+    } else if n.trim().is_empty() {
+        "IA".into()
+    } else {
+        nombre.trim().to_owned()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -230,13 +263,19 @@ impl Bandeja {
             + 1;
         p.id = self.siguiente;
         p.estado = EstadoPropuesta::Pendiente;
+        // Sustituye la pendiente del mismo autor; la de otro agente se queda
+        // (dos opiniones sobre la misma partida: el usuario elige).
         self.entradas.retain(|e| {
-            !(e.obra == obra && e.propuesta.partida == p.partida && e.propuesta.estado == EstadoPropuesta::Pendiente)
+            !(e.obra == obra
+                && e.propuesta.partida == p.partida
+                && e.propuesta.autor == p.autor
+                && e.propuesta.estado == EstadoPropuesta::Pendiente)
         });
         self.entradas.push(Entrada {
             obra: obra.to_owned(),
             creada: ahora(),
             propuesta: p,
+            comentarios: Vec::new(),
         });
         self.siguiente
     }
@@ -260,15 +299,75 @@ impl Bandeja {
         self.entradas.iter().map(|e| &e.propuesta).find(|p| p.id == id)
     }
 
-    /// Cambia el estado de una propuesta. Devuelve `false` si no existe.
+    /// Cambia el estado de una propuesta. Al aceptar una, las pendientes de
+    /// otros agentes para la misma partida quedan rechazadas (se eligió esta).
+    /// Devuelve `false` si no existe.
     pub fn marcar(&mut self, id: u64, estado: EstadoPropuesta) -> bool {
+        let Some(i) = self.entradas.iter().position(|e| e.propuesta.id == id) else {
+            return false;
+        };
+        self.entradas[i].propuesta.estado = estado;
+        if estado == EstadoPropuesta::Aceptada {
+            let (obra, partida) = (
+                self.entradas[i].obra.clone(),
+                self.entradas[i].propuesta.partida.clone(),
+            );
+            for e in &mut self.entradas {
+                if e.obra == obra
+                    && e.propuesta.partida == partida
+                    && e.propuesta.id != id
+                    && e.propuesta.estado == EstadoPropuesta::Pendiente
+                {
+                    e.propuesta.estado = EstadoPropuesta::Rechazada;
+                    e.comentarios.push(Comentario {
+                        autor: "usuario".into(),
+                        texto: format!("Se aceptó la propuesta #{id} para esta partida."),
+                        de_acuerdo: Some(false),
+                        creada: ahora(),
+                    });
+                }
+            }
+        }
+        true
+    }
+
+    /// Añade una opinión a una propuesta. Devuelve `false` si no existe.
+    pub fn comentar(&mut self, id: u64, autor: &str, texto: &str, de_acuerdo: Option<bool>) -> bool {
         match self.entradas.iter_mut().find(|e| e.propuesta.id == id) {
             Some(e) => {
-                e.propuesta.estado = estado;
+                e.comentarios.push(Comentario {
+                    autor: autor.to_owned(),
+                    texto: texto.trim().to_owned(),
+                    de_acuerdo,
+                    creada: ahora(),
+                });
                 true
             }
             None => false,
         }
+    }
+
+    pub fn comentarios(&self, id: u64) -> &[Comentario] {
+        self.entradas
+            .iter()
+            .find(|e| e.propuesta.id == id)
+            .map_or(&[], |e| e.comentarios.as_slice())
+    }
+
+    /// Partidas con propuestas pendientes de agentes distintos: dos opiniones
+    /// que el usuario tiene que resolver.
+    pub fn desacuerdos(&self, obra: &str) -> std::collections::BTreeMap<String, Vec<&Propuesta>> {
+        let mut m: std::collections::BTreeMap<String, Vec<&Propuesta>> = std::collections::BTreeMap::new();
+        for p in self.pendientes(obra) {
+            m.entry(p.partida.clone()).or_default().push(p);
+        }
+        m.retain(|_, v| {
+            let mut a: Vec<&str> = v.iter().map(|p| p.autor.as_str()).collect();
+            a.sort_unstable();
+            a.dedup();
+            a.len() > 1
+        });
+        m
     }
 
     /// Lee, modifica y guarda con el fichero bloqueado, para no pisar lo que

@@ -187,6 +187,10 @@ Claude hace la misma comparación (`comparar_obras`) y explica cada desviación 
 
 **Modelos IFC (BIM)**: si hay un `.ifc` (IFC2x3 o IFC4, sin comprimir), Claude cuenta los elementos de instalaciones por clase, tipo, tamaño y planta (difusores, detectores, BIE, unidades, válvulas…), suma los metros de conductos y tuberías cuando el modelo trae la longitud (en sus propiedades o por la extrusión de la geometría) y da los m² de los espacios por planta. Pídale, por ejemplo, «cuenta los elementos del IFC» o «filtra el IFC por detector». Si un modelo no trae longitudes, cuenta las piezas pero no las mide.
 
+### Varios agentes (Claude y ChatGPT)
+
+Si además de Claude conecta Codex (ChatGPT) al programa (ver `docs/mcp.md`), cada propuesta dice quién la hace («Propone: Claude / ChatGPT»). Si los dos proponen cosas distintas para la misma partida, sale **⚖ Desacuerdo** con el precio de cada uno: elija una (la otra queda rechazada); «Aceptar N propuestas» no toca esas partidas. Debajo de cada propuesta salen las opiniones del otro agente (👍 de acuerdo, 👎 en contra, 💬 comentario) con su motivo.
+
 ### Certificaciones del cliente (pedido a origen)
 
 Para clientes que mandan su pedido y cada mes una **proforma de certificación a origen** en Excel (Nº línea, descripción, cantidad, precio y «Cantidad a facturar a origen»). Obra → **Certificaciones del cliente (pedido a origen)…**

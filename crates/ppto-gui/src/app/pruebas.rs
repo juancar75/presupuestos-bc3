@@ -3308,3 +3308,51 @@ fn certificaciones_del_cliente_con_deshacer() {
     }
     assert!(app.ventana_pedidos.is_some());
 }
+
+#[test]
+fn propuestas_de_dos_agentes_en_la_ventana() {
+    use ppto_core::propuesta::{Confianza, Contenido, EstadoPropuesta as E, LineaPropuesta, Propuesta};
+    let mut app = Aplicacion::sin_ventana();
+    let obra = ppto_propuestas::clave(&app.p);
+    let prop = |autor: &str, precio| Propuesta {
+        id: 0,
+        partida: "SR.M2".into(),
+        contenido: Contenido::Descompuesto(vec![LineaPropuesta {
+            codigo: "MO.OF1F".into(),
+            rendimiento: precio,
+            naturaleza: None,
+            unidad: String::new(),
+            resumen: String::new(),
+            precio: None,
+            pvp: None,
+            fabricante: None,
+            grupo: None,
+        }]),
+        confianza: Confianza::Alta,
+        justificacion: "x".into(),
+        autor: autor.into(),
+        estado: E::Pendiente,
+        descuentos: Default::default(),
+        nueva: None,
+    };
+    app.enlace.bandeja.anadir(&obra, prop("Claude", dec!(1)));
+    let g = app.enlace.bandeja.anadir(&obra, prop("ChatGPT", dec!(2)));
+    app.enlace
+        .bandeja
+        .comentar(g, "Claude", "La tarifa da 30 €.", Some(false));
+    assert_eq!(app.enlace.bandeja.desacuerdos(&obra).len(), 1);
+    app.enlace.ventana = true;
+    let ctx = Context::default();
+    let mut acciones = Vec::new();
+    for _ in 0..2 {
+        let mut salida = ctx.run_ui(RawInput::default(), |ui| {
+            let c = ui.ctx().clone();
+            app.ventana_propuestas(&c, &mut acciones);
+        });
+        salida.textures_delta.clear();
+    }
+    // Aceptar una deja la otra rechazada
+    app.aplicar(vec![Accion::AceptarPropuesta(g)]);
+    assert_eq!(app.enlace.bandeja.buscar(1).unwrap().estado, E::Rechazada);
+    assert!(app.enlace.bandeja.desacuerdos(&obra).is_empty());
+}

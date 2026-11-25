@@ -5,6 +5,9 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Varios agentes (Claude, ChatGPT/Codex)**: cada propuesta lleva su autor (del cliente MCP o `PPTO_AUTOR`); las propuestas de agentes distintos para la misma partida conviven y se marcan como desacuerdo (al aceptar una, la otra queda rechazada; «Aceptar N» no las toca); herramienta `comentar_propuesta` (de acuerdo, en contra o comentario) y `ver_propuestas` con autores, comentarios y desacuerdos. Guía para conectar Codex en `docs/mcp.md`.
+
 ## [0.1.0-alpha.73] - 2026-11-24
 
 ### Añadido

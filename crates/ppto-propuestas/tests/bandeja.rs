@@ -90,3 +90,35 @@ fn una_bandeja_danada_no_se_sobrescribe() {
     assert_eq!(std::fs::read_to_string(&ruta).unwrap(), "[roto");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn dos_agentes_misma_partida_desacuerdo_y_comentarios() {
+    let mut b = Bandeja::default();
+    let obra = "obra [1]";
+    let mut c = prop("P1", dec!(100));
+    c.autor = "Claude".into();
+    let mut g = prop("P1", dec!(140));
+    g.autor = "ChatGPT".into();
+    let id_c = b.anadir(obra, c.clone());
+    let id_g = b.anadir(obra, g);
+    // Las dos se quedan: es un desacuerdo
+    assert_eq!(b.pendientes(obra).len(), 2);
+    let d = b.desacuerdos(obra);
+    assert_eq!(d.len(), 1);
+    assert_eq!(d["P1"].len(), 2);
+    // Otra del mismo autor sustituye a la suya
+    let id_c2 = b.anadir(obra, c);
+    assert_eq!(b.pendientes(obra).len(), 2);
+    assert!(b.buscar(id_c).is_none());
+    // Opinión de un agente sobre la del otro
+    assert!(b.comentar(id_g, "Claude", "La tarifa da 100 €, no 140 €.", Some(false)));
+    assert_eq!(b.comentarios(id_g)[0].de_acuerdo, Some(false));
+    assert!(!b.comentar(999, "Claude", "x", None));
+    // Aceptar una rechaza la otra
+    assert!(b.marcar(id_c2, EstadoPropuesta::Aceptada));
+    assert_eq!(b.buscar(id_g).unwrap().estado, EstadoPropuesta::Rechazada);
+    assert!(b.desacuerdos(obra).is_empty());
+    assert_eq!(ppto_propuestas::autor_de_cliente("codex-mcp-client"), "ChatGPT");
+    assert_eq!(ppto_propuestas::autor_de_cliente("claude-ai"), "Claude");
+    assert_eq!(ppto_propuestas::autor_de_cliente(""), "IA");
+}

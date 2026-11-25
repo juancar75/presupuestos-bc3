@@ -219,10 +219,20 @@ impl Aplicacion {
                     } else {
                         format!("{} pendientes.", pendientes.len())
                     });
+                    let d = self.enlace.bandeja.desacuerdos(&clave(&self.p)).len();
+                    if d > 0 {
+                        ui.label(
+                            RichText::new(format!("⚖ {d} con desacuerdo entre agentes"))
+                                .color(Color32::from_rgb(200, 120, 20)),
+                        );
+                    }
                     ui.checkbox(&mut self.enlace.solo_alta, "solo confianza alta");
+                    // Las partidas con desacuerdo entre agentes se eligen una a una
+                    let en_desacuerdo = self.enlace.bandeja.desacuerdos(&clave(&self.p));
                     let elegibles: Vec<u64> = pendientes
                         .iter()
                         .filter(|p| !self.enlace.solo_alta || p.confianza == Confianza::Alta)
+                        .filter(|p| !en_desacuerdo.contains_key(&p.partida))
                         .map(|p| p.id)
                         .collect();
                     if ui
@@ -245,11 +255,58 @@ impl Aplicacion {
         self.enlace.ventana = abierta;
     }
 
+    /// Quién propone, si otro agente propone otra cosa para la misma partida
+    /// y las opiniones de los demás.
+    fn agentes_de(&self, ui: &mut Ui, prop: &Propuesta) {
+        let obra = clave(&self.p);
+        let otras: Vec<Propuesta> = self
+            .enlace
+            .bandeja
+            .pendientes(&obra)
+            .into_iter()
+            .filter(|o| o.partida == prop.partida && o.id != prop.id && o.autor != prop.autor)
+            .cloned()
+            .collect();
+        ui.horizontal_wrapped(|ui| {
+            if !prop.autor.is_empty() {
+                ui.label(RichText::new(format!("Propone: {}", prop.autor)).small().strong());
+            }
+            for o in &otras {
+                let precio = self
+                    .p
+                    .simular_propuesta(o)
+                    .map(|s| format!(" {} €", eur(s.precio_despues)))
+                    .unwrap_or_default();
+                ui.label(
+                    RichText::new(format!("⚖ Desacuerdo: #{} de {}{precio}", o.id, o.autor))
+                        .small()
+                        .color(Color32::from_rgb(200, 120, 20)),
+                )
+                .on_hover_text(
+                    "Dos agentes proponen cosas distintas para esta partida. Al aceptar una, la otra queda rechazada.",
+                );
+            }
+        });
+        for c in self.enlace.bandeja.comentarios(prop.id) {
+            let (marca, color) = match c.de_acuerdo {
+                Some(true) => ("👍", Color32::from_rgb(80, 175, 110)),
+                Some(false) => ("👎", Color32::from_rgb(220, 80, 60)),
+                None => ("💬", ui.visuals().weak_text_color()),
+            };
+            ui.label(
+                RichText::new(format!("{marca} {}: {}", c.autor, c.texto))
+                    .small()
+                    .color(color),
+            );
+        }
+    }
+
     fn tarjeta_propuesta(&self, ui: &mut Ui, prop: &Propuesta, acciones: &mut Vec<Accion>) {
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
             let c = self.p.conceptos.get(&prop.partida);
             let sim = self.p.simular_propuesta(prop);
+            self.agentes_de(ui, prop);
             if let Contenido::Cambios(cambios) = &prop.contenido {
                 self.tarjeta_cambios(ui, prop, cambios.len(), &sim, acciones);
                 return;
