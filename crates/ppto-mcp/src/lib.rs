@@ -48,6 +48,9 @@ pub struct Estado {
     pub gg: Decimal,
     pub bi: Decimal,
     pub iva: Decimal,
+    /// Quién firma las propuestas: `PPTO_AUTOR` o el cliente MCP que se
+    /// conecta (Claude, ChatGPT/Codex…).
+    pub autor: String,
 }
 
 impl Default for Estado {
@@ -65,6 +68,10 @@ impl Default for Estado {
             gg: venta::GG_HABITUAL,
             bi: venta::BI_HABITUAL,
             iva: venta::IVA_GENERAL,
+            autor: std::env::var("PPTO_AUTOR")
+                .ok()
+                .filter(|a| !a.trim().is_empty())
+                .unwrap_or_else(|| "IA".into()),
         }
     }
 }
@@ -164,6 +171,11 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
     };
     let r = match metodo {
         "initialize" => {
+            if std::env::var("PPTO_AUTOR").map_or(true, |a| a.trim().is_empty())
+                && let Some(n) = params.pointer("/clientInfo/name").and_then(Value::as_str)
+            {
+                estado.autor = ppto_propuestas::autor_de_cliente(n);
+            }
             let version = params
                 .get("protocolVersion")
                 .and_then(Value::as_str)
@@ -181,7 +193,10 @@ pub fn procesar(estado: &mut Estado, msg: &Value) -> Option<Value> {
                     distribuidor siempre a PVP con fabricante y descuento, nunca a neto). Para quitar partidas que no proceden, \
                     cambiar cantidades o mediciones, rehacer resúmenes y textos o mover partidas de capítulo: \
                     proponer_cambios (todo en una propuesta). El usuario acepta o \
-                    rechaza cada propuesta en el programa; consulte ver_propuestas. Si el usuario \
+                    rechaza cada propuesta en el programa; consulte ver_propuestas. Si trabajan varios agentes \
+                    (Claude, ChatGPT…), ver_propuestas muestra quién propuso cada cosa y los desacuerdos; para \
+                    revisar la propuesta de otro agente use comentar_propuesta (de acuerdo o en contra, con el \
+                    motivo) o haga su propia propuesta para esa partida. Si el usuario \
                     pide «atiende el asistente» o similar, lea los encargos que dejó en el panel del \
                     programa con leer_mensajes (adjuntos con leer_adjunto), atiéndalos y conteste con \
                     responder; los informes se guardan con guardar_informe. Antes de dar por buena una oferta, comparar_obras con las obras parecidas. Cuando el usuario pase precios ciertos (Saltoki, tarifas, ofertas), guárdelos con guardar_precios para que la base común crezca. Importes en euros con \
@@ -491,8 +506,21 @@ fn herramientas() -> Value {
         },
         {
             "name": "ver_propuestas",
-            "description": "Propuestas hechas para la obra activa y su estado (pendiente, aceptada o rechazada por el usuario).",
+            "description": "Propuestas hechas para la obra activa: autor (Claude, ChatGPT…), estado (pendiente, aceptada o rechazada por el usuario), comentarios de otros agentes y desacuerdos (partidas con propuestas distintas de varios agentes).",
             "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "comentar_propuesta",
+            "description": "Opinar sobre una propuesta (normalmente de otro agente): de acuerdo, en contra o solo un comentario, con el motivo (precio de tarifa, mano de obra que falta, medición…). No cambia la obra; el usuario lo ve junto a la propuesta.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer", "description": "Número de la propuesta (ver_propuestas)" },
+                    "texto": { "type": "string", "description": "Motivo, concreto y con cifras si las hay" },
+                    "de_acuerdo": { "type": "boolean", "description": "true de acuerdo, false en contra; sin indicar, solo comenta" }
+                },
+                "required": ["id", "texto"]
+            }
         },
         {
             "name": "leer_mensajes",
@@ -600,6 +628,7 @@ fn llamar(estado: &mut Estado, nombre: &str, a: &Value) -> Result<String, String
         "fijar_descuento_biblioteca" => biblioteca::fijar_descuento(estado, a),
         "guardar_en_biblioteca" => biblioteca::guardar_obra(estado, a),
         "ver_propuestas" => ver_propuestas(estado),
+        "comentar_propuesta" => comentar_propuesta(estado, a),
         "leer_mensajes" => asistente::leer_mensajes(estado),
         "responder" => asistente::responder(estado, a),
         "leer_adjunto" => asistente::leer_adjunto(a),
@@ -1370,7 +1399,7 @@ fn proponer(estado: &mut Estado, a: &Value) -> Result<String, String> {
         contenido,
         confianza,
         justificacion,
-        autor: "IA (MCP)".into(),
+        autor: estado.autor.clone(),
         estado: EstadoPropuesta::Pendiente,
         descuentos: leer_descuentos(a)?,
         nueva: leer_nueva(a)?,
@@ -1558,7 +1587,7 @@ fn proponer_cambios(estado: &mut Estado, a: &Value) -> Result<String, String> {
         contenido: Contenido::Cambios(cambios),
         confianza,
         justificacion,
-        autor: "IA (MCP)".into(),
+        autor: estado.autor.clone(),
         estado: EstadoPropuesta::Pendiente,
         descuentos: Default::default(),
         nueva: None,
@@ -1783,16 +1812,98 @@ fn ver_propuestas(estado: &Estado) -> Result<String, String> {
     if v.is_empty() {
         return Ok("No hay propuestas para esta obra.".into());
     }
-    let mut t = String::from("| # | Partida | Estado | Confianza |\n|---:|---|---|---|\n");
-    for p in v {
+    let mut t = String::from("| # | Partida | Autor | Estado | Confianza |\n|---:|---|---|---|---|\n");
+    for p in &v {
         let e = match p.estado {
             E::Pendiente => "pendiente",
             E::Aceptada => "aceptada",
             E::Rechazada => "rechazada",
         };
-        let _ = writeln!(t, "| {} | {} | {e} | {} |", p.id, p.partida, p.confianza.nombre());
+        let _ = writeln!(
+            t,
+            "| {} | {} | {} | {e} | {} |",
+            p.id,
+            p.partida,
+            p.autor,
+            p.confianza.nombre()
+        );
+    }
+    let mut com = String::new();
+    for p in &v {
+        for c in b.comentarios(p.id) {
+            let postura = match c.de_acuerdo {
+                Some(true) => " (de acuerdo)",
+                Some(false) => " (en contra)",
+                None => "",
+            };
+            let _ = writeln!(com, "- #{} {}{postura}: {}", p.id, c.autor, c.texto);
+        }
+    }
+    if !com.is_empty() {
+        t.push_str("\nComentarios:\n");
+        t.push_str(&com);
+    }
+    let d = b.desacuerdos(obra);
+    if !d.is_empty() {
+        t.push_str(
+            "\nDesacuerdos (propuestas pendientes de varios agentes para la misma partida; el usuario elige):\n",
+        );
+        let p = estado.p().ok();
+        for (partida, ps) in &d {
+            let v: Vec<String> = ps
+                .iter()
+                .map(|x| {
+                    let precio = p
+                        .and_then(|p| p.simular_propuesta(x).ok())
+                        .map(|s| format!(" {} €", ppto_core::formato::eur(s.precio_despues)))
+                        .unwrap_or_default();
+                    format!("#{} {}{precio}", x.id, x.autor)
+                })
+                .collect();
+            let _ = writeln!(t, "- {partida}: {}", v.join(" · "));
+        }
     }
     Ok(t)
+}
+
+fn comentar_propuesta(estado: &Estado, a: &Value) -> Result<String, String> {
+    let obra = estado.obra_activa.as_deref().ok_or("use antes abrir_obra_activa")?;
+    let ruta = estado
+        .ruta_bandeja
+        .as_ref()
+        .ok_or("no se encuentra la carpeta de configuración")?;
+    let id = a
+        .get("id")
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|t| t.trim().trim_start_matches('#').parse().ok()))
+        })
+        .ok_or("indique id (el número de la propuesta)")?;
+    let texto = texto(a, "texto")?.trim().to_owned();
+    if texto.is_empty() {
+        return Err("indique el motivo en texto".into());
+    }
+    let de_acuerdo = a.get("de_acuerdo").and_then(Value::as_bool);
+    let autor = estado.autor.clone();
+    let hecho = ppto_propuestas::Bandeja::modificar(ruta, |b| {
+        if b.de_obra(obra).iter().any(|p| p.id == id) {
+            b.comentar(id, &autor, &texto, de_acuerdo)
+        } else {
+            false
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    if !hecho {
+        return Err(format!("no hay propuesta #{id} en esta obra"));
+    }
+    Ok(format!(
+        "Comentario de {autor} en la propuesta #{id}{}.",
+        match de_acuerdo {
+            Some(true) => " (de acuerdo)",
+            Some(false) => " (en contra)",
+            None => "",
+        }
+    ))
 }
 
 #[cfg(test)]

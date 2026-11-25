@@ -279,7 +279,7 @@ fn propuestas_a_la_obra_activa() {
     let (t, _) = llamar(&mut e, "partidas_sin_precio", json!({}));
     assert!(t.contains("P.VAL"));
     let (t, _) = llamar(&mut e, "ver_propuestas", json!({}));
-    assert!(t.contains("| 1 | P.VAL | pendiente | media |"), "{t}");
+    assert!(t.contains("| 1 | P.VAL | IA | pendiente | media |"), "{t}");
     // Material de tarifa con descuento estimado: 0,5 h × 24,50 + 600 × (1 − 0,45) = 342,25 + 2 % MA
     let (t, err) = llamar(
         &mut e,
@@ -798,4 +798,62 @@ fn aviso_de_materiales_a_neto() {
     assert!(t.contains("sin tarifa: CU12."), "solo CU12 queda a neto: {t}");
     assert!(!t.contains("SALTOKI.CU38.") && !t.contains("M.PEQ,"), "{t}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn dos_agentes_proponen_comentan_y_discrepan() {
+    let dir = std::env::temp_dir().join(format!("mcp-multiagente-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut p = ppto_core::ejemplos::suelo_radiante();
+    p.nueva_partida("C01", "P.VAL", "ud", "Válvula de zona").unwrap();
+    let activa = dir.join("obra-activa.json");
+    ppto_propuestas::ObraActiva::guardar(&p, &activa).unwrap();
+    let bandeja = dir.join("propuestas.json");
+    let _ = std::fs::remove_file(&bandeja);
+    let nuevo = |cliente: &str| {
+        let mut e = Estado {
+            ruta_obra_activa: Some(activa.clone()),
+            ruta_bandeja: Some(bandeja.clone()),
+            ruta_tarifas: Some(dir.join("tarifas.json")),
+            ..Estado::default()
+        };
+        ppto_mcp::procesar(
+            &mut e,
+            &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":cliente,"version":"1"}}}),
+        );
+        let (t, err) = llamar(&mut e, "abrir_obra_activa", json!({}));
+        assert!(!err, "{t}");
+        e
+    };
+    let mut claude = nuevo("claude-ai");
+    let mut chatgpt = nuevo("codex-mcp-client");
+    assert_eq!((claude.autor.as_str(), chatgpt.autor.as_str()), ("Claude", "ChatGPT"));
+    let (t, err) = llamar(
+        &mut claude,
+        "proponer",
+        json!({"partida":"P.VAL","lineas":[{"codigo":"MT.A","rendimiento":1,"naturaleza":"material","unidad":"ud","resumen":"Válvula","precio":100}],"confianza":"alta","justificacion":"tarifa"}),
+    );
+    assert!(!err, "{t}");
+    let (t, err) = llamar(
+        &mut chatgpt,
+        "proponer",
+        json!({"partida":"P.VAL","lineas":[{"codigo":"MT.B","rendimiento":1,"naturaleza":"material","unidad":"ud","resumen":"Válvula con actuador","precio":140}],"confianza":"media","justificacion":"incluye actuador"}),
+    );
+    assert!(!err, "{t}");
+    let (t, err) = llamar(
+        &mut claude,
+        "comentar_propuesta",
+        json!({"id":2,"texto":"El actuador ya está en otra partida.","de_acuerdo":false}),
+    );
+    assert!(!err && t.contains("Claude") && t.contains("en contra"), "{t}");
+    let (t, _) = llamar(&mut chatgpt, "comentar_propuesta", json!({"id":99,"texto":"x"}));
+    assert!(t.contains("no hay propuesta"), "{t}");
+    let (t, err) = llamar(&mut chatgpt, "ver_propuestas", json!({}));
+    assert!(!err, "{t}");
+    assert!(t.contains("| Claude |") && t.contains("| ChatGPT |"), "{t}");
+    assert!(
+        t.contains("Desacuerdos") && t.contains("#1 Claude 100,00 €") && t.contains("#2 ChatGPT 140,00 €"),
+        "{t}"
+    );
+    assert!(t.contains("#2 Claude (en contra): El actuador"), "{t}");
 }

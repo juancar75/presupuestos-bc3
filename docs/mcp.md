@@ -48,7 +48,8 @@ ese presupuesto al arrancar.
 | `guardar_en_biblioteca` | Guarda las partidas de la obra activa en la biblioteca (versiones) | Solo la biblioteca |
 | `registrar_tarifa` / `registrar_oferta` | Tarifa (PVP por año) u oferta en netos de un fabricante | Solo la biblioteca |
 | `fijar_descuento_biblioteca` | Descuento del fabricante o grupo y subida estimada | Solo la biblioteca |
-| `ver_propuestas` | Estado de las propuestas (pendiente, aceptada, rechazada) | No |
+| `ver_propuestas` | Estado de las propuestas (pendiente, aceptada, rechazada), autor, comentarios y desacuerdos entre agentes | No |
+| `comentar_propuesta` | Opinión de un agente sobre una propuesta (de acuerdo, en contra o comentario) | Añade un comentario en `propuestas.json` |
 | `leer_mensajes` | Encargos pendientes del panel del asistente (con adjuntos) y conversación anterior | No |
 | `responder` | Contesta en el panel del asistente y marca los encargos como atendidos | No |
 | `leer_adjunto` | Lee un adjunto: Excel/ODS como CSV por hoja, PDF como texto, CSV o texto | No |
@@ -73,6 +74,47 @@ con el motivo y no se puede aceptar.
 
 Cualquier cliente MCP sirve (Claude Desktop, Claude Code u otros): basta con
 apuntar al mismo `ppto-mcp.exe`.
+
+## Varios agentes: Claude y ChatGPT (Codex)
+
+Cada propuesta lleva su **autor**: el programa lo toma del cliente MCP que se
+conecta (Claude Desktop → «Claude», Codex → «ChatGPT») o de la variable
+`PPTO_AUTOR` si se pone. Dos agentes pueden proponer para la misma partida:
+las dos propuestas se quedan y la ventana de propuestas marca el
+**desacuerdo** (⚖) con el precio de cada una; al aceptar una, la otra queda
+rechazada. «Aceptar N propuestas» no toca las partidas con desacuerdo: se
+eligen una a una. Con `comentar_propuesta` un agente opina sobre la propuesta
+de otro (de acuerdo 👍, en contra 👎 o comentario 💬, con el motivo), y
+`ver_propuestas` enseña autores, comentarios y desacuerdos.
+
+**Conectar Codex** (incluido en la suscripción de ChatGPT): en
+`%USERPROFILE%\.codex\config.toml`
+
+```toml
+[mcp_servers.presupuestos]
+command = 'C:\Users\<usuario>\...\ppto-mcp.exe'
+args = []
+
+# Opcional: las mismas variables que en Claude Desktop
+[mcp_servers.presupuestos.env]
+PPTO_DWG2DXF = 'C:\ruta\dwg2dxf.exe'
+```
+
+La ruta es la misma que en `claude_desktop_config.json`. En Codex dentro de
+WSL, la ruta va como `/mnt/c/Users/<usuario>/.../ppto-mcp.exe`. Con la obra
+abierta en el programa, un encargo de revisión para Codex:
+
+> Eres revisor de presupuestos de instalaciones (RITE, RIPCI). Abre la obra
+> activa con las herramientas de presupuestos. Revisa sin cambiar nada:
+> partidas sin mano de obra o con horas raras, materiales a neto sin tarifa,
+> precios fuera de rango frente a obras parecidas (comparar_obras), partidas
+> que faltan según la memoria y los planos, y mediciones que no cuadran. Opina
+> sobre las propuestas pendientes de otros agentes con comentar_propuesta y,
+> si propones otra cosa, hazlo con proponer explicando el motivo. No inventes
+> precios: si no está en las tarifas o en la biblioteca, dilo.
+
+Los datos de la obra (cliente, importes, precios) llegan al proveedor de cada
+agente: compruebe que el cliente lo permite.
 
 ## Ejemplos de preguntas
 
