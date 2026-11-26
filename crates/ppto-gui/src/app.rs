@@ -673,7 +673,7 @@ impl Aplicacion {
             f5: std::cell::RefCell::new(None),
             recuperacion: recuperacion::Recuperacion::default(),
             recientes: recientes::Recientes::default(),
-            es_ejemplo: true,
+            es_ejemplo: false,
             inicio: false,
             ruta_biblioteca: None,
             sincro: None,
