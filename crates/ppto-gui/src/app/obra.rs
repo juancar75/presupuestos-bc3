@@ -18,7 +18,8 @@ use ppto_core::compras::{ControlRecurso, EstadoPedido};
 use ppto_core::coste_real::{CosteReal, Gasto, TipoGasto};
 use ppto_core::formato::{cant, eur, num};
 use ppto_core::seguimiento::{
-    Contradictorio, EstadoContradictorio, FilaRelacion, Precios, Relacion, ResumenCertificacion, ResumenContrato,
+    Contradictorio, EstadoContradictorio, EstadoExceso, FilaRelacion, InfoExceso, PartidaCertificada, Precios,
+    Relacion, ResumenCertificacion, ResumenContrato,
 };
 use std::path::PathBuf;
 
@@ -46,6 +47,10 @@ pub(super) enum OpObra {
     Cerrar(u32, Decimal, Decimal),
     Reabrir(u32),
     Borrar(u32),
+    /// Capítulo, partida, estado, referencia y motivo del exceso de medición.
+    Exceso(String, String, EstadoExceso, String, String),
+    /// % de aviso de exceso de medición.
+    Umbral(Decimal),
     RegistrarPedido {
         pedido: Box<ppto_core::pedidos::Pedido>,
         fecha: String,
@@ -83,6 +88,8 @@ impl OpObra {
             Self::Cerrar(n, ..) => (format!("cerrar la certificación {n}"), None),
             Self::Reabrir(n) => (format!("reabrir la certificación {n}"), None),
             Self::Borrar(n) => (format!("borrar la certificación {n}"), None),
+            Self::Exceso(_, h, e, ..) => (format!("exceso de {h}: {}", e.nombre().to_lowercase()), None),
+            Self::Umbral(_) => ("aviso de exceso de medición".into(), Some("umbral_exceso".into())),
             Self::RegistrarPedido { pedido, .. } => (format!("registrar pedido a {}", pedido.nombre()), None),
             Self::EstadoPedido(n, e) => (format!("pedido {n}: {}", e.nombre().to_lowercase()), None),
             Self::CantidadPedido(n, c, _) => (format!("cantidad de {c} en el pedido {n}"), None),
@@ -137,6 +144,21 @@ impl OpObra {
             Self::Completa(n, c, h) => {
                 p.certificar_completa(n, &c, &h)?;
                 None
+            }
+            Self::Umbral(n) => {
+                p.seguimiento.umbral_exceso =
+                    (n != ppto_core::seguimiento::UMBRAL_EXCESO && n >= Decimal::ZERO).then_some(n);
+                None
+            }
+            Self::Exceso(c, h, e, referencia, motivo) => {
+                p.fijar_exceso(&c, &h, e, &fecha_hoy(), &referencia, &motivo)?;
+                Some(match e {
+                    EstadoExceso::Aprobado => format!(
+                        "Exceso de {h} aprobado: se cobra a origen en la certificación abierta (o la siguiente)."
+                    ),
+                    EstadoExceso::Rechazado => format!("Exceso de {h} rechazado: no se cobra."),
+                    EstadoExceso::Pendiente => format!("Exceso de {h} sin aprobar."),
+                })
             }
             Self::Cerrar(n, gg, bi) => {
                 p.cerrar_certificacion(n, gg, bi)?;
@@ -253,6 +275,8 @@ pub(super) struct VentanaObra {
     gasto_tarifa: String,
     gasto_importe: String,
     edicion: Edicion,
+    /// Referencia y motivo que se escriben para cada exceso (por código EX-…).
+    notas_exceso: std::collections::HashMap<String, (String, String)>,
     /// Hay que recalcular la relación.
     pub sucia: bool,
     relacion: Option<Result<Relacion, String>>,
@@ -308,6 +332,7 @@ impl VentanaObra {
             gasto_tarifa: String::new(),
             gasto_importe: String::new(),
             edicion: Edicion::default(),
+            notas_exceso: Default::default(),
             sucia: true,
             relacion: None,
             contrato: None,
@@ -866,9 +891,28 @@ impl Aplicacion {
                 eur(s.actual.iva),
                 eur(s.retencion)
             ));
-            let excesos = r.excesos().len();
-            if excesos > 0 {
-                ui.label(RichText::new(format!("{excesos} partida(s) por encima del presupuesto")).color(ROJO));
+            let sin_aprobar = r.excesos_sin_aprobar().len();
+            if sin_aprobar > 0 {
+                ui.label(
+                    RichText::new(format!(
+                        "{sin_aprobar} exceso(s) de medición sin aprobar (no se cobran)"
+                    ))
+                    .color(ROJO),
+                )
+                .on_hover_text(
+                    "Lo medido por encima de lo contratado va al capítulo «Excesos de medición». \
+                     Apruébelo con la referencia del cliente para cobrarlo a origen.",
+                );
+            }
+            let umbral = r.filas_exceso().filter(|(_, i)| i.supera_umbral).count();
+            if umbral > 0 {
+                ui.label(
+                    RichText::new(format!(
+                        "⚠ {umbral} por encima del {} %: pida la aprobación antes de seguir",
+                        num(self.p.umbral_exceso(), 0)
+                    ))
+                    .color(NARANJA),
+                );
             }
         });
         ui.horizontal(|ui| {
@@ -954,7 +998,8 @@ impl Aplicacion {
                                 importes,
                                 ..
                             } => {
-                                if v.solo_movimiento && importes.origen.is_zero() {
+                                let es_excesos = codigo == ppto_core::seguimiento::CAPITULO_EXCESOS;
+                                if v.solo_movimiento && importes.origen.is_zero() && !es_excesos {
                                     continue;
                                 }
                                 if !filtro.is_empty() {
@@ -970,8 +1015,19 @@ impl Aplicacion {
                                 ui.label(RichText::new(format!("{} %", num(importes.porcentaje(), 1))).weak());
                                 ui.end_row();
                             }
+                            FilaRelacion::Partida(x) if x.de_exceso.is_some() => {
+                                if !filtro.is_empty()
+                                    && !x.codigo.to_lowercase().contains(&filtro)
+                                    && !x.resumen.to_lowercase().contains(&filtro)
+                                {
+                                    continue;
+                                }
+                                if let Some(i) = &x.de_exceso {
+                                    fila_exceso(ui, v, x, i, dm, ops);
+                                }
+                            }
                             FilaRelacion::Partida(x) => {
-                                if v.solo_movimiento && x.cant_origen.is_zero() {
+                                if v.solo_movimiento && x.medido.is_zero() {
                                     continue;
                                 }
                                 if !filtro.is_empty()
@@ -987,39 +1043,55 @@ impl Aplicacion {
                                 ui.label(eur(x.precio));
                                 ui.label(RichText::new(cant(x.cant_anterior, dm)).weak());
                                 let clave = format!("cert_{n}_{}_{}", x.capitulo, x.codigo);
-                                let color_origen = if x.exceso { Some(ROJO) } else { None };
+                                // Se edita lo medido; si pasa de lo contratado se ve en
+                                // naranja y el exceso va en su capítulo
+                                let color_origen = if x.exceso { Some(NARANJA) } else { None };
+                                let aviso = format!(
+                                    "Medido {}: se certifica {} aquí y el resto en EX-{}",
+                                    cant(x.medido, dm),
+                                    cant(x.cant_origen, dm),
+                                    x.codigo
+                                );
                                 if editable && v.del_mes {
-                                    if let Some(m) = v.edicion.decimal(ui, &clave, x.cant_actual, dm, 70.0) {
+                                    let mes = x.medido - x.medido_anterior;
+                                    if let Some(m) = v.edicion.decimal(ui, &clave, mes, dm, 70.0) {
                                         ops.push(OpObra::Mes(n, x.capitulo.clone(), x.codigo.clone(), m));
                                     }
-                                    let t = RichText::new(cant(x.cant_origen, dm));
-                                    ui.label(color_origen.map_or(t.clone(), |c| t.color(c)));
+                                    let t = RichText::new(cant(x.medido, dm));
+                                    let l = ui.label(color_origen.map_or(t.clone(), |c| t.color(c)));
+                                    if x.exceso {
+                                        l.on_hover_text(&aviso);
+                                    }
                                 } else {
                                     ui.label(cant(x.cant_actual, dm));
                                     if editable {
-                                        if let Some(o) = v.edicion.decimal(ui, &clave, x.cant_origen, dm, 70.0) {
+                                        let r = v.edicion.decimal(ui, &clave, x.medido, dm, 70.0);
+                                        if let Some(o) = r {
                                             ops.push(OpObra::Origen(n, x.capitulo.clone(), x.codigo.clone(), o));
                                         }
                                     } else {
-                                        let t = RichText::new(cant(x.cant_origen, dm));
-                                        ui.label(color_origen.map_or(t.clone(), |c| t.color(c)));
+                                        let t = RichText::new(cant(x.medido, dm));
+                                        let l = ui.label(color_origen.map_or(t.clone(), |c| t.color(c)));
+                                        if x.exceso {
+                                            l.on_hover_text(&aviso);
+                                        }
                                     }
                                 }
                                 if editable
-                                    && x.cant_origen != x.medicion
+                                    && x.medido != x.medicion
                                     && ui
                                         .small_button("100 %")
                                         .on_hover_text("Certificar a origen toda la cantidad del presupuesto")
                                         .clicked()
                                 {
                                     ops.push(OpObra::Completa(n, x.capitulo.clone(), x.codigo.clone()));
-                                } else if !editable || x.cant_origen == x.medicion {
+                                } else if !editable || x.medido == x.medicion {
                                     ui.label("");
                                 }
                                 ui.label(eur(x.importes.actual));
                                 ui.label(eur(x.importes.origen));
                                 let t = RichText::new(format!("{} %", num(x.importes.porcentaje(), 1)));
-                                ui.label(if x.exceso { t.color(ROJO) } else { t.weak() });
+                                ui.label(t.weak());
                                 ui.end_row();
                             }
                         }
@@ -1771,4 +1843,76 @@ impl Aplicacion {
             Err(e) => self.error(format!("No se pudo bloquear la revisión: {e}")),
         }
     }
+}
+
+/// Fila del capítulo «Excesos de medición»: cantidades (no se editan aquí,
+/// salen de lo medido en la partida) y su estado.
+fn fila_exceso(
+    ui: &mut Ui,
+    v: &mut VentanaObra,
+    x: &PartidaCertificada,
+    i: &InfoExceso,
+    dm: u32,
+    ops: &mut Vec<OpObra>,
+) {
+    let color = match i.estado {
+        EstadoExceso::Aprobado => VERDE,
+        EstadoExceso::Pendiente => ROJO,
+        EstadoExceso::Rechazado => ui.visuals().weak_text_color(),
+    };
+    ui.label(RichText::new(&x.codigo).color(color));
+    let mut ayuda = format!(
+        "Exceso de {} sobre {} {} contratadas",
+        i.partida,
+        cant(i.medicion, dm),
+        x.unidad
+    );
+    for (t, txt) in [("Motivo", &i.motivo), ("Referencia", &i.referencia)] {
+        if !txt.is_empty() {
+            ayuda.push_str(&format!("\n{t}: {txt}"));
+        }
+    }
+    ui.label(corto(&x.resumen, 50)).on_hover_text(ayuda);
+    ui.label(&x.unidad);
+    ui.label("");
+    ui.label(eur(x.precio));
+    ui.label(RichText::new(cant(x.cant_anterior, dm)).weak());
+    ui.label(cant(x.cant_actual, dm));
+    ui.label(RichText::new(cant(x.cant_origen, dm)).color(color));
+    let notas = v
+        .notas_exceso
+        .entry(x.codigo.clone())
+        .or_insert_with(|| (i.referencia.clone(), i.motivo.clone()));
+    ui.menu_button(RichText::new(i.estado.nombre()).color(color), |ui| {
+        ui.label("Referencia (correo, acta, orden…)");
+        ui.text_edit_singleline(&mut notas.0);
+        ui.label("Motivo");
+        ui.text_edit_singleline(&mut notas.1);
+        ui.separator();
+        for e in EstadoExceso::TODOS {
+            let texto = match e {
+                EstadoExceso::Aprobado => "✔ Aprobar (se cobra a origen)",
+                EstadoExceso::Rechazado => "✖ Rechazar (no se cobra)",
+                EstadoExceso::Pendiente => "Dejar sin aprobar",
+            };
+            if ui.button(texto).clicked() {
+                ops.push(OpObra::Exceso(
+                    i.capitulo.clone(),
+                    i.partida.clone(),
+                    e,
+                    notas.0.trim().to_owned(),
+                    notas.1.trim().to_owned(),
+                ));
+                ui.close();
+            }
+        }
+    })
+    .response
+    .on_hover_text("Aprobado: se cobra todo lo acumulado en la certificación abierta (o la siguiente).");
+    ui.label(eur(x.importes.actual));
+    ui.label(eur(x.importes.origen));
+    let t = RichText::new(format!("+{} %", num(i.porcentaje, 1)));
+    ui.label(if i.supera_umbral { t.color(NARANJA) } else { t.weak() })
+        .on_hover_text("Exceso a origen sobre lo contratado");
+    ui.end_row();
 }

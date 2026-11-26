@@ -6,7 +6,7 @@
 use crate::ErrorPdf;
 use ppto_core::Presupuesto;
 use ppto_core::formato::{cant, eur, num};
-use ppto_core::seguimiento::{FilaRelacion, Relacion, ResumenCertificacion};
+use ppto_core::seguimiento::{EstadoExceso, FilaRelacion, Relacion, ResumenCertificacion};
 use rust_decimal::Decimal;
 use serde_json::json;
 use std::path::PathBuf;
@@ -86,7 +86,10 @@ pub fn pdf_certificacion(
             FilaRelacion::Partida(x) => json!({
                 "capitulo": false,
                 "codigo": x.codigo,
-                "resumen": x.resumen,
+                "resumen": match &x.de_exceso {
+                    Some(i) if i.estado != EstadoExceso::Aprobado => format!("[{}] {}", i.estado.nombre(), x.resumen),
+                    _ => x.resumen.clone(),
+                },
                 "unidad": x.unidad,
                 "medicion": cant(x.medicion, dec.medicion),
                 "precio": eur(x.precio),
@@ -97,7 +100,7 @@ pub fn pdf_certificacion(
                 "actual": eur(x.importes.actual),
                 "origen": eur(x.importes.origen),
                 "pct": format!("{} %", num(x.importes.porcentaje(), 1)),
-                "exceso": x.exceso,
+                "exceso": x.de_exceso.as_ref().is_some_and(|i| i.estado != EstadoExceso::Aprobado),
             }),
         })
         .collect();
@@ -208,7 +211,7 @@ pub fn pdf_certificacion(
         })),
         "a_cobrar": eur(s.a_cobrar),
         "precios": if o.precios_venta { "Precios de venta del contrato, sin IVA." } else { "Precios de ejecución material." },
-        "excesos": r.excesos().len(),
+        "excesos": r.excesos_sin_aprobar().len(),
     });
     ficheros.push(("datos.json".into(), serde_json::to_vec(&datos).unwrap_or_default()));
     let motor = TypstEngine::builder()
@@ -241,6 +244,23 @@ mod pruebas {
         for (c, h) in pares.iter().take(3) {
             p.certificar_completa(n, c, h).unwrap();
         }
+        // Un exceso de medición sin aprobar
+        let (c, h) = &pares[0];
+        let o = p.certificacion(n).unwrap().origen(c, h);
+        p.certificar_origen(n, c, h, o + dec!(1)).unwrap();
+        assert_eq!(
+            p.relacion_valorada(
+                n,
+                Precios::Venta {
+                    gg: dec!(13),
+                    bi: dec!(6)
+                }
+            )
+            .unwrap()
+            .excesos_sin_aprobar()
+            .len(),
+            1
+        );
         for venta in [false, true] {
             let pr = if venta {
                 Precios::Venta {

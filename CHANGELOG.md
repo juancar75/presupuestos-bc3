@@ -5,6 +5,12 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Excesos de medición** en las certificaciones de obra: lo medido por encima de lo contratado pasa a una partida EX-código (mismo precio) en el capítulo «Excesos de medición»; la partida se queda en el 100 %. Sin aprobar no se cobra; aprobado (con fecha, referencia y motivo) se cobra a origen en la certificación abierta o la siguiente; rechazado no se cobra. Aviso al pasar del umbral (10 % por defecto, configurable por obra). En PDF, Excel y coste real.
+
+### Cambiado
+- Las certificaciones con partidas por encima del 100 % ya no cobran el exceso hasta aprobarlo (antes lo sumaban a la partida).
+
 ## [0.1.0-alpha.74] - 2026-11-25
 
 ### Añadido

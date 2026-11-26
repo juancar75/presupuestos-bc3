@@ -491,6 +491,13 @@ impl Aplicacion {
                 }
                 ui.end_row();
             }
+            ui.label("Aviso de exceso de medición % (certificaciones)")
+                .on_hover_text("Avisa cuando lo medido en una partida pasa de este % sobre lo contratado.");
+            let umbral = self.p.umbral_exceso();
+            if let Some(n) = self.edicion.decimal(ui, "pct|exceso", umbral, 2, 60.0) {
+                acciones.push(super::Accion::Obra(super::obra::OpObra::Umbral(n)));
+            }
+            ui.end_row();
         });
         ui.label(
             RichText::new(format!(

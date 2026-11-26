@@ -1643,6 +1643,65 @@ fn contradictorios_y_certificaciones() {
 }
 
 #[test]
+fn excesos_de_medicion_en_la_ventana_de_obra() {
+    use obra::{OpObra, PestanaObra};
+    use ppto_core::seguimiento::{EstadoExceso, Precios};
+    let mut app = Aplicacion::sin_ventana();
+    let ctx = Context::default();
+    let pinta = |app: &mut Aplicacion| {
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| {
+                let c = ui.ctx().clone();
+                app.ventana_obra(&c);
+            });
+            out.textures_delta.clear();
+        }
+    };
+    app.abrir_obra(PestanaObra::Certificaciones);
+    app.aplicar(vec![Accion::Obra(OpObra::NuevaCertificacion("30/11/2026".into()))]);
+    let pr = Precios::Venta { gg: app.gg, bi: app.bi };
+    let med = app
+        .p
+        .relacion_valorada(1, pr)
+        .unwrap()
+        .partidas()
+        .find(|x| x.capitulo == "C01" && x.codigo == "SR.M2")
+        .unwrap()
+        .medicion;
+    app.aplicar(vec![Accion::Obra(OpObra::Origen(
+        1,
+        "C01".into(),
+        "SR.M2".into(),
+        med * dec!(1.5),
+    ))]);
+    pinta(&mut app);
+    let r = app.p.relacion_valorada(1, pr).unwrap();
+    assert_eq!(r.excesos_sin_aprobar().len(), 1);
+    let antes = r.total.origen;
+    app.aplicar(vec![Accion::Obra(OpObra::Exceso(
+        "C01".into(),
+        "SR.M2".into(),
+        EstadoExceso::Aprobado,
+        "acta 1".into(),
+        "más superficie".into(),
+    ))]);
+    app.aplicar(vec![Accion::Obra(OpObra::Umbral(dec!(60)))]);
+    pinta(&mut app);
+    let r = app.p.relacion_valorada(1, pr).unwrap();
+    assert!(r.total.origen > antes);
+    let (_, i) = r.filas_exceso().next().unwrap();
+    assert_eq!((i.estado, i.supera_umbral), (EstadoExceso::Aprobado, false));
+    // PDF y Excel con la fila de exceso
+    let s = app.p.resumen_certificacion(&r, pr, app.iva, app.retencion);
+    assert!(ppto_informes::excel_certificacion(&app.p, &r, &s, true).is_ok());
+    app.deshacer();
+    app.deshacer();
+    assert!(app.p.seguimiento.excesos.is_empty());
+    assert!(app.p.seguimiento.umbral_exceso.is_none());
+    pinta(&mut app);
+}
+
+#[test]
 fn informes_de_pedidos_mano_de_obra_y_coste() {
     let mut app = Aplicacion::sin_ventana();
     app.p.fijar_descuento("SCHAKO", dec!(40)).unwrap();

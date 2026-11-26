@@ -202,6 +202,17 @@ Para clientes que mandan su pedido y cada mes una **proforma de certificación a
 5. **Detalle de la factura (Excel)…**: para administración, con las líneas del mes, los totales y los avisos.
 6. Apunte cada **factura** y cada **abono** (en negativo) en su certificación: el programa avisa si lo facturado no coincide con lo certificado.
 
+### Excesos de medición (certificaciones propias)
+
+En Obra → Seguimiento → Certificaciones, si en una partida se mide más de lo contratado, la partida se queda en el **100 %** y lo que sobra pasa a una partida espejo **EX-código** (mismo precio) en el capítulo **«Excesos de medición»**, al final de la relación valorada. Usted sigue tecleando lo medido en la partida original (sale en naranja); la fila EX se calcula sola.
+
+- **Sin aprobar** (rojo): sale en la certificación, pero **no suma** al total ni se cobra.
+- **Aprobado** (verde): pulse el estado de la fila EX, escriba la referencia (correo, acta…) y el motivo y elija «Aprobar». Se cobra **a origen** en la certificación abierta (o en la siguiente si no hay ninguna abierta): todo el exceso acumulado de una vez.
+- **Rechazado** (gris): no se cobra; queda como coste propio.
+- Un exceso ya cobrado en una certificación cerrada no se puede rechazar sin reabrirla.
+- Si el exceso pasa del **10 %** de la partida (cambie el umbral en la pestaña Resumen), sale un aviso ⚠ para pedir la aprobación antes de seguir ejecutando.
+- En el PDF los excesos sin aprobar salen en rojo con «[Sin aprobar]»; en el Excel, con su estado, motivo y referencia.
+
 ### Legalización (RITE, PCI)
 
 La ventana de legalización calcula la partida de un expediente con el baremo propio: horas por tarea a coste de cada perfil, desplazamientos, y tasas, EICI y visados repercutidos sin margen. Como instalador va a coste y el margen lo pone la obra.
