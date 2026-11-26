@@ -3415,3 +3415,44 @@ fn propuestas_de_dos_agentes_en_la_ventana() {
     assert_eq!(app.enlace.bandeja.buscar(1).unwrap().estado, E::Rechazada);
     assert!(app.enlace.bandeja.desacuerdos(&obra).is_empty());
 }
+
+#[test]
+fn arranca_sin_el_ejemplo_y_el_ejemplo_va_marcado() {
+    let ctx = Context::default();
+    let pinta = |app: &mut Aplicacion| {
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(RawInput::default(), |ui| app.pantalla(ui));
+            out.textures_delta.clear();
+        }
+    };
+    let mut app = Aplicacion::sin_ventana();
+    app.recientes.anotar_con(
+        std::path::Path::new("/no/existe/garaje.sqlite"),
+        Some(recientes::InfoReciente {
+            nombre: "Garaje 40 plazas".into(),
+            cliente: "Constructora".into(),
+            estado: "Ofertada".into(),
+            fecha: "26/11/2026".into(),
+        }),
+    );
+    // Arranque sin obra: vacío, pantalla de inicio, sin marca de ejemplo
+    app.arrancar_vacio();
+    assert!(app.inicio && !app.es_ejemplo);
+    assert!(!app.p.conceptos.values().any(|c| c.naturaleza == Naturaleza::Partida));
+    assert!(!app.datos_obra().contains_key(ppto_propuestas::DATO_EJEMPLO));
+    pinta(&mut app);
+    // El ejemplo, a propósito: franja y marca para Claude
+    app.cargar_ejemplo();
+    assert!(app.es_ejemplo && !app.inicio);
+    assert!(app.datos_obra().contains_key(ppto_propuestas::DATO_EJEMPLO));
+    pinta(&mut app);
+    // La marca viaja con los datos de la obra (se guarda y se recupera)
+    let d = app.datos_obra();
+    let mut otra = Aplicacion::sin_ventana();
+    otra.es_ejemplo = false;
+    otra.aplicar_datos_obra(&d);
+    assert!(otra.es_ejemplo);
+    // Presupuesto nuevo: ya no es el ejemplo
+    app.nuevo_presupuesto();
+    assert!(!app.es_ejemplo && !app.inicio);
+}

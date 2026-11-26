@@ -20,6 +20,7 @@ mod dificultad;
 mod emparejar;
 mod ficha;
 mod informes;
+mod inicio;
 mod legalizacion;
 mod lineas;
 mod menus;
@@ -415,6 +416,10 @@ pub struct Aplicacion {
     recuperacion: recuperacion::Recuperacion,
     /// Últimos presupuestos abiertos o guardados.
     recientes: recientes::Recientes,
+    /// La obra abierta es el ejemplo sintético (datos inventados).
+    es_ejemplo: bool,
+    /// Pantalla de inicio a la vista (al arrancar sin obra).
+    inicio: bool,
     /// Biblioteca de precios para comparar con la obra al guardar y abrir (`None` en las pruebas).
     ruta_biblioteca: Option<std::path::PathBuf>,
     /// Pregunta pendiente obra ↔ biblioteca.
@@ -569,13 +574,19 @@ impl Aplicacion {
             Ok("mediciones") => Pestana::Mediciones,
             _ => Pestana::Partida,
         };
-        if let Some(ruta) = inicial {
-            let es_bc3 = ruta.extension().is_some_and(|e| e.eq_ignore_ascii_case("bc3"));
-            if es_bc3 {
-                let _ = app.importar_bc3(ruta);
-            } else {
-                app.abrir(ruta)
+        // Sin obra en la línea de órdenes: la última (si está marcado) o la
+        // pantalla de inicio con un presupuesto vacío; nunca el ejemplo.
+        let inicial = inicial.or_else(|| app.recientes.para_arrancar().cloned());
+        match inicial {
+            Some(ruta) => {
+                let es_bc3 = ruta.extension().is_some_and(|e| e.eq_ignore_ascii_case("bc3"));
+                if es_bc3 {
+                    let _ = app.importar_bc3(ruta);
+                } else {
+                    app.abrir(ruta)
+                }
             }
+            None => app.arrancar_vacio(),
         }
         app
     }
@@ -662,6 +673,8 @@ impl Aplicacion {
             f5: std::cell::RefCell::new(None),
             recuperacion: recuperacion::Recuperacion::default(),
             recientes: recientes::Recientes::default(),
+            es_ejemplo: true,
+            inicio: false,
             ruta_biblioteca: None,
             sincro: None,
             docs: ofertas::CacheDocumentos::default(),
@@ -995,6 +1008,7 @@ impl Aplicacion {
         egui::Panel::top("barra").show(ui, |ui| {
             ui.add_space(4.0);
             self.barra_superior(ui, &mut acciones);
+            self.franja_ejemplo(ui);
             ui.add_space(2.0);
             if std::mem::take(&mut self.enlace.reaplicar) {
                 acciones.push(Accion::ReaplicarAceptadas);
@@ -1062,6 +1076,7 @@ impl Aplicacion {
         self.ventana_bases(&ctx, &mut acciones);
         self.ventana_emparejar(&ctx, &mut acciones);
         self.ventana_nuevo(&ctx);
+        self.pantalla_inicio(&ctx);
         self.ventana_ficha(&ctx);
         self.ventana_origen(&ctx, &mut acciones);
         self.ventana_informes(&ctx);

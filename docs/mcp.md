@@ -37,7 +37,7 @@ ese presupuesto al arrancar.
 | `simular_subcontrata` | Subcontratar parte de una partida por unidad (con factor) o alzado | No |
 | `exportar_excel` | Crea el informe Excel en un fichero nuevo | Crea un fichero |
 | `exportar_bc3` | Crea un BC3 en un fichero nuevo | Crea un fichero |
-| `abrir_obra_activa` | Abre la obra que está abierta en el programa de escritorio | No |
+| `abrir_obra_activa` | Abre la obra que está abierta en el programa de escritorio. Se niega si es el ejemplo para practicar o un presupuesto vacío | No |
 | `partidas_sin_precio` | Partidas a 0 € con unidad, cantidad, capítulo y texto | No |
 | `buscar_tarifas` | Busca en las tarifas de subcontratas del usuario | No |
 | `proponer` | Propone el descompuesto de una partida (no se admiten precios directos) | No: queda **pendiente** en la bandeja |

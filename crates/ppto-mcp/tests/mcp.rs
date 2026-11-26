@@ -222,6 +222,30 @@ fn binario_por_stdio() {
 }
 
 #[test]
+fn no_valora_el_ejemplo_ni_un_presupuesto_vacio() {
+    let dir = std::env::temp_dir().join(format!("mcp-ejemplo-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let activa = dir.join("obra-activa.json");
+    let mut e = Estado {
+        ruta_obra_activa: Some(activa.clone()),
+        ruta_bandeja: Some(dir.join("propuestas.json")),
+        ..Estado::default()
+    };
+    // El ejemplo marcado por el programa
+    let p = ppto_core::ejemplos::suelo_radiante();
+    let datos = std::collections::BTreeMap::from([(ppto_propuestas::DATO_EJEMPLO.to_owned(), "1".to_owned())]);
+    ppto_propuestas::ObraActiva::guardar_con(&p, &datos, &activa).unwrap();
+    let (t, err) = llamar(&mut e, "abrir_obra_activa", json!({}));
+    assert!(err && t.contains("EJEMPLO"), "{t}");
+    // Presupuesto vacío (pantalla de inicio)
+    let vacio = ppto_core::Presupuesto::new("Presupuesto nuevo", "OBRA", "Presupuesto nuevo");
+    ppto_propuestas::ObraActiva::guardar_con(&vacio, &Default::default(), &activa).unwrap();
+    let (t, err) = llamar(&mut e, "abrir_obra_activa", json!({}));
+    assert!(err && t.contains("vacío"), "{t}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn propuestas_a_la_obra_activa() {
     let dir = std::env::temp_dir().join(format!("mcp-propuestas-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

@@ -176,6 +176,14 @@ impl Aplicacion {
                     ui.close();
                     self.abrir_ayuda(None);
                 }
+                if ui
+                    .button("Abrir el ejemplo para practicar")
+                    .on_hover_text("Obra inventada de suelo radiante; sale con una franja naranja")
+                    .clicked()
+                {
+                    ui.close();
+                    self.cargar_ejemplo();
+                }
                 ui.separator();
                 if ui.button(format!("Info (versión {VERSION})")).clicked() {
                     ui.close();
@@ -435,15 +443,6 @@ impl Aplicacion {
                 self.devolver_valorado();
             }
         });
-        ui.separator();
-        if ui
-            .button("📄 Abrir ejemplo")
-            .on_hover_text("Ejemplo sintético de suelo radiante")
-            .clicked()
-        {
-            ui.close();
-            self.cargar_ejemplo();
-        }
         ui.separator();
         if ui.button("Salir").clicked() {
             ui.close();

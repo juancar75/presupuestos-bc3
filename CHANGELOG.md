@@ -5,6 +5,13 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Pantalla de inicio** al arrancar sin obra: obras recientes con cliente, estado de la oferta y fecha; nuevo, abrir e importar ciego. Opción «Abrir siempre la última obra al arrancar».
+
+### Cambiado
+- El programa ya no arranca con el ejemplo sintético. El ejemplo se abre desde Ayuda o la pantalla de inicio, con una franja «EJEMPLO — datos inventados»; guardarlo pide siempre un nombre nuevo.
+- Claude (MCP) no valora el ejemplo ni un presupuesto vacío: pide abrir la obra real.
+
 ## [0.1.0-alpha.75] - 2026-11-26
 
 ### Cambiado

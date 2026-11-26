@@ -17,7 +17,9 @@ impl Aplicacion {
         self.ofertas = ofertas_montaje_suelo_radiante().to_vec();
         self.avisos.clear();
         self.recalcular();
-        self.info("Ejemplo sintético cargado.");
+        self.es_ejemplo = true;
+        self.inicio = false;
+        self.info("Ejemplo para practicar: los datos son inventados.");
     }
 
     /// Otra ventana del programa (proceso aparte), con una obra o vacía.
@@ -59,6 +61,8 @@ impl Aplicacion {
         self.obra_textos.clear();
         self.historial.limpiar();
         self.p = Presupuesto::new("Presupuesto nuevo", "OBRA", "Presupuesto nuevo");
+        self.es_ejemplo = false;
+        self.inicio = false;
         self.fichero = None;
         self.presupuesto_id = None;
         self.revisiones.clear();
@@ -114,6 +118,7 @@ impl Aplicacion {
         match r {
             Ok((revs, Some(ultima), Some((p, datos)))) => {
                 self.p = p;
+                self.es_ejemplo = false;
                 self.aplicar_datos_obra(&datos);
                 self.presupuesto_id = Some(ultima.presupuesto_id);
                 self.revision_actual = Some(ultima.id);
@@ -123,7 +128,8 @@ impl Aplicacion {
                 self.sel = None;
                 self.ofertas.clear();
                 self.recalcular();
-                self.recientes.anotar(&ruta_reciente);
+                self.recientes.anotar_con(&ruta_reciente, Some(self.info_reciente()));
+                self.inicio = false;
                 self.info(format!(
                     "Abierta la revisión {} ({}).",
                     ultima.etiqueta, ultima.creado_en
@@ -208,6 +214,8 @@ impl Aplicacion {
                 self.obra_textos.clear();
                 self.historial.limpiar();
                 self.p = imp.presupuesto.clone();
+                self.es_ejemplo = false;
+                self.inicio = false;
                 let k = &imp.porcentajes;
                 self.gg = k.gastos_generales.unwrap_or(self.gg);
                 self.bi = k.beneficio_industrial.unwrap_or(self.bi);
@@ -249,6 +257,7 @@ impl Aplicacion {
         match Almacen::abrir(&ruta).and_then(|a| Ok((a.cargar_revision(id)?, a.datos_obra(id)?))) {
             Ok((p, datos)) => {
                 self.p = p;
+                self.es_ejemplo = false;
                 self.aplicar_datos_obra(&datos);
                 self.historial.limpiar();
                 self.revision_actual = Some(id);
@@ -262,6 +271,8 @@ impl Aplicacion {
     }
 
     pub(super) fn guardar(&mut self, pedir_ruta: bool) {
+        // El ejemplo siempre con nombre nuevo, para no pisar nada
+        let pedir_ruta = pedir_ruta || self.es_ejemplo;
         let ruta = match (&self.fichero, pedir_ruta) {
             (Some(r), false) => r.clone(),
             _ => match rfd::FileDialog::new()
@@ -296,7 +307,7 @@ impl Aplicacion {
         match r {
             Ok((pid, rev, etiqueta, revs)) => {
                 self.notas_revision.clear();
-                self.recientes.anotar(&ruta);
+                self.recientes.anotar_con(&ruta, Some(self.info_reciente()));
                 self.fichero = Some(ruta);
                 self.presupuesto_id = Some(pid);
                 self.revision_actual = Some(rev);
@@ -323,6 +334,9 @@ impl Aplicacion {
         if let Some(c) = &self.ciego {
             d.insert("ciego".into(), c.ruta.display().to_string());
         }
+        if self.es_ejemplo {
+            d.insert(ppto_propuestas::DATO_EJEMPLO.into(), "1".into());
+        }
         if !self.especialidades.is_empty() {
             let v: Vec<&str> = self.especialidades.iter().map(|e| e.clave()).collect();
             d.insert("especialidad".into(), v.join(","));
@@ -335,6 +349,7 @@ impl Aplicacion {
     /// Recupera los datos de la obra al abrir (los ficheros antiguos no
     /// los tienen: se dejan los valores actuales).
     pub(super) fn aplicar_datos_obra(&mut self, d: &BTreeMap<String, String>) {
+        self.es_ejemplo = d.contains_key(ppto_propuestas::DATO_EJEMPLO);
         let dec = |k: &str| d.get(k).and_then(|v| v.parse::<Decimal>().ok());
         if let Some(v) = dec("gg") {
             self.gg = v;
