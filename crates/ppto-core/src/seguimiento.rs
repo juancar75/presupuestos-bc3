@@ -797,7 +797,6 @@ impl Presupuesto {
     /// Fila de una partida y, si en una partida del presupuesto se ha medido
     /// más de lo contratado, la fila de su exceso (la partida se queda en el
     /// 100 %). Sin precio vigente (partida que ya no está) no se topa.
-    #[allow(clippy::too_many_arguments)]
     fn fila_partida(
         &self,
         capitulo: &str,
