@@ -45,6 +45,10 @@ En «Datos de la obra», junto a la carpeta: **?** explica dónde va cada cosa, 
 
 **Revisiones**: cada guardado puede ser una revisión nueva (R1, R2…) dentro del mismo fichero; las anteriores se conservan y se comparan con Archivo → «Comparar con…».
 
+**Planos DXF**: si la carpeta de documentos tiene planos en DXF, Claude cuenta los aparatos dibujados (bloques por nombre y capa: detectores, BIE, extintores, rejillas…), lee las leyendas y mide la distancia de cada aparato al más cercano y la superficie que cubren, para comprobar la medición del cliente y las coberturas. Los planos en PDF solo aportan sus textos. Los **DWG** se convierten solos a DXF (en la misma carpeta) si está LibreDWG: descargue el paquete de Windows (win64) de https://github.com/LibreDWG/libredwg/releases (libre, GPL-3) y deje `dwg2dxf.exe` y sus DLL junto a `ppto-gui.exe`; si no, guárdelos como DXF desde el CAD.
+
+**Modelos IFC (BIM)**: si hay un `.ifc` (IFC2x3 o IFC4, sin comprimir), Claude cuenta los elementos de instalaciones por clase, tipo, tamaño y planta (difusores, detectores, BIE, unidades, válvulas…), suma los metros de conductos y tuberías cuando el modelo trae la longitud (en sus propiedades o por la extrusión de la geometría) y da los m² de los espacios por planta. Pídale, por ejemplo, «cuenta los elementos del IFC» o «filtra el IFC por detector». Si un modelo no trae longitudes, cuenta las piezas pero no las mide.
+
 ## 3. La pantalla principal
 
 A la izquierda, el árbol de capítulos y partidas; a la derecha, las pestañas de trabajo. Arriba a la derecha, siempre el PEM.
@@ -183,43 +187,6 @@ Al cliente solo le llega el precio de venta repercutido: las observaciones y los
 
 Claude hace la misma comparación (`comparar_obras`) y explica cada desviación antes de dar la oferta por buena.
 
-**Planos DXF**: si la carpeta de documentos tiene planos en DXF, Claude cuenta los aparatos dibujados (bloques por nombre y capa: detectores, BIE, extintores, rejillas…), lee las leyendas y mide la distancia de cada aparato al más cercano y la superficie que cubren, para comprobar la medición del cliente y las coberturas. Los planos en PDF solo aportan sus textos. Los **DWG** se convierten solos a DXF (en la misma carpeta) si está LibreDWG: descargue el paquete de Windows (win64) de https://github.com/LibreDWG/libredwg/releases (libre, GPL-3) y deje `dwg2dxf.exe` y sus DLL junto a `ppto-gui.exe`; si no, guárdelos como DXF desde el CAD.
-
-**Modelos IFC (BIM)**: si hay un `.ifc` (IFC2x3 o IFC4, sin comprimir), Claude cuenta los elementos de instalaciones por clase, tipo, tamaño y planta (difusores, detectores, BIE, unidades, válvulas…), suma los metros de conductos y tuberías cuando el modelo trae la longitud (en sus propiedades o por la extrusión de la geometría) y da los m² de los espacios por planta. Pídale, por ejemplo, «cuenta los elementos del IFC» o «filtra el IFC por detector». Si un modelo no trae longitudes, cuenta las piezas pero no las mide.
-
-### Varios agentes (Claude y ChatGPT)
-
-Si además de Claude conecta Codex (ChatGPT) al programa (ver `docs/mcp.md`), cada propuesta dice quién la hace («Propone: Claude / ChatGPT»). Si los dos proponen cosas distintas para la misma partida, sale **⚖ Desacuerdo** con el precio de cada uno: elija una (la otra queda rechazada); «Aceptar N propuestas» no toca esas partidas. Debajo de cada propuesta salen las opiniones del otro agente (👍 de acuerdo, 👎 en contra, 💬 comentario) con su motivo.
-
-### Certificaciones del cliente (pedido a origen)
-
-Para clientes que mandan su pedido y cada mes una **proforma de certificación a origen** en Excel (Nº línea, descripción, cantidad, precio y «Cantidad a facturar a origen»). Obra → **Certificaciones del cliente (pedido a origen)…**
-
-1. **Importar proforma del cliente…**: crea el pedido (o lo actualiza y dice qué líneas o precios han cambiado) y, si trae cantidades a origen, la certificación de ese mes (el mes sale del nombre del fichero, p. ej. `2026-10_PROFORMA_CERT02.xlsx`). Importe también las de meses anteriores para tener el histórico.
-2. **+ Nueva** certificación del mes: empieza con el origen de la anterior; cambie la columna **A origen**. En rojo, lo que pasa del pedido.
-3. Lo que se factura es **origen − anterior** línea a línea, **también en negativo** si una línea baja. Avisos: líneas que bajan, excesos sobre el pedido, cambios de precio del cliente y facturas que no cuadran con el origen anterior.
-4. **Rellenar proforma del cliente…**: escribe las cantidades a origen en su mismo Excel (solo esa columna).
-5. **Detalle de la factura (Excel)…**: para administración, con las líneas del mes, los totales y los avisos.
-6. Apunte cada **factura** y cada **abono** (en negativo) en su certificación: el programa avisa si lo facturado no coincide con lo certificado.
-
-### Excesos de medición (certificaciones propias)
-
-En Obra → Seguimiento → Certificaciones, si en una partida se mide más de lo contratado, la partida se queda en el **100 %** y lo que sobra pasa a una partida espejo **EX-código** (mismo precio) en el capítulo **«Excesos de medición»**, al final de la relación valorada. Usted sigue tecleando lo medido en la partida original (sale en naranja); la fila EX se calcula sola.
-
-- **Sin aprobar** (rojo): sale en la certificación, pero **no suma** al total ni se cobra.
-- **Aprobado** (verde): pulse el estado de la fila EX, escriba la referencia (correo, acta…) y el motivo y elija «Aprobar». Se cobra **a origen** en la certificación abierta (o en la siguiente si no hay ninguna abierta): todo el exceso acumulado de una vez.
-- **Rechazado** (gris): no se cobra; queda como coste propio.
-- Un exceso ya cobrado en una certificación cerrada no se puede rechazar sin reabrirla.
-- Si el exceso pasa del **10 %** de la partida (cambie el umbral en la pestaña Resumen), sale un aviso ⚠ para pedir la aprobación antes de seguir ejecutando.
-- En el PDF los excesos sin aprobar salen en rojo con «[Sin aprobar]»; en el Excel, con su estado, motivo y referencia.
-
-### Legalización (RITE, PCI)
-
-La ventana de legalización calcula la partida de un expediente con el baremo propio: horas por tarea a coste de cada perfil, desplazamientos, y tasas, EICI y visados repercutidos sin margen. Como instalador va a coste y el margen lo pone la obra.
-
-- **Editar el baremo**: horas por tarea, costes por perfil, viajes y tablas. Las memorias tienen su propia visita a obra y su propia jornada (0 = sin redondeo a jornadas).
-- **Importar baremo…**: trae un `legalizacion.json` (de un compañero o de Claude). Cada año que trae sustituye al mismo año del baremo propio; los demás años se quedan.
-
 ## 9. Trabajar con Claude: propuestas IA
 
 Claude se conecta a la obra abierta en el programa y propone precios, pero nunca cambia nada por su cuenta: todo queda como propuesta hasta que la aceptas.
@@ -235,6 +202,10 @@ Claude se conecta a la obra abierta en el programa y propone precios, pero nunca
 | --- | --- |
 | 00 OBSERVACIONES | Aclaraciones al cliente sin precio: alcance, lo que hacen terceros, estimaciones repercutidas, límites a verificar. |
 | 99 CONTRADICTORIOS | Partidas que faltan en la medición del cliente y se valoran aparte. |
+
+### Varios agentes (Claude y ChatGPT)
+
+Si además de Claude conecta Codex (ChatGPT) al programa (ver `docs/mcp.md`), cada propuesta dice quién la hace («Propone: Claude / ChatGPT»). Si los dos proponen cosas distintas para la misma partida, sale **⚖ Desacuerdo** con el precio de cada uno: elija una (la otra queda rechazada); «Aceptar N propuestas» no toca esas partidas. Debajo de cada propuesta salen las opiniones del otro agente (👍 de acuerdo, 👎 en contra, 💬 comentario) con su motivo.
 
 ## 10. Exportar: BC3, Presto, PDF y Excel
 
@@ -255,7 +226,43 @@ El BC3 exportado vale exactamente lo mismo que la obra; en Presto hay que pulsar
 - El importe en letra es el **importe sin IVA**: «Asciende el importe total a la expresada cantidad de … (… €), IVA no incluido.»
 - **Plantilla propia**: «Guardar copia de la plantilla…» para editarla (Typst) y «Usar plantilla…» para usarla. «Usar la incluida» vuelve a la del programa.
 
-## 11. Buenas prácticas y preguntas frecuentes
+## 11. Seguimiento de obra y certificaciones
+
+El menú **Obra** abre la ventana «Seguimiento de obra», que reúne lo que pasa después de contratar: contradictorios, certificaciones mensuales a origen, pedidos, control de compras y coste real. Hay dos formas de certificar:
+
+- **Con el modelo propio** (Obra → «Certificaciones…»): cada mes se teclea lo medido a origen por partida; el mes es la diferencia con la certificación anterior. Se cierra, se numera y sale en PDF o Excel.
+- **Con el pedido del cliente** (Obra → «Certificaciones del cliente…»), cuando el cliente manda su propia proforma.
+
+### Certificaciones del cliente (pedido a origen)
+
+Para clientes que mandan su pedido y cada mes una **proforma de certificación a origen** en Excel (Nº línea, descripción, cantidad, precio y «Cantidad a facturar a origen»). Obra → **Certificaciones del cliente (pedido a origen)…**
+
+1. **Importar proforma del cliente…**: crea el pedido (o lo actualiza y dice qué líneas o precios han cambiado) y, si trae cantidades a origen, la certificación de ese mes (el mes sale del nombre del fichero, p. ej. `2026-10_PROFORMA_CERT02.xlsx`). Importe también las de meses anteriores para tener el histórico.
+2. **+ Nueva** certificación del mes: empieza con el origen de la anterior; cambie la columna **A origen**. En rojo, lo que pasa del pedido.
+3. Lo que se factura es **origen − anterior** línea a línea, **también en negativo** si una línea baja. Avisos: líneas que bajan, excesos sobre el pedido, cambios de precio del cliente y facturas que no cuadran con el origen anterior.
+4. **Rellenar proforma del cliente…**: escribe las cantidades a origen en su mismo Excel (solo esa columna).
+5. **Detalle de la factura (Excel)…**: para administración, con las líneas del mes, los totales y los avisos.
+6. Apunte cada **factura** y cada **abono** (en negativo) en su certificación: el programa avisa si lo facturado no coincide con lo certificado.
+
+### Excesos de medición (certificaciones propias)
+
+En Obra → «Certificaciones…», si en una partida se mide más de lo contratado, la partida se queda en el **100 %** y lo que sobra pasa a una partida espejo **EX-código** (mismo precio) en el capítulo **«Excesos de medición»**, al final de la relación valorada. Usted sigue tecleando lo medido en la partida original (sale en naranja); la fila EX se calcula sola.
+
+- **Sin aprobar** (rojo): sale en la certificación, pero **no suma** al total ni se cobra.
+- **Aprobado** (verde): pulse el estado de la fila EX, escriba la referencia (correo, acta…) y el motivo y elija «Aprobar». Se cobra **a origen** en la certificación abierta (o en la siguiente si no hay ninguna abierta): todo el exceso acumulado de una vez.
+- **Rechazado** (gris): no se cobra; queda como coste propio.
+- Un exceso ya cobrado en una certificación cerrada no se puede rechazar sin reabrirla.
+- Si el exceso pasa del **10 %** de la partida (cambie el umbral en la pestaña Resumen), sale un aviso ⚠ para pedir la aprobación antes de seguir ejecutando.
+- En el PDF los excesos sin aprobar salen en rojo con «[Sin aprobar]»; en el Excel, con su estado, motivo y referencia.
+
+## 12. Legalización (RITE, PCI)
+
+La ventana de legalización calcula la partida de un expediente con el baremo propio: horas por tarea a coste de cada perfil, desplazamientos, y tasas, EICI y visados repercutidos sin margen. Como instalador va a coste y el margen lo pone la obra.
+
+- **Editar el baremo**: horas por tarea, costes por perfil, viajes y tablas. Las memorias tienen su propia visita a obra y su propia jornada (0 = sin redondeo a jornadas).
+- **Importar baremo…**: trae un `legalizacion.json` (de un compañero o de Claude). Cada año que trae sustituye al mismo año del baremo propio; los demás años se quedan.
+
+## 13. Buenas prácticas y preguntas frecuentes
 
 **Buenas prácticas**
 

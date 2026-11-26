@@ -193,6 +193,11 @@ fn pintar_md(ui: &mut egui::Ui, texto: &str, q: &str) {
         let l = lineas[i].trim_end();
         if l.trim().is_empty() {
             ui.add_space(6.0);
+        } else if let Some(t) = l.strip_prefix("### ") {
+            // Subapartado
+            ui.add_space(8.0);
+            ui.label(RichText::new(t.trim()).strong().size(15.0));
+            ui.separator();
         } else if l.starts_with('|') {
             // Tabla: cabecera, separador y filas
             let mut filas: Vec<Vec<String>> = Vec::new();
@@ -262,6 +267,9 @@ mod tests {
         assert!(a[0].titulo.starts_with("1. "));
         assert!(a.iter().any(|x| x.titulo.contains("Comprobar antes de valorar")));
         assert!(a.iter().all(|x| !x.texto.contains("\n## ")));
+        // Cada subapartado «### » va en el apartado que le toca
+        let venta = a.iter().find(|x| x.titulo.contains("Venta")).unwrap();
+        assert!(!venta.texto.contains("### "), "en Venta solo va la venta");
         // Lo de los botones «?» existe
         for tema in [
             "comprobar",
@@ -269,6 +277,8 @@ mod tests {
             "carpeta de tarifas",
             "exportar",
             "claude",
+            "certificaciones",
+            "legalizacion",
         ] {
             let t = super::super::valorar::plano(tema);
             assert!(
