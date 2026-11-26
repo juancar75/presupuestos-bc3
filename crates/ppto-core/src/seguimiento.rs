@@ -45,6 +45,61 @@ pub struct Seguimiento {
     /// La obra está contratada (ver [`Presupuesto::contratar`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contrato: Option<Contrato>,
+    /// Aprobación de los excesos de medición (lo certificado por encima de
+    /// lo contratado), por partida.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excesos: Vec<AprobacionExceso>,
+    /// % de exceso sobre la medición a partir del cual se avisa (10 si no se
+    /// fija).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub umbral_exceso: Option<Decimal>,
+}
+
+/// Umbral de aviso de exceso por defecto (%).
+pub const UMBRAL_EXCESO: Decimal = Decimal::TEN;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum EstadoExceso {
+    /// Se muestra en la certificación pero no se cobra.
+    #[default]
+    Pendiente,
+    /// Se cobra a origen desde la certificación en que se aprueba.
+    Aprobado,
+    /// No se cobra (queda como coste propio).
+    Rechazado,
+}
+
+impl EstadoExceso {
+    pub const TODOS: [Self; 3] = [Self::Pendiente, Self::Aprobado, Self::Rechazado];
+
+    pub fn nombre(self) -> &'static str {
+        match self {
+            Self::Pendiente => "Sin aprobar",
+            Self::Aprobado => "Aprobado",
+            Self::Rechazado => "Rechazado",
+        }
+    }
+}
+
+/// Estado del exceso de medición de una partida.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AprobacionExceso {
+    pub capitulo: String,
+    pub partida: String,
+    pub estado: EstadoExceso,
+    /// Certificación desde la que cuenta (si está aprobado): ahí se cobra
+    /// todo el exceso acumulado.
+    #[serde(default)]
+    pub desde: u32,
+    /// Fecha de la aprobación o del rechazo (texto libre).
+    #[serde(default)]
+    pub fecha: String,
+    /// Correo, acta, orden… que lo aprueba.
+    #[serde(default)]
+    pub referencia: String,
+    /// Por qué se ha medido de más.
+    #[serde(default)]
+    pub motivo: String,
 }
 
 /// Datos de la contratación.
@@ -67,6 +122,8 @@ impl Seguimiento {
             && self.gastos.is_empty()
             && self.descuento.is_none()
             && self.contrato.is_none()
+            && self.excesos.is_empty()
+            && self.umbral_exceso.is_none()
     }
 }
 
@@ -219,9 +276,34 @@ pub struct PartidaCertificada {
     pub cant_actual: Decimal,
     pub cant_origen: Decimal,
     pub importes: Importes,
-    /// Se certifica más de lo presupuestado.
+    /// Se ha medido más de lo presupuestado (el exceso va aparte, en el
+    /// capítulo «Excesos de medición»; aquí la cantidad se queda en el 100 %).
     pub exceso: bool,
+    /// Medido a origen y en la anterior, sin topar (lo que se edita).
+    pub medido: Decimal,
+    pub medido_anterior: Decimal,
+    /// Solo en las filas del capítulo de excesos.
+    pub de_exceso: Option<Box<InfoExceso>>,
 }
+
+/// Datos de una fila de exceso de medición.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InfoExceso {
+    /// Capítulo y partida contratada de la que sale.
+    pub capitulo: String,
+    pub partida: String,
+    pub medicion: Decimal,
+    pub estado: EstadoExceso,
+    pub referencia: String,
+    pub motivo: String,
+    /// % del exceso a origen sobre la medición contratada.
+    pub porcentaje: Decimal,
+    /// Pasa del umbral de aviso.
+    pub supera_umbral: bool,
+}
+
+/// Código del capítulo de excesos de medición en la relación valorada.
+pub const CAPITULO_EXCESOS: &str = "EX";
 
 /// Relación valorada de una certificación.
 #[derive(Debug, Clone, PartialEq)]
@@ -241,9 +323,22 @@ impl Relacion {
         })
     }
 
-    /// Partidas con más certificado que presupuestado.
+    /// Partidas con más medido que presupuestado.
     pub fn excesos(&self) -> Vec<&PartidaCertificada> {
         self.partidas().filter(|p| p.exceso).collect()
+    }
+
+    /// Filas del capítulo de excesos de medición.
+    pub fn filas_exceso(&self) -> impl Iterator<Item = (&PartidaCertificada, &InfoExceso)> {
+        self.partidas().filter_map(|p| p.de_exceso.as_deref().map(|i| (p, i)))
+    }
+
+    /// Excesos sin aprobar (no se cobran).
+    pub fn excesos_sin_aprobar(&self) -> Vec<&PartidaCertificada> {
+        self.filas_exceso()
+            .filter(|(_, i)| i.estado == EstadoExceso::Pendiente)
+            .map(|(p, _)| p)
+            .collect()
     }
 }
 
@@ -582,7 +677,18 @@ impl Presupuesto {
         let v = self.valorar()?;
         let mut filas = Vec::new();
         let mut visitados = Vec::new();
-        let total = self.relacion_rec(&self.raiz, 0, cert, previa, &v, precios, &mut filas, &mut visitados)?;
+        let mut excesos = Vec::new();
+        let total = self.relacion_rec(
+            &self.raiz,
+            0,
+            cert,
+            previa,
+            &v,
+            precios,
+            &mut filas,
+            &mut visitados,
+            &mut excesos,
+        )?;
         // Lo certificado en partidas que ya no están en el presupuesto
         // (borradas después) se mantiene, sin presupuesto.
         let mut huerfanas = Importes::default();
@@ -593,11 +699,25 @@ impl Presupuesto {
                 continue;
             }
             visitados.push(k);
-            let f = self.fila_partida(&l.capitulo, &l.partida, 1, Decimal::ZERO, None, cert, previa, precios);
+            let (f, _) = self.fila_partida(&l.capitulo, &l.partida, 1, Decimal::ZERO, None, cert, previa, precios);
             huerfanas.sumar(&f.importes);
             extra.push(f);
         }
         let mut total = total;
+        if !excesos.is_empty() {
+            let mut imp = Importes::default();
+            for e in &excesos {
+                imp.sumar(&e.importes);
+            }
+            total.sumar(&imp);
+            filas.push(FilaRelacion::Capitulo {
+                codigo: CAPITULO_EXCESOS.into(),
+                resumen: "Excesos de medición".into(),
+                nivel: 0,
+                importes: imp,
+            });
+            filas.extend(excesos.into_iter().map(FilaRelacion::Partida));
+        }
         if !extra.is_empty() {
             total.sumar(&huerfanas);
             filas.push(FilaRelacion::Capitulo {
@@ -628,6 +748,7 @@ impl Presupuesto {
         precios: Precios,
         filas: &mut Vec<FilaRelacion>,
         visitados: &mut Vec<(String, String)>,
+        excesos: &mut Vec<PartidaCertificada>,
     ) -> Result<Importes, ErrorMotor> {
         let mut total = Importes::default();
         let Some(lineas) = v.lineas.get(capitulo) else {
@@ -643,7 +764,8 @@ impl Presupuesto {
                         nivel,
                         importes: Importes::default(),
                     });
-                    let i = self.relacion_rec(&l.hijo, nivel + 1, cert, previa, v, precios, filas, visitados)?;
+                    let i =
+                        self.relacion_rec(&l.hijo, nivel + 1, cert, previa, v, precios, filas, visitados, excesos)?;
                     if let FilaRelacion::Capitulo { importes, .. } = &mut filas[pos] {
                         *importes = i;
                     }
@@ -651,7 +773,7 @@ impl Presupuesto {
                 }
                 Naturaleza::Porcentaje => {}
                 _ => {
-                    let f = self.fila_partida(
+                    let (f, ex) = self.fila_partida(
                         capitulo,
                         &l.hijo,
                         nivel,
@@ -661,6 +783,7 @@ impl Presupuesto {
                         previa,
                         precios,
                     );
+                    excesos.extend(ex);
                     total.sumar(&f.importes);
                     visitados.push((capitulo.to_owned(), l.hijo.clone()));
                     filas.push(FilaRelacion::Partida(f));
@@ -670,6 +793,10 @@ impl Presupuesto {
         Ok(total)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    /// Fila de una partida y, si en una partida del presupuesto se ha medido
+    /// más de lo contratado, la fila de su exceso (la partida se queda en el
+    /// 100 %). Sin precio vigente (partida que ya no está) no se topa.
     #[allow(clippy::too_many_arguments)]
     fn fila_partida(
         &self,
@@ -681,8 +808,9 @@ impl Presupuesto {
         cert: &Certificacion,
         previa: Option<&Certificacion>,
         precios: Precios,
-    ) -> PartidaCertificada {
+    ) -> (PartidaCertificada, Option<PartidaCertificada>) {
         let d = self.decimales.importe;
+        let topar = vigente.is_some();
         let congelado = |l: &LineaCertificada| if precios.es_venta() { l.venta } else { l.precio };
         let vigente = vigente.map(|pem| match precios {
             Precios::Ejecucion { .. } => pem,
@@ -691,8 +819,8 @@ impl Presupuesto {
         let c = self.conceptos.get(partida);
         let la = previa.and_then(|c| c.linea(capitulo, partida));
         let lo = cert.linea(capitulo, partida);
-        let cant_anterior = la.map(|l| l.origen).unwrap_or_default();
-        let cant_origen = lo.map(|l| l.origen).unwrap_or_default();
+        let medido_anterior = la.map(|l| l.origen).unwrap_or_default();
+        let medido = lo.map(|l| l.origen).unwrap_or_default();
         // Precio de este mes: congelado si está cerrada; si no, el vigente
         // (o el de la anterior, si la partida ya no está en el presupuesto)
         let precio = lo
@@ -702,15 +830,29 @@ impl Presupuesto {
             .unwrap_or_default();
         // Lo anterior, valorado como se certificó; si el precio ha cambiado,
         // la diferencia de lo anterior va al mes (revisión)
-        let imp_anterior = la.map_or(Decimal::ZERO, |l| {
-            redondear(l.origen * congelado(l).unwrap_or(precio), d)
-        });
+        let precio_anterior = la.and_then(congelado).unwrap_or(precio);
+        let tope = |q: Decimal| {
+            if topar && q > medicion {
+                medicion.max(Decimal::ZERO)
+            } else {
+                q
+            }
+        };
+        let cant_anterior = tope(medido_anterior);
+        let cant_origen = tope(medido);
+        let imp_anterior = if la.is_some() {
+            redondear(cant_anterior * precio_anterior, d)
+        } else {
+            Decimal::ZERO
+        };
         let imp_origen = redondear(cant_origen * precio, d);
-        PartidaCertificada {
+        let unidad = c.map(|c| c.unidad.clone()).unwrap_or_default();
+        let resumen = c.map(|c| c.resumen.clone()).unwrap_or_default();
+        let fila = PartidaCertificada {
             capitulo: capitulo.to_owned(),
             codigo: partida.to_owned(),
-            unidad: c.map(|c| c.unidad.clone()).unwrap_or_default(),
-            resumen: c.map(|c| c.resumen.clone()).unwrap_or_default(),
+            unidad: unidad.clone(),
+            resumen: resumen.clone(),
             nivel,
             medicion,
             precio,
@@ -723,8 +865,142 @@ impl Presupuesto {
                 actual: imp_origen - imp_anterior,
                 origen: imp_origen,
             },
-            exceso: cant_origen > medicion,
+            exceso: medido > medicion,
+            medido,
+            medido_anterior,
+            de_exceso: None,
+        };
+        let ex_anterior = medido_anterior - cant_anterior;
+        let ex_origen = medido - cant_origen;
+        if ex_anterior.is_zero() && ex_origen.is_zero() {
+            return (fila, None);
         }
+        let ap = self.aprobacion_exceso(capitulo, partida);
+        let estado = ap.map(|a| a.estado).unwrap_or_default();
+        let aprobado_en = |n: u32| estado == EstadoExceso::Aprobado && ap.is_some_and(|a| a.desde <= n);
+        // Aprobado: se cobra a origen desde la certificación en que se aprueba
+        let cuenta_anterior = previa.is_some_and(|c| aprobado_en(c.numero));
+        let cuenta_origen = aprobado_en(cert.numero);
+        let ex_imp_anterior = if cuenta_anterior {
+            redondear(ex_anterior * precio_anterior, d)
+        } else {
+            Decimal::ZERO
+        };
+        let ex_imp_origen = if cuenta_origen {
+            redondear(ex_origen * precio, d)
+        } else {
+            Decimal::ZERO
+        };
+        let porcentaje = if medicion > Decimal::ZERO {
+            redondear(ex_origen / medicion * Decimal::ONE_HUNDRED, 2)
+        } else {
+            Decimal::ONE_HUNDRED
+        };
+        let ex = PartidaCertificada {
+            capitulo: CAPITULO_EXCESOS.to_owned(),
+            codigo: format!("EX-{partida}"),
+            unidad,
+            resumen,
+            nivel: 1,
+            medicion: Decimal::ZERO,
+            precio,
+            cant_anterior: ex_anterior,
+            cant_actual: ex_origen - ex_anterior,
+            cant_origen: ex_origen,
+            importes: Importes {
+                presupuesto: Decimal::ZERO,
+                anterior: ex_imp_anterior,
+                actual: ex_imp_origen - ex_imp_anterior,
+                origen: ex_imp_origen,
+            },
+            exceso: false,
+            medido: ex_origen,
+            medido_anterior: ex_anterior,
+            de_exceso: Some(Box::new(InfoExceso {
+                capitulo: capitulo.to_owned(),
+                partida: partida.to_owned(),
+                medicion,
+                estado,
+                referencia: ap.map(|a| a.referencia.clone()).unwrap_or_default(),
+                motivo: ap.map(|a| a.motivo.clone()).unwrap_or_default(),
+                porcentaje,
+                supera_umbral: porcentaje > self.umbral_exceso(),
+            })),
+        };
+        (fila, Some(ex))
+    }
+
+    // ---------------------------------------------------------------- excesos
+
+    /// % de exceso a partir del cual se avisa.
+    pub fn umbral_exceso(&self) -> Decimal {
+        self.seguimiento.umbral_exceso.unwrap_or(UMBRAL_EXCESO)
+    }
+
+    pub fn aprobacion_exceso(&self, capitulo: &str, partida: &str) -> Option<&AprobacionExceso> {
+        self.seguimiento
+            .excesos
+            .iter()
+            .find(|a| a.capitulo == capitulo && a.partida == partida)
+    }
+
+    /// Aprueba, rechaza o deja pendiente el exceso de medición de una
+    /// partida. Al aprobarlo cuenta desde la certificación abierta (o la
+    /// siguiente, si no hay ninguna abierta), donde se cobra todo lo
+    /// acumulado. No se puede cambiar un exceso aprobado que ya se ha cobrado
+    /// en una certificación cerrada.
+    pub fn fijar_exceso(
+        &mut self,
+        capitulo: &str,
+        partida: &str,
+        estado: EstadoExceso,
+        fecha: &str,
+        referencia: &str,
+        motivo: &str,
+    ) -> Result<(), ErrorMotor> {
+        let ultima = self.seguimiento.certificaciones.last();
+        let ultima_cerrada = self
+            .seguimiento
+            .certificaciones
+            .iter()
+            .rev()
+            .find(|c| c.cerrada)
+            .map(|c| c.numero);
+        let desde_nuevo = match ultima {
+            Some(c) if !c.cerrada => c.numero,
+            Some(c) => c.numero + 1,
+            None => 1,
+        };
+        let previo = self.aprobacion_exceso(capitulo, partida).cloned();
+        if let Some(a) = &previo {
+            let cobrado = a.estado == EstadoExceso::Aprobado && ultima_cerrada.is_some_and(|n| a.desde <= n);
+            if cobrado && estado != EstadoExceso::Aprobado {
+                return Err(error(format!(
+                    "el exceso de {partida} ya se cobró en la certificación nº {}; reábrala antes",
+                    a.desde.max(1)
+                )));
+            }
+        }
+        let desde = match &previo {
+            Some(a) if a.estado == EstadoExceso::Aprobado && estado == EstadoExceso::Aprobado => a.desde,
+            _ if estado == EstadoExceso::Aprobado => desde_nuevo,
+            _ => 0,
+        };
+        let nuevo = AprobacionExceso {
+            capitulo: capitulo.to_owned(),
+            partida: partida.to_owned(),
+            estado,
+            desde,
+            fecha: fecha.to_owned(),
+            referencia: referencia.to_owned(),
+            motivo: motivo.to_owned(),
+        };
+        let v = &mut self.seguimiento.excesos;
+        match v.iter_mut().find(|a| a.capitulo == capitulo && a.partida == partida) {
+            Some(a) => *a = nuevo,
+            None => v.push(nuevo),
+        }
+        Ok(())
     }
 
     /// Precio de venta de una partida a partir de su precio de ejecución.
@@ -877,6 +1153,83 @@ mod pruebas {
     };
 
     /// Obra con dos capítulos: C1 (A 10 ud × 5 €, B 4 m × 20 €), C2 (A 2 ud).
+    #[test]
+    fn excesos_de_medicion_aparte_y_a_origen_al_aprobar() {
+        let mut p = obra();
+        // C2/A: 2 ud contratadas a 5 €; se miden 3
+        let n1 = p.nueva_certificacion("31/10/2026").unwrap();
+        p.certificar_origen(n1, "C2", "A", dec!(3)).unwrap();
+        let r = p.relacion_valorada(n1, E).unwrap();
+        let a = r.partidas().find(|f| f.capitulo == "C2" && f.codigo == "A").unwrap();
+        assert!(a.exceso);
+        assert_eq!(
+            (a.cant_origen, a.medido, a.importes.origen),
+            (dec!(2), dec!(3), dec!(10))
+        );
+        let (ex, info) = r.filas_exceso().next().unwrap();
+        assert_eq!(ex.codigo, "EX-A");
+        assert_eq!(ex.cant_origen, dec!(1));
+        assert_eq!(info.estado, EstadoExceso::Pendiente);
+        assert_eq!(info.porcentaje, dec!(50));
+        assert!(info.supera_umbral);
+        // Sin aprobar: se ve pero no se cobra
+        assert_eq!(ex.importes.origen, dec!(0));
+        assert_eq!(r.total.origen, dec!(10));
+        assert_eq!(r.excesos_sin_aprobar().len(), 1);
+        let cap = r
+            .filas
+            .iter()
+            .find_map(|f| match f {
+                FilaRelacion::Capitulo { codigo, importes, .. } if codigo == CAPITULO_EXCESOS => Some(*importes),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(cap.origen, dec!(0));
+        p.cerrar_certificacion(n1, dec!(0), dec!(0)).unwrap();
+        // Se aprueba después de cerrar la 1ª: cuenta desde la 2ª, todo junto
+        p.fijar_exceso("C2", "A", EstadoExceso::Aprobado, "15/11/2026", "acta 14/11", "trazado")
+            .unwrap();
+        assert_eq!(
+            p.relacion_valorada(n1, E).unwrap().total.origen,
+            dec!(10),
+            "la 1ª no cambia"
+        );
+        let n2 = p.nueva_certificacion("30/11/2026").unwrap();
+        let r = p.relacion_valorada(n2, E).unwrap();
+        let (ex, info) = r.filas_exceso().next().unwrap();
+        assert_eq!(info.referencia, "acta 14/11");
+        assert_eq!(
+            (
+                ex.cant_anterior,
+                ex.cant_actual,
+                ex.importes.anterior,
+                ex.importes.actual
+            ),
+            (dec!(1), dec!(0), dec!(0), dec!(5))
+        );
+        assert_eq!(
+            (r.total.anterior, r.total.actual, r.total.origen),
+            (dec!(10), dec!(5), dec!(15))
+        );
+        // Umbral más alto: sin aviso
+        p.seguimiento.umbral_exceso = Some(dec!(60));
+        assert!(
+            !p.relacion_valorada(n2, E)
+                .unwrap()
+                .filas_exceso()
+                .next()
+                .unwrap()
+                .1
+                .supera_umbral
+        );
+        p.cerrar_certificacion(n2, dec!(0), dec!(0)).unwrap();
+        // Ya cobrado: no se puede rechazar sin reabrir
+        assert!(p.fijar_exceso("C2", "A", EstadoExceso::Rechazado, "", "", "").is_err());
+        p.reabrir_certificacion(n2).unwrap();
+        p.fijar_exceso("C2", "A", EstadoExceso::Rechazado, "", "", "").unwrap();
+        assert_eq!(p.relacion_valorada(n2, E).unwrap().total.origen, dec!(10));
+    }
+
     fn obra() -> Presupuesto {
         let mut p = Presupuesto::new("t", "OBRA", "Obra");
         p.insertar(Concepto::capitulo("C1", "Uno")).unwrap();

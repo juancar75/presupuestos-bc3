@@ -84,7 +84,7 @@
   text(weight: "bold", d.pct),
 )
 #if d.excesos > 0 [
-  #text(fill: rojo, size: 7.5pt)[En rojo: #d.excesos partida(s) con más cantidad a origen que la presupuestada.]
+  #text(fill: rojo, size: 7.5pt)[En rojo: #d.excesos exceso(s) de medición sin aprobar; no se cobran hasta que se aprueben.]
 ]
 
 #v(0.8em)

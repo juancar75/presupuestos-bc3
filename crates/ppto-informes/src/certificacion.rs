@@ -112,8 +112,22 @@ pub fn excel_certificacion(
                     n(x.importes.porcentaje() / ppto_core::Decimal::ONE_HUNDRED),
                     &f.pct,
                 )?;
-                if x.exceso {
-                    h.write_string_with_format(fila, 13, "Supera el presupuesto", &f.nota)?;
+                if let Some(i) = &x.de_exceso {
+                    let mut nota = format!("{} · exceso de {} ({} %)", i.estado.nombre(), i.partida, i.porcentaje);
+                    for t in [&i.motivo, &i.referencia] {
+                        if !t.is_empty() {
+                            nota.push_str(" · ");
+                            nota.push_str(t);
+                        }
+                    }
+                    h.write_string_with_format(fila, 13, nota, &f.nota)?;
+                } else if x.exceso {
+                    h.write_string_with_format(
+                        fila,
+                        13,
+                        format!("Medido {}: el exceso va en EX-{}", x.medido, x.codigo),
+                        &f.nota,
+                    )?;
                 }
             }
         }

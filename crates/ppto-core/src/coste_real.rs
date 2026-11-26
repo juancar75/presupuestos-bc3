@@ -239,6 +239,20 @@ impl Presupuesto {
                 }
             })
             .collect();
+        // Excesos de medición aprobados: van en su propia fila
+        if let Some(ex) = cert
+            .get(crate::seguimiento::CAPITULO_EXCESOS)
+            .filter(|x| !x.is_zero() && !filas.iter().any(|f| f.capitulo == crate::seguimiento::CAPITULO_EXCESOS))
+        {
+            filas.push(FilaCosteReal {
+                capitulo: crate::seguimiento::CAPITULO_EXCESOS.into(),
+                resumen: "Excesos de medición".into(),
+                previsto: PorTipo::default(),
+                real: PorTipo::default(),
+                venta: Decimal::ZERO,
+                certificado: *ex,
+            });
+        }
         let mut horas = Decimal::ZERO;
         for g in &self.seguimiento.gastos {
             horas += g.horas.unwrap_or_default();
