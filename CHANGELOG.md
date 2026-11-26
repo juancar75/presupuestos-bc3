@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.75] - 2026-11-26
+
 ### Cambiado
 - Manual y ayuda (F1): apartados nuevos «11. Seguimiento de obra y certificaciones» y «12. Legalización»; los planos e IFC pasan a «Crear o abrir una obra» y los varios agentes a «Trabajar con Claude». La ayuda pinta los subapartados como títulos.
 
