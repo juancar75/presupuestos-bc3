@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.76] - 2026-11-26
+
 ### Añadido
 - **Pantalla de inicio** al arrancar sin obra: obras recientes con cliente, estado de la oferta y fecha; nuevo, abrir e importar ciego. Opción «Abrir siempre la última obra al arrancar».
 
