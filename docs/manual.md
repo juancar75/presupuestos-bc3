@@ -16,6 +16,8 @@ La configuración (bases, especialidades, recientes, carpeta de tarifas) vive en
 
 ## 2. Crear o abrir una obra
 
+**Al abrir el programa** sale la pantalla de inicio: las obras recientes (con cliente, estado de la oferta y fecha), **Nuevo presupuesto…**, **Abrir…** e **Importar ciego del cliente…**. Detrás solo hay un presupuesto vacío. Marque «Abrir siempre la última obra al arrancar» para empezar directamente en la de la última vez (si ya no existe, vuelve la pantalla de inicio).
+
 1. **Archivo → Nuevo…** (Ctrl+N).
 2. Marca una o varias especialidades: Clima, Ventilación de garaje, PCI. Con varias, los capítulos llevan prefijo (CL, VG, PCI) para no mezclarse.
 3. Elige los capítulos que entran en la oferta.
@@ -27,7 +29,7 @@ La configuración (bases, especialidades, recientes, carpeta de tarifas) vive en
 - **Abrir…** (Ctrl+O): abre un `.sqlite`; empieza en la carpeta del último abierto.
 - **Importar un BC3** (Archivo → Importar): de Presto o de otro programa. Si trae los descuentos a la vista (PVP + línea de descuento), se recuperan como tarifa + descuento del fabricante.
 - **Ciego del cliente**: BC3 o Excel sin precios. Al importarlo se abre sola la comprobación antes de valorar (apartado 4).
-- **Abrir ejemplo**: un presupuesto sintético para practicar.
+- **Ejemplo para practicar** (Ayuda → «Abrir el ejemplo para practicar» o abajo en la pantalla de inicio): una obra inventada de suelo radiante. Mientras está abierto sale una franja naranja «EJEMPLO — datos inventados», guardarlo pide siempre un nombre nuevo y Claude no lo valora.
 
 **Carpeta de documentos de la obra**: una carpeta por obra (OneDrive o red) con estas subcarpetas, para que el programa y Claude encuentren cada cosa:
 

@@ -41,6 +41,10 @@ pub fn ruta_bandeja() -> Option<PathBuf> {
     carpeta_config().map(|c| c.join("propuestas.json"))
 }
 
+/// Clave de los datos de la obra que marca el ejemplo sintético (datos
+/// inventados): la IA no lo valora como si fuera una obra.
+pub const DATO_EJEMPLO: &str = "ejemplo";
+
 pub fn ruta_obra_activa() -> Option<PathBuf> {
     carpeta_config().map(|c| c.join("obra-activa.json"))
 }

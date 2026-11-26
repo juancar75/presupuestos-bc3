@@ -1152,12 +1152,25 @@ pub(crate) fn abrir_obra_activa(estado: &mut Estado) -> Result<String, String> {
         .clone()
         .ok_or("no se encuentra la carpeta de configuración")?;
     let o = ppto_propuestas::ObraActiva::cargar(&ruta)?;
+    if o.datos.contains_key(ppto_propuestas::DATO_EJEMPLO) {
+        return Err(
+            "La obra abierta en el programa es el EJEMPLO para practicar (datos inventados). \
+                    Pida que abra la obra real (Archivo → Abrir o la pantalla de inicio) antes de valorar; \
+                    no proponga precios sobre el ejemplo."
+                .into(),
+        );
+    }
     let p = o.presupuesto;
     let partidas: Vec<&ppto_core::Concepto> = p
         .conceptos
         .values()
         .filter(|c| c.naturaleza == Naturaleza::Partida)
         .collect();
+    if partidas.is_empty() && p.conceptos.len() <= 1 {
+        return Err("El programa tiene abierto un presupuesto vacío: pida que abra la obra \
+                    (Archivo → Abrir, una reciente de la pantalla de inicio o «Importar ciego del cliente»)."
+            .into());
+    }
     let v = p.valorar().map_err(|e| e.to_string())?;
     let sin = partidas
         .iter()
