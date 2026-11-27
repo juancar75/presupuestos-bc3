@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.77] - 2026-11-27
+
 ### Añadido
 - Contradictorios **«Sustituye a…»**: un contradictorio puede anular, en todo o en parte, partidas del contrato. Aprobado, la partida baja su cantidad contratada y el contradictorio sale neto (nuevo − anulado); sin partidas propias es negativo.
 
