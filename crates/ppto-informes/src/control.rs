@@ -5,8 +5,9 @@
 
 use super::{ErrorInforme, Formatos, cabeceras, n};
 use ppto_core::pedidos::{CosteObra, ManoObra, Pedido, TipoPedido};
+use ppto_core::peticion::LineaPeticion;
 use ppto_core::{Decimal, Presupuesto};
-use rust_xlsxwriter::{Workbook, Worksheet, XlsxError};
+use rust_xlsxwriter::{Formula, Workbook, Worksheet, XlsxError};
 use std::collections::BTreeSet;
 
 /// Datos que encabezan un pedido.
@@ -183,6 +184,187 @@ pub fn excel_pedidos(
         let nombre = nombre_hoja(x.nombre(), &mut usados);
         hoja_pedido(libro.add_worksheet(), &nombre, p, x, &cab(x), &f)?;
     }
+    Ok(libro.save_to_buffer()?)
+}
+
+/// Datos que encabezan una petición de precios.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CabeceraPeticion {
+    /// Nuestra empresa y su segunda línea (CIF, dirección…).
+    pub empresa: String,
+    pub empresa_datos: String,
+    /// A quién va (fabricante o proveedor).
+    pub destinatario: String,
+    /// Alcance cuando se pide por tipo («Recuperadores de calor»).
+    pub alcance: String,
+    pub obra: String,
+    pub referencia: String,
+    pub fecha: String,
+    /// Fecha límite de respuesta.
+    pub plazo: String,
+    /// Datos del proveedor: («Contacto», …), («Email», …)…
+    pub proveedor: Vec<(String, String)>,
+    pub observaciones: String,
+}
+
+/// Columna en letra de Excel (0 → A).
+fn letra(c: u16) -> char {
+    (b'A' + c as u8) as char
+}
+
+/// Petición de precios a un proveedor: solo las líneas que se le piden
+/// (las de su alcance) y, aparte, las variantes. Las celdas amarillas son
+/// para el proveedor; el importe se calcula con el neto o con PVP y
+/// descuento.
+pub fn excel_peticion(
+    lineas: &[LineaPeticion],
+    cab: &CabeceraPeticion,
+    decimales_medicion: u32,
+) -> Result<Vec<u8>, ErrorInforme> {
+    let f = Formatos::new();
+    let mut libro = Workbook::new();
+    let h = libro.add_worksheet();
+    h.set_name("Petición de precios")?;
+    let mut titulo = "Petición de precios".to_owned();
+    if !cab.destinatario.trim().is_empty() {
+        titulo.push_str(&format!(" — {}", cab.destinatario.trim()));
+    }
+    h.write_string_with_format(0, 0, &titulo, &f.titulo)?;
+    let mut fila = 1;
+    for (t, fmt) in [(&cab.empresa, &f.total), (&cab.empresa_datos, &f.nota)] {
+        if !t.trim().is_empty() {
+            h.write_string_with_format(fila, 0, t.trim(), fmt)?;
+            fila += 1;
+        }
+    }
+    fila += 1;
+    let datos: Vec<(String, String)> = [
+        ("Fecha", &cab.fecha),
+        ("Obra", &cab.obra),
+        ("Nuestra referencia", &cab.referencia),
+        ("Alcance", &cab.alcance),
+        ("Rogamos respuesta antes del", &cab.plazo),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v.trim().to_owned()))
+    .chain(cab.proveedor.iter().cloned())
+    .filter(|(_, v)| !v.trim().is_empty())
+    .collect();
+    for (k, v) in &datos {
+        h.write_string_with_format(fila, 0, format!("{k}: {v}"), &f.nota)?;
+        fila += 1;
+    }
+    fila += 1;
+    let cols: [(&str, f64); 13] = [
+        ("Nº", 5.0),
+        ("Referencia", 14.0),
+        ("Descripción", 55.0),
+        ("Ud", 6.0),
+        ("Cantidad", 10.0),
+        ("PVP €/ud", 11.0),
+        ("Dto. %", 8.0),
+        ("Neto €/ud", 11.0),
+        ("Importe €", 13.0),
+        ("Plazo entrega", 13.0),
+        ("Marca y modelo ofertado", 26.0),
+        ("Observaciones", 26.0),
+        ("Nuestro código", 14.0),
+    ];
+    cabeceras(h, fila, &cols, &f)?;
+    fila += 1;
+    let mut numero = 0;
+    let mut bloque =
+        |h: &mut Worksheet, fila: &mut u32, ls: &[&LineaPeticion]| -> Result<Option<(u32, u32)>, XlsxError> {
+            if ls.is_empty() {
+                return Ok(None);
+            }
+            let desde = *fila;
+            for l in ls {
+                numero += 1;
+                let r = *fila + 1; // fila de Excel (1…)
+                h.write_number(*fila, 0, numero as f64)?;
+                h.write_string(*fila, 1, l.referencia.as_deref().unwrap_or(""))?;
+                let mut d = l.resumen.trim().to_owned();
+                if !l.texto.is_empty() {
+                    d.push('\n');
+                    d.push_str(&l.texto);
+                }
+                h.write_string_with_format(*fila, 2, &d, &f.texto)?;
+                let lineas_texto: u32 = d.lines().map(|x| x.chars().count() as u32 / 60 + 1).sum();
+                if lineas_texto > 1 {
+                    // 13,5 puntos por línea (sin coma flotante)
+                    h.set_row_height(*fila, f64::from(27 * lineas_texto.min(30) / 2))?;
+                }
+                h.write_string(*fila, 3, &l.unidad)?;
+                h.write_number_with_format(*fila, 4, n(l.cantidad.round_dp(decimales_medicion)), &f.num3)?;
+                for c in [5, 6, 7] {
+                    h.write_blank(*fila, c, &f.entrada_num)?;
+                }
+                let (e, pvp, dto, neto) = (letra(4), letra(5), letra(6), letra(7));
+                h.write_formula_with_format(
+                    *fila,
+                    8,
+                    Formula::new(format!(
+                        "=IF({neto}{r}<>\"\",{e}{r}*{neto}{r},IF({pvp}{r}<>\"\",{e}{r}*{pvp}{r}*(1-{dto}{r}/100),\"\"))"
+                    )),
+                    &f.num2,
+                )?;
+                for c in [9, 10, 11] {
+                    h.write_blank(*fila, c, &f.entrada)?;
+                }
+                h.write_string_with_format(*fila, 12, &l.codigo, &f.nota)?;
+                *fila += 1;
+            }
+            Ok(Some((desde + 1, *fila)))
+        };
+    let base: Vec<&LineaPeticion> = lineas.iter().filter(|l| !l.variante).collect();
+    let variantes: Vec<&LineaPeticion> = lineas.iter().filter(|l| l.variante).collect();
+    let i = letra(8);
+    if let Some((a, b)) = bloque(h, &mut fila, &base)? {
+        h.write_string_with_format(fila, 2, "Total (sin IVA)", &f.total)?;
+        h.write_formula_with_format(fila, 8, Formula::new(format!("=SUM({i}{a}:{i}{b})")), &f.total_num)?;
+        fila += 2;
+    }
+    if !variantes.is_empty() {
+        h.write_string_with_format(
+            fila,
+            0,
+            "VARIANTES — valórense como alternativa (no suman al total anterior)",
+            &f.capitulo,
+        )?;
+        for c in 1..13 {
+            h.write_blank(fila, c, &f.capitulo)?;
+        }
+        fila += 1;
+        if let Some((a, b)) = bloque(h, &mut fila, &variantes)? {
+            h.write_string_with_format(fila, 2, "Total variantes (sin IVA)", &f.total)?;
+            h.write_formula_with_format(fila, 8, Formula::new(format!("=SUM({i}{a}:{i}{b})")), &f.total_num)?;
+            fila += 2;
+        }
+    }
+    for k in [
+        "Validez de la oferta",
+        "Portes",
+        "Forma de pago",
+        "Plazo de entrega general",
+    ] {
+        h.write_string_with_format(fila, 1, format!("{k}:"), &f.total)?;
+        h.write_blank(fila, 2, &f.entrada)?;
+        fila += 1;
+    }
+    fila += 1;
+    if !cab.observaciones.trim().is_empty() {
+        h.write_string_with_format(fila, 1, "Observaciones:", &f.total)?;
+        h.write_string_with_format(fila, 2, cab.observaciones.trim(), &f.texto)?;
+        fila += 2;
+    }
+    h.write_string_with_format(
+        fila,
+        0,
+        "Rellene las celdas amarillas: neto €/ud, o PVP y descuento. Cantidades orientativas según nuestro presupuesto; \
+         indique cualquier diferencia o alternativa.",
+        &f.nota,
+    )?;
     Ok(libro.save_to_buffer()?)
 }
 

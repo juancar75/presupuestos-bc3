@@ -18,7 +18,9 @@ mod certificacion;
 mod control;
 mod coste_real;
 pub use certificacion::excel_certificacion;
-pub use control::{CabeceraPedido, excel_coste, excel_mano_obra, excel_pedido, excel_pedidos};
+pub use control::{
+    CabeceraPedido, CabeceraPeticion, excel_coste, excel_mano_obra, excel_pedido, excel_pedidos, excel_peticion,
+};
 pub use coste_real::excel_coste_real;
 
 use ppto_core::concepto::Naturaleza;
@@ -111,6 +113,9 @@ struct Formatos {
     texto: Format,
     nota: Format,
     texto_largo: Format,
+    /// Celda para que la rellene otro (proveedor): fondo amarillo claro.
+    entrada: Format,
+    entrada_num: Format,
 }
 
 impl Formatos {
@@ -147,6 +152,16 @@ impl Formatos {
                 .set_align(FormatAlign::Top)
                 .set_font_size(9)
                 .set_font_color(Color::RGB(0x444444)),
+            entrada: base
+                .clone()
+                .set_background_color(Color::RGB(0xFFF2CC))
+                .set_border(FormatBorder::Thin)
+                .set_text_wrap(),
+            entrada_num: base
+                .clone()
+                .set_background_color(Color::RGB(0xFFF2CC))
+                .set_border(FormatBorder::Thin)
+                .set_num_format("#,##0.00"),
             nota: base.set_italic().set_font_color(Color::RGB(0x666666)),
         }
     }

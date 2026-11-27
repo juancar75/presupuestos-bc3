@@ -152,3 +152,52 @@ fn pedidos_mano_de_obra_y_coste_en_excel() {
         &c.venta.to_string()
     ));
 }
+
+#[test]
+fn peticion_de_precios_solo_con_su_alcance_y_las_variantes() {
+    use ppto_core::peticion::{peticiones, variante};
+    use ppto_informes::{CabeceraPeticion, excel_peticion};
+    let mut p = suelo_radiante();
+    p.fijar_precio("MT.PANEL", dec!(0)).unwrap();
+    p.fijar_origen(
+        "MT.PANEL",
+        Some(ppto_core::OrigenPrecio {
+            fabricante: "Schako".into(),
+            referencia: Some("PN-30".into()),
+            ..Default::default()
+        }),
+        false,
+    )
+    .unwrap();
+    let v = peticiones(&p).unwrap();
+    let s = v.iter().find(|x| x.proveedor == "SCHAKO").unwrap();
+    assert_eq!(s.lineas.len(), 1);
+    let mut lineas = s.lineas.clone();
+    lineas.push(variante(&p, "SR.M2").unwrap());
+    let cab = CabeceraPeticion {
+        destinatario: "SCHAKO".into(),
+        obra: "Obra de prueba".into(),
+        fecha: "27/11/2026".into(),
+        ..Default::default()
+    };
+    let mut l = abrir(excel_peticion(&lineas, &cab, 2).unwrap());
+    let hoja = "Petición de precios";
+    assert!(cerca(
+        numero(&mut l, hoja, 12, "MT.PANEL", 4),
+        &s.lineas[0].cantidad.round_dp(2).to_string()
+    ));
+    let r = l.worksheet_range(hoja).unwrap();
+    let codigos: Vec<String> = r
+        .rows()
+        .filter_map(|f| match f.get(12) {
+            Some(Data::String(c)) if c != "Nuestro código" => Some(c.clone()),
+            _ => None,
+        })
+        .collect();
+    // Solo lo suyo y la variante
+    assert_eq!(codigos, ["MT.PANEL", "SR.M2"]);
+    assert!(
+        r.rows()
+            .any(|f| matches!(f.first(), Some(Data::String(t)) if t.starts_with("VARIANTES")))
+    );
+}

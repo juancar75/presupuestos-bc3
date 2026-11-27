@@ -3473,3 +3473,62 @@ fn arranca_sin_el_ejemplo_y_el_ejemplo_va_marcado() {
     app.nuevo_presupuesto();
     assert!(!app.es_ejemplo && !app.inicio);
 }
+
+#[test]
+fn peticion_de_precios_por_proveedor_tipo_y_variantes() {
+    let mut app = Aplicacion::sin_ventana();
+    let dir = std::env::temp_dir().join(format!("ppto-peticion-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    app.obra_textos.insert("documentos".into(), dir.display().to_string());
+    app.p.fijar_precio("MT.PANEL", Decimal::ZERO).unwrap();
+    app.abrir_peticion();
+    let v = app.ventana_peticion.as_ref().unwrap();
+    let sin = v.peticiones.iter().find(|x| x.proveedor.is_empty()).unwrap();
+    assert!(sin.lineas.iter().any(|l| l.codigo == "MT.PANEL"));
+    // Asignar el proveedor (como el botón «Asignar»), con un solo deshacer
+    let mut o = app.p.conceptos["MT.PANEL"].origen.clone().unwrap_or_default();
+    o.fabricante = "Uponor".into();
+    app.aplicar(vec![Accion::Lote(
+        "asignar".into(),
+        vec![Accion::Origen("MT.PANEL".into(), Some(Box::new(o)), false)],
+    )]);
+    app.ventana_peticion.as_mut().unwrap().recalcular = true;
+    let ctx = Context::default();
+    let mut acciones = Vec::new();
+    for vista in [false, true] {
+        if vista {
+            app.ventana_peticion.as_mut().unwrap().vista = super::peticion::Vista::Tipo;
+        }
+        for _ in 0..2 {
+            let mut salida = ctx.run_ui(RawInput::default(), |ui| {
+                let c = ui.ctx().clone();
+                app.ventana_peticion(&c, &mut acciones);
+            });
+            salida.textures_delta.clear();
+        }
+    }
+    let v = app.ventana_peticion.as_ref().unwrap();
+    let up = v.peticiones.iter().find(|x| x.proveedor == "UPONOR").unwrap();
+    assert_eq!(up.lineas.len(), 1);
+    // El Excel y el borrador salen solo con su alcance y la variante
+    let mut ls = up.lineas.clone();
+    ls.push(ppto_core::peticion::variante(&app.p, "SR.M2").unwrap());
+    let mut v = app.ventana_peticion.take().unwrap();
+    app.enviar_peticiones(&mut v, vec![("UPONOR".into(), ls, String::new())]);
+    let r = v.envio.take().unwrap().recv().unwrap();
+    assert!(r.is_ok(), "{r:?}");
+    let carpeta = dir.join("04 Ofertas").join("Peticiones de precio");
+    let nombres: Vec<String> = std::fs::read_dir(&carpeta)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        nombres
+            .iter()
+            .any(|n| n.starts_with("Petición de precios UPONOR") && n.ends_with(".xlsx"))
+    );
+    assert!(nombres.iter().any(|n| n.ends_with(".eml")));
+    app.deshacer();
+    assert!(app.p.conceptos["MT.PANEL"].origen.is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}

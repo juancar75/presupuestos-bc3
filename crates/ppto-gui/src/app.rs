@@ -16,6 +16,7 @@ mod ciego;
 mod clientes;
 mod comparar;
 mod comprobar;
+mod correo;
 mod dificultad;
 mod emparejar;
 mod ficha;
@@ -32,6 +33,7 @@ mod parecidas;
 mod partida;
 mod pdf;
 mod pestanas;
+mod peticion;
 mod propuestas;
 mod ratio;
 mod recientes;
@@ -426,6 +428,8 @@ pub struct Aplicacion {
     sincro: Option<sincronizar::Sincro>,
     /// Ventana de informes (pedidos, mano de obra, coste de obra).
     ventana_informes: Option<informes::VentanaInformes>,
+    /// Ventana «Petición de precios a proveedores».
+    ventana_peticion: Option<peticion::VentanaPeticion>,
     /// Contradictorios y certificaciones.
     ventana_obra: Option<obra::VentanaObra>,
     /// Pedido de Informes por registrar en la obra (se pide desde `&self`).
@@ -661,6 +665,7 @@ impl Aplicacion {
             ver_ficha: false,
             form_origen: None,
             ventana_informes: None,
+            ventana_peticion: None,
             ventana_obra: None,
             registrar: Default::default(),
             ventana_modelo: None,
@@ -1080,6 +1085,7 @@ impl Aplicacion {
         self.ventana_ficha(&ctx);
         self.ventana_origen(&ctx, &mut acciones);
         self.ventana_informes(&ctx);
+        self.ventana_peticion(&ctx, &mut acciones);
         self.ventana_obra(&ctx);
         self.ventana_modelo(&ctx);
         self.ventana_actualizar(&ctx);

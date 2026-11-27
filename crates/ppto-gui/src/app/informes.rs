@@ -209,6 +209,18 @@ impl Aplicacion {
                 self.abrir_informe(t);
             }
         }
+        ui.separator();
+        if ui
+            .button("Petición de precios a proveedores…")
+            .on_hover_text(
+                "Lo que está sin precio, por proveedor o por tipo de producto: un Excel por proveedor con solo lo suyo \
+                 (más las variantes que elija) y el correo preparado en Outlook",
+            )
+            .clicked()
+        {
+            ui.close();
+            self.abrir_peticion();
+        }
     }
 
     pub(super) fn abrir_informe(&mut self, t: TipoInforme) {

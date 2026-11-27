@@ -651,6 +651,16 @@ impl VentanaBiblioteca {
                         ui.end_row();
                         ui.label("Email");
                         ui.text_edit_singleline(&mut d.email);
+                        ui.label("Suministra");
+                        ui.add(egui::TextEdit::singleline(&mut d.tipos).hint_text("tipos separados por comas"))
+                            .on_hover_text(format!(
+                                "Tipos de producto de los que se le pide precio (Informes → Petición de precios):\n{}",
+                                ppto_core::peticion::TIPOS
+                                    .iter()
+                                    .map(|(t, _)| *t)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ));
                         ui.end_row();
                     });
                     ui.label("Condiciones (plazo, portes, forma de pago…)");
