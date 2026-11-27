@@ -89,7 +89,7 @@ pub fn proveedor(p: &Presupuesto, codigo: &str) -> String {
 }
 
 /// Partidas que usan cada recurso (directamente o a través de auxiliares).
-fn usos(p: &Presupuesto) -> Result<BTreeMap<String, BTreeSet<String>>, ErrorMotor> {
+pub(crate) fn usos(p: &Presupuesto) -> Result<BTreeMap<String, BTreeSet<String>>, ErrorMotor> {
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for partida in p.cantidades_partidas()?.into_keys() {
         let e = p.explosion_de(&BTreeMap::from([(partida.clone(), Decimal::ONE)]))?;

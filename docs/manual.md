@@ -149,6 +149,17 @@ En la ventana Biblioteca, sección «Kits», se ven sus líneas, precio y últim
 
 **Lo que entra en la obra se pone al día con la biblioteca**: lo que viene de una base, de otra obra (Ctrl+V), de un kit o de «Emparejar» toma el PVP de la biblioteca (si el recurso tiene referencia) y, si la obra no tiene descuento para ese fabricante, el de la biblioteca. Lo que ya estaba en la obra no cambia. Sale el aviso «Al día con la biblioteca: …» y se deshace junto con la copia.
 
+### Petición de precios a proveedores
+
+**Informes → «Petición de precios a proveedores…»** reúne lo que está sin precio en la obra: los recursos a 0 que usa alguna partida y las partidas sin descompuesto (las del ciego del cliente), con la cantidad total de la obra y su texto largo.
+
+- **Por proveedor**: cada fabricante con sus líneas, según su tarifa o el origen del precio. Lo que no tiene proveedor sale en naranja. Marque las líneas, escriba o elija el fabricante y pulse «Asignar»: queda guardado para las próximas veces y se deshace de una vez.
+- **Por tipo de producto**: el programa reconoce el tipo por el texto (recuperadores, rejillas y difusores, VRF, BIE…) para pedir lo mismo a **varias marcas** y comparar. Marque a quién pedir. Salen las marcas que, según la biblioteca, suministran ese tipo (campo «Suministra» de los datos del fabricante) y se pueden añadir otras; con «Recordar» se guardan en la biblioteca.
+- **Variantes**: elija partidas en el árbol (Ctrl/Mayús + clic) y pulse «＋ Variante desde el árbol». Pueden tener ya precio: van aparte en el Excel para que el proveedor las valore como alternativa, sin sumar al total.
+- **📧 Correo en Outlook**: guarda un Excel por proveedor en `04 Ofertas\Peticiones de precio` de la carpeta de documentos y abre el correo en Outlook con el email de la biblioteca, el asunto, el texto antes de su firma y el Excel adjunto. No se envía nada: lo revisa y pulsa Enviar. «A todos» prepara un correo por proveedor.
+- Cada proveedor recibe **solo su alcance** (lo suyo, o solo el tipo pedido) y sus variantes, nunca lo de otros ni nuestros precios. El Excel tiene celdas amarillas para el neto (o PVP y descuento), el plazo, la marca y modelo ofertado y las observaciones; el importe se calcula solo.
+- Si Outlook no responde (o no es Outlook de escritorio), se crea un borrador `.eml` por correo y se abre con el programa de correo del sistema.
+
 ## 7. Carpeta de tarifas y biblioteca compartida
 
 **Carpeta de tarifas** (Biblioteca → «Carpeta de tarifas»): los documentos de tarifa de cada fabricante, la única fuente de los PVP.

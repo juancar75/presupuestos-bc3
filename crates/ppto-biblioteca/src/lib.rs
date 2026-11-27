@@ -265,6 +265,36 @@ pub struct DatosFabricante {
     /// Plazos, portes, forma de pago…
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub condiciones: String,
+    /// Tipos de producto que suministra, separados por comas
+    /// («Recuperadores de calor, Ventiladores y extractores»): a quién pedir
+    /// precio de cada tipo.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tipos: String,
+}
+
+impl DatosFabricante {
+    /// Tipos que suministra, sin vacíos.
+    pub fn lista_tipos(&self) -> Vec<String> {
+        self.tipos
+            .split([',', ';', '\n'])
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .collect()
+    }
+
+    pub fn suministra(&self, tipo: &str) -> bool {
+        self.lista_tipos().iter().any(|t| t.eq_ignore_ascii_case(tipo.trim()))
+    }
+
+    /// Añade un tipo (si no lo tenía).
+    pub fn anadir_tipo(&mut self, tipo: &str) {
+        if tipo.trim().is_empty() || self.suministra(tipo) {
+            return;
+        }
+        let mut v = self.lista_tipos();
+        v.push(tipo.trim().to_owned());
+        self.tipos = v.join(", ");
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -551,6 +581,21 @@ impl Biblioteca {
     /// Datos del fabricante o proveedor (lo crea si no existe).
     pub fn fijar_datos(&mut self, fabricante: &str, datos: DatosFabricante) {
         self.fabricante_mut(fabricante).datos = datos;
+    }
+
+    /// Fabricantes que suministran un tipo de producto (por su nombre).
+    pub fn proveedores_de(&self, tipo: &str) -> Vec<String> {
+        self.fabricantes
+            .values()
+            .filter(|f| f.datos.suministra(tipo))
+            .map(|f| f.nombre.clone())
+            .collect()
+    }
+
+    /// Apunta que un fabricante suministra un tipo de producto (lo crea si
+    /// no está).
+    pub fn anadir_tipo(&mut self, fabricante: &str, tipo: &str) {
+        self.fabricante_mut(fabricante).datos.anadir_tipo(tipo);
     }
 
     /// Descuento de un fabricante (o «FAB/GRUPO»). `None` lo quita.
@@ -1309,5 +1354,19 @@ mod tests {
         std::fs::write(&r, "{roto").unwrap();
         assert!(Biblioteca::modificar(&r, |b| b.fijar_descuento("X", None)).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tipos_que_suministra_cada_fabricante() {
+        let mut b = Biblioteca::default();
+        b.anadir_tipo("S&P", "Recuperadores de calor");
+        b.anadir_tipo("s&p", "recuperadores de calor");
+        b.anadir_tipo("Zehnder", "Recuperadores de calor");
+        b.anadir_tipo("Koolair", "Rejillas y difusores");
+        assert_eq!(b.fabricante("S&P").unwrap().datos.tipos, "Recuperadores de calor");
+        let mut v = b.proveedores_de("Recuperadores de calor");
+        v.sort();
+        assert_eq!(v, ["S&P", "ZEHNDER"]);
+        assert!(b.proveedores_de("Fancoils").is_empty());
     }
 }

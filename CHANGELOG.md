@@ -5,6 +5,11 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Petición de precios a proveedores** (Informes): lo que está sin precio en la obra, por proveedor o por tipo de producto (recuperadores, rejillas, VRF…), con la cantidad total. Cada proveedor recibe un Excel solo con su alcance y las variantes que se elijan del árbol, con celdas para rellenar; el correo se abre en Outlook con el Excel adjunto, sin enviarse (o como borrador `.eml`).
+- Asignar el proveedor a líneas sin proveedor desde la petición (queda como origen del precio).
+- Biblioteca: campo «Suministra» de cada fabricante (tipos de producto a los que pedir precio).
+
 ## [0.1.0-alpha.77] - 2026-11-27
 
 ### Añadido
