@@ -235,6 +235,16 @@ El menú **Obra** abre la ventana «Seguimiento de obra», que reúne lo que pas
 - **Con el modelo propio** (Obra → «Certificaciones…»): cada mes se teclea lo medido a origen por partida; el mes es la diferencia con la certificación anterior. Se cierra, se numera y sale en PDF o Excel.
 - **Con el pedido del cliente** (Obra → «Certificaciones del cliente…»), cuando el cliente manda su propia proforma.
 
+### Contradictorios
+
+Obra → «Contradictorios…» → «Nuevo contradictorio» crea un capítulo **CTR-01, CTR-02…** al final de la obra; sus partidas se añaden en el árbol como en cualquier capítulo, valoradas con la base de la obra. Cada uno lleva número, fecha, motivo y estado.
+
+- **Pendiente** (naranja): sale en la certificación, en el bloque «Contradictorios», pero **no se cobra**.
+- **Aprobado**: se cobra **a origen** desde la certificación abierta (o la siguiente): todo lo ejecutado hasta entonces entra de una vez. Uno ya cobrado en una certificación cerrada no se puede desaprobar sin reabrirla.
+- **Rechazado**: no se cobra.
+- **Sustituye a…**: elija en el árbol la partida del contrato que cambia y pulse «＋ Anular…» en el menú del contradictorio; baje la cantidad si solo se anula una parte. Al aprobarlo, esa partida baja su cantidad contratada (en la certificación y en el resumen del contrato) y el importe sale **neto**: nuevo − anulado. Un contradictorio que solo anula, sin partidas propias, es **negativo**.
+- «PDF…» saca el contradictorio para que lo firme el cliente.
+
 ### Certificaciones del cliente (pedido a origen)
 
 Para clientes que mandan su pedido y cada mes una **proforma de certificación a origen** en Excel (Nº línea, descripción, cantidad, precio y «Cantidad a facturar a origen»). Obra → **Certificaciones del cliente (pedido a origen)…**

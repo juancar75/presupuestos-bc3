@@ -5,6 +5,12 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- Contradictorios **«Sustituye a…»**: un contradictorio puede anular, en todo o en parte, partidas del contrato. Aprobado, la partida baja su cantidad contratada y el contradictorio sale neto (nuevo − anulado); sin partidas propias es negativo.
+
+### Cambiado
+- En las certificaciones, los contradictorios van en su bloque «Contradictorios» y solo se cobran aprobados, a origen desde la certificación en que se aprueban (los pendientes y rechazados se ven pero no suman). Uno ya cobrado no se desaprueba sin reabrir la certificación.
+
 ## [0.1.0-alpha.76] - 2026-11-26
 
 ### Añadido

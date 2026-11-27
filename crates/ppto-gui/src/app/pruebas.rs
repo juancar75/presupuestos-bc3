@@ -1607,6 +1607,23 @@ fn contradictorios_y_certificaciones() {
     let r = app.p.resumen_contrato().unwrap();
     assert_eq!(r.contratado, dec!(7005.15));
     assert!(r.aprobados > Decimal::ZERO);
+    // Sustituye a: anula 5 m² de C01/SR.M2 (la partida elegida en el árbol)
+    app.sel = Some(("C01".into(), "SR.M2".into()));
+    pinta(&mut app);
+    let neto_antes = app.p.resumen_contrato().unwrap().aprobados;
+    app.aplicar(vec![Accion::Obra(OpObra::Anular(
+        "CTR-01".into(),
+        "C01".into(),
+        "SR.M2".into(),
+        dec!(5),
+    ))]);
+    pinta(&mut app);
+    assert!(
+        app.p.resumen_contrato().unwrap().aprobados < neto_antes,
+        "neto: nuevo − anulado"
+    );
+    app.deshacer();
+    assert!(app.p.seguimiento.contradictorios["CTR-01"].sustituye.is_empty());
     // PDF del contradictorio con la firma
     let c = app.p.seguimiento.contradictorios["CTR-01"].clone();
     assert!(app.pdf_contradictorio("CTR-01", &c).unwrap().starts_with(b"%PDF"));

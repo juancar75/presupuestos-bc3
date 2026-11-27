@@ -38,6 +38,8 @@ pub(super) enum OpObra {
     /// Marcar (o desmarcar con `None`) un capítulo como contradictorio.
     Marcar(String, Option<Contradictorio>),
     Estado(String, EstadoContradictorio),
+    /// Contradictorio, capítulo, partida y cantidad que anula del contrato.
+    Anular(String, String, String, Decimal),
     NuevaCertificacion(String),
     FechaCertificacion(u32, String),
     Origen(u32, String, String, Decimal),
@@ -80,6 +82,7 @@ impl OpObra {
             Self::Marcar(c, Some(_)) => (format!("contradictorio {c}"), None),
             Self::Marcar(c, None) => (format!("{c} deja de ser contradictorio"), None),
             Self::Estado(c, e) => (format!("{c}: {}", e.nombre().to_lowercase()), None),
+            Self::Anular(c, _, h, _) => (format!("{c} sustituye a {h}"), None),
             Self::NuevaCertificacion(_) => ("nueva certificación".into(), None),
             Self::FechaCertificacion(n, _) => (format!("fecha de la certificación {n}"), Some(format!("fcert|{n}"))),
             Self::Origen(n, _, h, _) | Self::Mes(n, _, h, _) | Self::Completa(n, _, h) => {
@@ -121,6 +124,14 @@ impl OpObra {
             }
             Self::Estado(c, e) => {
                 p.fijar_estado_contradictorio(&c, e)?;
+                (e == EstadoContradictorio::Aprobado).then(|| {
+                    format!(
+                        "Contradictorio {c} aprobado: se cobra a origen en la certificación abierta (o la siguiente)."
+                    )
+                })
+            }
+            Self::Anular(c, cap, h, q) => {
+                p.fijar_anulacion(&c, &cap, &h, q)?;
                 None
             }
             Self::NuevaCertificacion(f) => {
@@ -614,12 +625,7 @@ impl Aplicacion {
                             + 1;
                         ops.push(OpObra::Marcar(
                             c,
-                            Some(Contradictorio {
-                                numero,
-                                fecha: v.nuevo_fecha.clone(),
-                                estado: EstadoContradictorio::Propuesto,
-                                nota: v.nuevo_nota.clone(),
-                            }),
+                            Some(Contradictorio::nuevo(numero, &v.nuevo_fecha, &v.nuevo_nota)),
                         ));
                     }
                 });
@@ -630,6 +636,7 @@ impl Aplicacion {
             return;
         }
         let precios = self.calc.precios.clone();
+        let sel = self.sel.clone();
         let mut lista: Vec<(&String, &Contradictorio)> = self.p.seguimiento.contradictorios.iter().collect();
         lista.sort_by_key(|(_, c)| c.numero);
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -666,7 +673,22 @@ impl Aplicacion {
                                 Some(Contradictorio { fecha: f, ..c.clone() }),
                             ));
                         }
-                        ui.label(precios.get(codigo).map(|x| eur(*x)).unwrap_or_default());
+                        let propio = precios.get(codigo).copied().unwrap_or_default();
+                        let anulado: Decimal = c
+                            .sustituye
+                            .iter()
+                            .map(|a| a.cantidad * precios.get(&a.partida).copied().unwrap_or_default())
+                            .sum();
+                        if anulado.is_zero() {
+                            ui.label(eur(propio));
+                        } else {
+                            ui.label(format!("{} (neto {})", eur(propio), eur(propio - anulado)))
+                                .on_hover_text(format!(
+                                    "Nuevo {} − anulado del contrato {}",
+                                    eur(propio),
+                                    eur(anulado)
+                                ));
+                        }
                         let mut e = c.estado;
                         let color = match e {
                             EstadoContradictorio::Aprobado => VERDE,
@@ -706,6 +728,73 @@ impl Aplicacion {
                                 let b = self.pdf_contradictorio(codigo, c);
                                 v.guardar(&format!("Contradictorio {} - {}", c.numero, self.p.nombre), "pdf", b);
                             }
+                            let titulo = if c.sustituye.is_empty() {
+                                "Sustituye a…".to_owned()
+                            } else {
+                                format!("Sustituye a ({})…", c.sustituye.len())
+                            };
+                            ui.menu_button(titulo, |ui| {
+                                ui.label(RichText::new("Partidas del contrato que este contradictorio anula").strong());
+                                for a in &c.sustituye {
+                                    ui.horizontal(|ui| {
+                                        ui.label(format!("{} / {}", a.capitulo, a.partida));
+                                        let clave = format!("anula|{codigo}|{}|{}", a.capitulo, a.partida);
+                                        if let Some(q) = v.edicion.decimal(ui, &clave, a.cantidad, 2, 70.0) {
+                                            ops.push(OpObra::Anular(
+                                                codigo.clone(),
+                                                a.capitulo.clone(),
+                                                a.partida.clone(),
+                                                q,
+                                            ));
+                                        }
+                                        if ui.small_button("✖").on_hover_text("Ya no la anula").clicked() {
+                                            ops.push(OpObra::Anular(
+                                                codigo.clone(),
+                                                a.capitulo.clone(),
+                                                a.partida.clone(),
+                                                Decimal::ZERO,
+                                            ));
+                                        }
+                                    });
+                                }
+                                ui.separator();
+                                // La partida elegida en el árbol, si es del contrato
+                                let elegida = sel.as_ref().filter(|(cap, h)| {
+                                    !self.p.seguimiento.contradictorios.contains_key(cap)
+                                        && self
+                                            .p
+                                            .conceptos
+                                            .get(h)
+                                            .is_some_and(|x| x.naturaleza == ppto_core::Naturaleza::Partida)
+                                        && !c.sustituye.iter().any(|a| &a.capitulo == cap && &a.partida == h)
+                                });
+                                match elegida {
+                                    Some((cap, h)) => {
+                                        let q = self
+                                            .p
+                                            .cantidades_capitulo(cap)
+                                            .ok()
+                                            .and_then(|m| m.get(h).copied())
+                                            .unwrap_or_default();
+                                        if ui
+                                            .button(format!("＋ Anular {h} de {cap} (toda: {})", num(q, 2)))
+                                            .on_hover_text("Luego puede bajar la cantidad si solo se anula una parte")
+                                            .clicked()
+                                        {
+                                            ops.push(OpObra::Anular(codigo.clone(), cap.clone(), h.clone(), q));
+                                            ui.close();
+                                        }
+                                    }
+                                    None => {
+                                        ui.label(
+                                            RichText::new(
+                                                "Elija en el árbol la partida del contrato que se sustituye.",
+                                            )
+                                            .weak(),
+                                        );
+                                    }
+                                }
+                            });
                             if ui
                                 .small_button("Quitar marca")
                                 .on_hover_text("Deja de ser contradictorio (el capítulo no se borra)")
@@ -1036,7 +1125,17 @@ impl Aplicacion {
                                 {
                                     continue;
                                 }
-                                ui.label(&x.codigo);
+                                match x.de_contradictorio {
+                                    Some(e) if e != EstadoContradictorio::Aprobado => {
+                                        ui.label(RichText::new(&x.codigo).color(NARANJA)).on_hover_text(format!(
+                                            "Contradictorio {}: se ve pero no se cobra hasta aprobarlo",
+                                            e.nombre().to_lowercase()
+                                        ));
+                                    }
+                                    _ => {
+                                        ui.label(&x.codigo);
+                                    }
+                                }
                                 ui.label(corto(&x.resumen, 50)).on_hover_text(&x.resumen);
                                 ui.label(&x.unidad);
                                 ui.label(cant(x.medicion, dm));
