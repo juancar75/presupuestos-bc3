@@ -211,6 +211,15 @@ impl Presupuesto {
                     } => {
                         cert.insert(codigo.clone(), importes.origen);
                     }
+                    // Cada contradictorio, en su fila
+                    FilaRelacion::Capitulo {
+                        codigo,
+                        nivel: 1,
+                        importes,
+                        ..
+                    } if self.seguimiento.contradictorios.contains_key(codigo) => {
+                        cert.insert(codigo.clone(), importes.origen);
+                    }
                     FilaRelacion::Partida(x) if x.capitulo == self.raiz => sueltas += x.importes.origen,
                     _ => {}
                 }

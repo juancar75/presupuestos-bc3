@@ -156,7 +156,45 @@ pub struct Contradictorio {
     /// Motivo, quién lo pidió, referencia de la orden…
     #[serde(default)]
     pub nota: String,
+    /// Certificación desde la que se cobra (si está aprobado): ahí entra todo
+    /// lo ejecutado hasta entonces.
+    #[serde(default)]
+    pub desde: u32,
+    /// Partidas del contrato que este contradictorio anula, en todo o en
+    /// parte («sustituye a»). Sin partidas propias, es un contradictorio
+    /// negativo.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sustituye: Vec<Anulacion>,
 }
+
+impl Contradictorio {
+    pub fn nuevo(numero: u32, fecha: &str, nota: &str) -> Self {
+        Self {
+            numero,
+            fecha: fecha.to_owned(),
+            estado: EstadoContradictorio::Propuesto,
+            nota: nota.to_owned(),
+            desde: 0,
+            sustituye: Vec::new(),
+        }
+    }
+
+    /// Se cobra en la certificación `n`.
+    pub fn cuenta_en(&self, n: u32) -> bool {
+        self.estado == EstadoContradictorio::Aprobado && self.desde <= n
+    }
+}
+
+/// Cantidad de una partida del contrato que anula un contradictorio.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Anulacion {
+    pub capitulo: String,
+    pub partida: String,
+    pub cantidad: Decimal,
+}
+
+/// Código del bloque de contradictorios en la relación valorada.
+pub const CAPITULO_CONTRADICTORIOS: &str = "CTR";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Certificacion {
@@ -284,6 +322,8 @@ pub struct PartidaCertificada {
     pub medido_anterior: Decimal,
     /// Solo en las filas del capítulo de excesos.
     pub de_exceso: Option<Box<InfoExceso>>,
+    /// Estado, si la partida es de un contradictorio (solo cobra aprobado).
+    pub de_contradictorio: Option<EstadoContradictorio>,
 }
 
 /// Datos de una fila de exceso de medición.
@@ -385,15 +425,9 @@ impl Presupuesto {
         self.insertar(Concepto::capitulo(codigo.clone(), resumen))?;
         let raiz = self.raiz.clone();
         self.colgar(&raiz, &codigo, None)?;
-        self.seguimiento.contradictorios.insert(
-            codigo.clone(),
-            Contradictorio {
-                numero,
-                fecha: fecha.to_owned(),
-                estado: EstadoContradictorio::Propuesto,
-                nota: nota.to_owned(),
-            },
-        );
+        self.seguimiento
+            .contradictorios
+            .insert(codigo.clone(), Contradictorio::nuevo(numero, fecha, nota));
         Ok(codigo)
     }
 
@@ -413,17 +447,139 @@ impl Presupuesto {
         Ok(())
     }
 
+    /// Cambia el estado. Al aprobarlo se cobra desde la certificación
+    /// abierta (o la siguiente si no hay ninguna abierta); uno aprobado que
+    /// ya se cobró en una certificación cerrada no se puede desaprobar sin
+    /// reabrirla.
     pub fn fijar_estado_contradictorio(
         &mut self,
         codigo: &str,
         estado: EstadoContradictorio,
     ) -> Result<(), ErrorMotor> {
-        self.seguimiento
+        let desde_nuevo = self.certificacion_para_aprobar();
+        let cerrada = self.ultima_cerrada();
+        let c = self
+            .seguimiento
             .contradictorios
             .get_mut(codigo)
-            .ok_or_else(|| error(format!("{codigo} no es un contradictorio")))?
-            .estado = estado;
+            .ok_or_else(|| error(format!("{codigo} no es un contradictorio")))?;
+        let cobrado = c.estado == EstadoContradictorio::Aprobado && cerrada.is_some_and(|n| c.desde <= n);
+        if cobrado && estado != EstadoContradictorio::Aprobado {
+            return Err(error(format!(
+                "el contradictorio {codigo} ya se cobró en la certificación nº {}; reábrala antes",
+                c.desde.max(1)
+            )));
+        }
+        if estado == EstadoContradictorio::Aprobado && c.estado != EstadoContradictorio::Aprobado {
+            c.desde = desde_nuevo;
+        }
+        c.estado = estado;
         Ok(())
+    }
+
+    /// Certificación desde la que cuenta lo que se aprueba ahora: la abierta
+    /// o, si están todas cerradas, la siguiente.
+    fn certificacion_para_aprobar(&self) -> u32 {
+        match self.seguimiento.certificaciones.last() {
+            Some(c) if !c.cerrada => c.numero,
+            Some(c) => c.numero + 1,
+            None => 1,
+        }
+    }
+
+    fn ultima_cerrada(&self) -> Option<u32> {
+        self.seguimiento
+            .certificaciones
+            .iter()
+            .rev()
+            .find(|c| c.cerrada)
+            .map(|c| c.numero)
+    }
+
+    /// Fija cuánto anula el contradictorio `ctr` de una partida del contrato
+    /// («sustituye a»); 0 la quita. No puede anular más de lo contratado.
+    pub fn fijar_anulacion(
+        &mut self,
+        ctr: &str,
+        capitulo: &str,
+        partida: &str,
+        cantidad: Decimal,
+    ) -> Result<(), ErrorMotor> {
+        if !self.seguimiento.contradictorios.contains_key(ctr) {
+            return Err(error(format!("{ctr} no es un contradictorio")));
+        }
+        if self.seguimiento.contradictorios.contains_key(capitulo) {
+            return Err(error("no se puede anular una partida de otro contradictorio"));
+        }
+        if cantidad < Decimal::ZERO {
+            return Err(error("la cantidad anulada no puede ser negativa"));
+        }
+        let contratada = self
+            .cantidades_capitulo(capitulo)?
+            .get(partida)
+            .copied()
+            .unwrap_or_default();
+        if contratada.is_zero() {
+            return Err(error(format!("{partida} no está en el capítulo {capitulo}")));
+        }
+        let otras: Decimal = self
+            .seguimiento
+            .contradictorios
+            .iter()
+            .filter(|(k, _)| k.as_str() != ctr)
+            .flat_map(|(_, c)| &c.sustituye)
+            .filter(|a| a.capitulo == capitulo && a.partida == partida)
+            .map(|a| a.cantidad)
+            .sum();
+        if otras + cantidad > contratada {
+            return Err(error(format!(
+                "se anularían {} de {partida} y solo hay {contratada} contratadas",
+                otras + cantidad
+            )));
+        }
+        let c = self.seguimiento.contradictorios.get_mut(ctr).expect("comprobado");
+        c.sustituye
+            .retain(|a| !(a.capitulo == capitulo && a.partida == partida));
+        if !cantidad.is_zero() {
+            c.sustituye.push(Anulacion {
+                capitulo: capitulo.to_owned(),
+                partida: partida.to_owned(),
+                cantidad,
+            });
+        }
+        Ok(())
+    }
+
+    /// Cantidad de una partida del contrato anulada por contradictorios que
+    /// cuentan en la certificación `n`.
+    fn anulado_en(&self, capitulo: &str, partida: &str, n: u32) -> Decimal {
+        self.seguimiento
+            .contradictorios
+            .values()
+            .filter(|c| c.cuenta_en(n))
+            .flat_map(|c| &c.sustituye)
+            .filter(|a| a.capitulo == capitulo && a.partida == partida)
+            .map(|a| a.cantidad)
+            .sum()
+    }
+
+    /// Importe (PEM) que anula un contradictorio en el contrato.
+    pub fn importe_anulado(&self, v: &Valoracion, ctr: &str) -> Decimal {
+        let Some(c) = self.seguimiento.contradictorios.get(ctr) else {
+            return Decimal::ZERO;
+        };
+        c.sustituye
+            .iter()
+            .map(|a| {
+                let precio = v
+                    .lineas
+                    .get(&a.capitulo)
+                    .and_then(|ls| ls.iter().find(|l| l.hijo == a.partida))
+                    .map(|l| l.precio)
+                    .unwrap_or_default();
+                redondear(a.cantidad * precio, self.decimales.importe)
+            })
+            .sum()
     }
 
     /// Importe (PEM) de un capítulo tal como entra en la obra: precio del
@@ -446,8 +602,10 @@ impl Presupuesto {
             if !self.conceptos.contains_key(codigo) {
                 continue;
             }
-            let i = self.importe_en_obra(&v, codigo);
-            ctr += i;
+            let propio = self.importe_en_obra(&v, codigo);
+            ctr += propio;
+            // Neto: lo nuevo menos lo que anula del contrato
+            let i = propio - self.importe_anulado(&v, codigo);
             match c.estado {
                 EstadoContradictorio::Aprobado => r.aprobados += i,
                 EstadoContradictorio::Propuesto => r.pendientes += i,
@@ -678,6 +836,7 @@ impl Presupuesto {
         let mut filas = Vec::new();
         let mut visitados = Vec::new();
         let mut excesos = Vec::new();
+        let mut ctrs = Vec::new();
         let total = self.relacion_rec(
             &self.raiz,
             0,
@@ -688,7 +847,82 @@ impl Presupuesto {
             &mut filas,
             &mut visitados,
             &mut excesos,
+            &mut ctrs,
         )?;
+        // Contradictorios: se ven todos; solo cobran los aprobados, a origen
+        // desde la certificación en que se aprueban
+        let mut filas_ctr = Vec::new();
+        let mut total_ctr = Importes::default();
+        let mut i = 0;
+        while i < ctrs.len() {
+            let codigo = ctrs[i].clone();
+            i += 1;
+            let c = &self.seguimiento.contradictorios[&codigo];
+            let pos = filas_ctr.len();
+            filas_ctr.push(FilaRelacion::Capitulo {
+                codigo: codigo.clone(),
+                resumen: String::new(),
+                nivel: 1,
+                importes: Importes::default(),
+            });
+            let mut sub = Vec::new();
+            let mut anidados = Vec::new();
+            self.relacion_rec(
+                &codigo,
+                2,
+                cert,
+                previa,
+                &v,
+                precios,
+                &mut sub,
+                &mut visitados,
+                &mut excesos,
+                &mut anidados,
+            )?;
+            for a in anidados {
+                if !ctrs.contains(&a) {
+                    ctrs.push(a);
+                }
+            }
+            let cuenta_anterior = previa.is_some_and(|p| c.cuenta_en(p.numero));
+            let cuenta_origen = c.cuenta_en(cert.numero);
+            let cobrar = |m: &mut Importes| {
+                if !cuenta_anterior {
+                    m.anterior = Decimal::ZERO;
+                }
+                if !cuenta_origen {
+                    m.origen = Decimal::ZERO;
+                }
+                m.actual = m.origen - m.anterior;
+            };
+            // Todas las filas (partidas y subcapítulos) con la regla de cobro;
+            // el total del contradictorio es la suma de sus partidas
+            let mut imp = Importes::default();
+            for f in &mut sub {
+                match f {
+                    FilaRelacion::Partida(x) => {
+                        cobrar(&mut x.importes);
+                        x.de_contradictorio = Some(c.estado);
+                        imp.sumar(&x.importes);
+                    }
+                    FilaRelacion::Capitulo { importes, .. } => cobrar(importes),
+                }
+            }
+            let resumen = self.concepto(&codigo)?.resumen.clone();
+            let neto = if c.sustituye.is_empty() {
+                String::new()
+            } else {
+                " · sustituye partidas del contrato".to_owned()
+            };
+            filas_ctr[pos] = FilaRelacion::Capitulo {
+                codigo,
+                resumen: format!("Nº {} — {resumen} [{}{neto}]", c.numero, c.estado.nombre()),
+                nivel: 1,
+                importes: imp,
+            };
+            total_ctr.sumar(&imp);
+            filas_ctr.extend(sub);
+        }
         // Lo certificado en partidas que ya no están en el presupuesto
         // (borradas después) se mantiene, sin presupuesto.
         let mut huerfanas = Importes::default();
@@ -699,7 +933,17 @@ impl Presupuesto {
                 continue;
             }
             visitados.push(k);
-            let (f, _) = self.fila_partida(&l.capitulo, &l.partida, 1, Decimal::ZERO, None, cert, previa, precios);
+            let (f, _) = self.fila_partida(
+                &l.capitulo,
+                &l.partida,
+                1,
+                Decimal::ZERO,
+                (Decimal::ZERO, Decimal::ZERO),
+                None,
+                cert,
+                previa,
+                precios,
+            );
             huerfanas.sumar(&f.importes);
             extra.push(f);
         }
@@ -717,6 +961,16 @@ impl Presupuesto {
                 importes: imp,
             });
             filas.extend(excesos.into_iter().map(FilaRelacion::Partida));
+        }
+        if !filas_ctr.is_empty() {
+            total.sumar(&total_ctr);
+            filas.push(FilaRelacion::Capitulo {
+                codigo: CAPITULO_CONTRADICTORIOS.into(),
+                resumen: "Contradictorios".into(),
+                nivel: 0,
+                importes: total_ctr,
+            });
+            filas.extend(filas_ctr);
         }
         if !extra.is_empty() {
             total.sumar(&huerfanas);
@@ -749,6 +1003,7 @@ impl Presupuesto {
         filas: &mut Vec<FilaRelacion>,
         visitados: &mut Vec<(String, String)>,
         excesos: &mut Vec<PartidaCertificada>,
+        ctrs: &mut Vec<String>,
     ) -> Result<Importes, ErrorMotor> {
         let mut total = Importes::default();
         let Some(lineas) = v.lineas.get(capitulo) else {
@@ -756,6 +1011,12 @@ impl Presupuesto {
         };
         for l in lineas {
             match l.naturaleza {
+                // Los contradictorios van aparte, en su bloque
+                Naturaleza::Capitulo if self.seguimiento.contradictorios.contains_key(&l.hijo) => {
+                    if !ctrs.contains(&l.hijo) {
+                        ctrs.push(l.hijo.clone());
+                    }
+                }
                 Naturaleza::Capitulo => {
                     let pos = filas.len();
                     filas.push(FilaRelacion::Capitulo {
@@ -764,8 +1025,18 @@ impl Presupuesto {
                         nivel,
                         importes: Importes::default(),
                     });
-                    let i =
-                        self.relacion_rec(&l.hijo, nivel + 1, cert, previa, v, precios, filas, visitados, excesos)?;
+                    let i = self.relacion_rec(
+                        &l.hijo,
+                        nivel + 1,
+                        cert,
+                        previa,
+                        v,
+                        precios,
+                        filas,
+                        visitados,
+                        excesos,
+                        ctrs,
+                    )?;
                     if let FilaRelacion::Capitulo { importes, .. } = &mut filas[pos] {
                         *importes = i;
                     }
@@ -773,11 +1044,16 @@ impl Presupuesto {
                 }
                 Naturaleza::Porcentaje => {}
                 _ => {
+                    let anulado = (
+                        previa.map_or(Decimal::ZERO, |c| self.anulado_en(capitulo, &l.hijo, c.numero)),
+                        self.anulado_en(capitulo, &l.hijo, cert.numero),
+                    );
                     let (f, ex) = self.fila_partida(
                         capitulo,
                         &l.hijo,
                         nivel,
                         l.cantidad,
+                        anulado,
                         Some(l.precio),
                         cert,
                         previa,
@@ -803,11 +1079,17 @@ impl Presupuesto {
         partida: &str,
         nivel: usize,
         medicion: Decimal,
+        anulado: (Decimal, Decimal),
         vigente: Option<Decimal>,
         cert: &Certificacion,
         previa: Option<&Certificacion>,
         precios: Precios,
     ) -> (PartidaCertificada, Option<PartidaCertificada>) {
+        // Lo anulado por contradictorios aprobados baja lo contratado (en la
+        // anterior, lo que estaba anulado entonces)
+        let (anulado_anterior, anulado_origen) = anulado;
+        let medicion_anterior = medicion - anulado_anterior;
+        let medicion = medicion - anulado_origen;
         let d = self.decimales.importe;
         let topar = vigente.is_some();
         let congelado = |l: &LineaCertificada| if precios.es_venta() { l.venta } else { l.precio };
@@ -830,15 +1112,11 @@ impl Presupuesto {
         // Lo anterior, valorado como se certificó; si el precio ha cambiado,
         // la diferencia de lo anterior va al mes (revisión)
         let precio_anterior = la.and_then(congelado).unwrap_or(precio);
-        let tope = |q: Decimal| {
-            if topar && q > medicion {
-                medicion.max(Decimal::ZERO)
-            } else {
-                q
-            }
+        let tope = |q: Decimal, m: Decimal| {
+            if topar && q > m { m.max(Decimal::ZERO) } else { q }
         };
-        let cant_anterior = tope(medido_anterior);
-        let cant_origen = tope(medido);
+        let cant_anterior = tope(medido_anterior, medicion_anterior);
+        let cant_origen = tope(medido, medicion);
         let imp_anterior = if la.is_some() {
             redondear(cant_anterior * precio_anterior, d)
         } else {
@@ -868,6 +1146,7 @@ impl Presupuesto {
             medido,
             medido_anterior,
             de_exceso: None,
+            de_contradictorio: None,
         };
         let ex_anterior = medido_anterior - cant_anterior;
         let ex_origen = medido - cant_origen;
@@ -915,6 +1194,7 @@ impl Presupuesto {
             exceso: false,
             medido: ex_origen,
             medido_anterior: ex_anterior,
+            de_contradictorio: None,
             de_exceso: Some(Box::new(InfoExceso {
                 capitulo: capitulo.to_owned(),
                 partida: partida.to_owned(),
@@ -1296,6 +1576,84 @@ mod pruebas {
         );
         p.marcar_contradictorio(&c2, None).unwrap();
         assert_eq!(p.resumen_contrato().unwrap().contratado, dec!(145));
+    }
+
+    #[test]
+    fn contradictorios_solo_cobran_aprobados_y_sustituyen_partidas() {
+        let mut p = obra();
+        // CTR-01: 2 m de B (40 €) que sustituyen 4 ud de C1/A (20 €): neto 20
+        let c = p
+            .nuevo_contradictorio("Cambio de material", "01/11/2026", "Orden DF 3")
+            .unwrap();
+        p.colgar(&c, "B", None).unwrap();
+        cantidad(&mut p, &c, "B", dec!(2));
+        p.fijar_anulacion(&c, "C1", "A", dec!(4)).unwrap();
+        assert!(
+            p.fijar_anulacion(&c, "C1", "A", dec!(11)).is_err(),
+            "más de lo contratado"
+        );
+        assert!(p.fijar_anulacion(&c, "C1", "Z", dec!(1)).is_err());
+        let r = p.resumen_contrato().unwrap();
+        assert_eq!((r.contratado, r.pendientes), (dec!(140), dec!(20)));
+        // Mes 1: ejecutado todo, el contradictorio sin aprobar
+        let n1 = p.nueva_certificacion("30/11/2026").unwrap();
+        p.certificar_origen(n1, "C1", "A", dec!(10)).unwrap();
+        p.certificar_origen(n1, &c, "B", dec!(2)).unwrap();
+        let r = p.relacion_valorada(n1, E).unwrap();
+        assert_eq!(r.total.origen, dec!(50), "pendiente: se ve, no cobra");
+        let ctr = r
+            .filas
+            .iter()
+            .find_map(|f| match f {
+                FilaRelacion::Capitulo {
+                    codigo,
+                    importes,
+                    nivel: 0,
+                    ..
+                } if codigo == CAPITULO_CONTRADICTORIOS => Some(*importes),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(ctr.origen, dec!(0));
+        let b = r.partidas().find(|x| x.capitulo == c).unwrap();
+        assert_eq!(
+            (b.cant_origen, b.de_contradictorio),
+            (dec!(2), Some(EstadoContradictorio::Propuesto))
+        );
+        p.cerrar_certificacion(n1, dec!(0), dec!(0)).unwrap();
+        // Se aprueba: cuenta desde la 2ª, con todo lo ejecutado
+        p.fijar_estado_contradictorio(&c, EstadoContradictorio::Aprobado)
+            .unwrap();
+        assert_eq!(p.seguimiento.contradictorios[&c].desde, 2);
+        assert_eq!(
+            p.relacion_valorada(n1, E).unwrap().total.origen,
+            dec!(50),
+            "la 1ª no cambia"
+        );
+        let r = p.resumen_contrato().unwrap();
+        assert_eq!((r.aprobados, r.vigente), (dec!(20), dec!(160)));
+        let n2 = p.nueva_certificacion("31/12/2026").unwrap();
+        // De C1/A quedan 6 contratadas
+        p.certificar_origen(n2, "C1", "A", dec!(6)).unwrap();
+        let r = p.relacion_valorada(n2, E).unwrap();
+        let a = r.partidas().find(|x| x.capitulo == "C1" && x.codigo == "A").unwrap();
+        assert_eq!(
+            (a.medicion, a.importes.anterior, a.importes.origen),
+            (dec!(6), dec!(50), dec!(30))
+        );
+        assert!(r.excesos().is_empty());
+        let b = r.partidas().find(|x| x.capitulo == c).unwrap();
+        assert_eq!((b.importes.anterior, b.importes.actual), (dec!(0), dec!(40)));
+        assert_eq!(
+            (r.total.anterior, r.total.actual, r.total.origen),
+            (dec!(50), dec!(20), dec!(70))
+        );
+        p.cerrar_certificacion(n2, dec!(0), dec!(0)).unwrap();
+        // Ya cobrado: no se desaprueba sin reabrir
+        assert!(
+            p.fijar_estado_contradictorio(&c, EstadoContradictorio::Rechazado)
+                .is_err()
+        );
     }
 
     #[test]

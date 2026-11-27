@@ -6,7 +6,7 @@
 use crate::ErrorPdf;
 use ppto_core::Presupuesto;
 use ppto_core::formato::{cant, eur, num};
-use ppto_core::seguimiento::{EstadoExceso, FilaRelacion, Relacion, ResumenCertificacion};
+use ppto_core::seguimiento::{EstadoContradictorio, EstadoExceso, FilaRelacion, Relacion, ResumenCertificacion};
 use rust_decimal::Decimal;
 use serde_json::json;
 use std::path::PathBuf;
@@ -86,8 +86,9 @@ pub fn pdf_certificacion(
             FilaRelacion::Partida(x) => json!({
                 "capitulo": false,
                 "codigo": x.codigo,
-                "resumen": match &x.de_exceso {
-                    Some(i) if i.estado != EstadoExceso::Aprobado => format!("[{}] {}", i.estado.nombre(), x.resumen),
+                "resumen": match (&x.de_exceso, x.de_contradictorio) {
+                    (Some(i), _) if i.estado != EstadoExceso::Aprobado => format!("[{}] {}", i.estado.nombre(), x.resumen),
+                    (_, Some(e)) if e != EstadoContradictorio::Aprobado => format!("[{}] {}", e.nombre(), x.resumen),
                     _ => x.resumen.clone(),
                 },
                 "unidad": x.unidad,

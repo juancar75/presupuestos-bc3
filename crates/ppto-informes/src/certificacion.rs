@@ -121,6 +121,16 @@ pub fn excel_certificacion(
                         }
                     }
                     h.write_string_with_format(fila, 13, nota, &f.nota)?;
+                } else if let Some(e) = x
+                    .de_contradictorio
+                    .filter(|e| *e != ppto_core::seguimiento::EstadoContradictorio::Aprobado)
+                {
+                    h.write_string_with_format(
+                        fila,
+                        13,
+                        format!("Contradictorio {}: no se cobra", e.nombre().to_lowercase()),
+                        &f.nota,
+                    )?;
                 } else if x.exceso {
                     h.write_string_with_format(
                         fila,
