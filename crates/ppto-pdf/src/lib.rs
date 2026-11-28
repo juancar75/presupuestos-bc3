@@ -21,9 +21,11 @@ use std::path::{Path, PathBuf};
 use typst_as_lib::TypstEngine;
 
 pub mod certificacion;
+pub mod excel;
 pub mod pedido;
 pub mod perfiles;
 pub use certificacion::{DatosCertificacion, pdf_certificacion};
+pub use excel::{excel_presto, guardar_excel_presto};
 pub use pedido::{DatosPedido, pdf_pedido};
 pub use perfiles::{Perfil, Perfiles};
 use typst_layout::PagedDocument;
@@ -53,6 +55,8 @@ pub enum ErrorPdf {
     Plantilla(String),
     #[error("no se pudo escribir el PDF: {0}")]
     Escritura(std::io::Error),
+    #[error("no se pudo crear el Excel: {0}")]
+    Excel(String),
 }
 
 /// Datos de la portada, el pie y el resumen. Se guardan entre sesiones.
@@ -222,7 +226,10 @@ pub fn guardar_pdf(p: &Presupuesto, o: &OpcionesPdf, ruta: impl AsRef<Path>) -> 
 
 /// Datos que recibe la plantilla (`datos.json`). Público para pruebas y para
 /// quien quiera diseñar su propia plantilla.
-pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<Value, ErrorPdf> {
+/// Precios tal como los ve el cliente en el PDF: sin desglose y con
+/// precios de venta, GG y BI van dentro de cada partida (y de cada
+/// capítulo); con desglose, a PEM. Lo usan el PDF y el Excel para Presto.
+pub(crate) fn valoracion_cliente(p: &Presupuesto, o: &OpcionesPdf) -> Result<ppto_core::Valoracion, ErrorPdf> {
     let mut v = p.valorar()?;
     let dec = p.decimales;
     let sin_margen = o.gastos_generales.is_zero()
@@ -241,6 +248,27 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
             dec.importe,
         );
     }
+    Ok(v)
+}
+
+/// Resumen del PDF (GG y BI solo con desglose, descuento comercial e IVA).
+pub(crate) fn resumen_cliente(
+    p: &Presupuesto,
+    o: &OpcionesPdf,
+    pem: Decimal,
+) -> (Decimal, Decimal, venta::ResumenPresupuesto) {
+    let (gg, bi) = if o.desglose_contrata {
+        (o.gastos_generales, o.beneficio_industrial)
+    } else {
+        (Decimal::ZERO, Decimal::ZERO)
+    };
+    let desc = p.seguimiento.descuento.as_ref().filter(|d| !d.es_nulo());
+    let r = venta::resumen_con_descuento(pem, gg, bi, o.iva, desc, p.decimales.importe);
+    (gg, bi, r)
+}
+
+pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<Value, ErrorPdf> {
+    let v = valoracion_cliente(p, o)?;
     let raiz = p.concepto(&p.raiz)?;
     let titulo = if o.titulo.trim().is_empty() {
         raiz.resumen.clone()
@@ -275,13 +303,8 @@ pub fn datos(p: &Presupuesto, o: &OpcionesPdf, logo: Option<String>) -> Result<V
 
     // Sin desglose (instaladora) GG y BI no se imprimen: o no se aplican o
     // ya van dentro de cada partida (`precios_venta`).
-    let (gg, bi) = if o.desglose_contrata {
-        (o.gastos_generales, o.beneficio_industrial)
-    } else {
-        (Decimal::ZERO, Decimal::ZERO)
-    };
+    let (gg, bi, r) = resumen_cliente(p, o, v.pem);
     let desc = p.seguimiento.descuento.as_ref().filter(|d| !d.es_nulo());
-    let r = venta::resumen_con_descuento(v.pem, gg, bi, o.iva, desc, dec.importe);
     let mut recargos = Vec::new();
     if !gg.is_zero() {
         recargos.push(json!({

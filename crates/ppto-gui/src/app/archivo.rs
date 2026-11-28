@@ -195,6 +195,29 @@ impl Aplicacion {
         }
     }
 
+    /// Excel para el cliente con el formato de Presto y los mismos precios
+    /// que el PDF (perfil activo y datos de la obra).
+    pub(super) fn exportar_excel_presto(&mut self) {
+        let o = self.opciones_pdf_obra();
+        let base = if o.referencia.trim().is_empty() {
+            self.p.nombre.clone()
+        } else {
+            format!("{} {}", o.referencia.trim(), o.revision.trim())
+        };
+        let nombre = format!("{}.xlsx", base.trim()).replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
+        let Some(ruta) = rfd::FileDialog::new()
+            .add_filter("Excel", &["xlsx"])
+            .set_file_name(nombre)
+            .save_file()
+        else {
+            return;
+        };
+        match ppto_pdf::guardar_excel_presto(&self.p, &o, &ruta) {
+            Ok(()) => self.info(format!("Excel para Presto guardado en {}", ruta.display())),
+            Err(e) => self.error(format!("No se pudo generar el Excel para Presto: {e}")),
+        }
+    }
+
     pub(super) fn dialogo_importar(&mut self) {
         if let Some(ruta) = rfd::FileDialog::new()
             .add_filter("FIEBDC-3 (BC3)", &["bc3", "BC3"])

@@ -740,3 +740,60 @@ fn listado_completo_sin_cabecera() {
     let v = ppto_ciego::valorar(&b, &c, p).unwrap();
     assert_eq!(v.sin_precio.len(), 2);
 }
+
+/// El Excel de la oferta (formato Presto) lo lee el mismo lector de ciegos
+/// con las mismas partidas y mediciones, y sus importes suman lo del PDF.
+#[test]
+fn excel_de_la_oferta_en_formato_presto() {
+    use ppto_core::formato::eur;
+    let p = ppto_core::ejemplos::suelo_radiante();
+    for venta in [false, true] {
+        let o = ppto_pdf::OpcionesPdf {
+            precios_venta: venta,
+            desglose_contrata: !venta,
+            gastos_generales: dec!(13),
+            beneficio_industrial: dec!(6),
+            iva: dec!(21),
+            ..Default::default()
+        };
+        let b = ppto_pdf::excel_presto(&p, &o).unwrap();
+        let dir = std::env::temp_dir().join(format!("ppto-presto-{}-{venta}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ruta = dir.join("oferta.xlsx");
+        std::fs::write(&ruta, &b).unwrap();
+        // El lector de ciegos lo reconoce: mismas partidas y cantidades
+        let c = ppto_ciego::leer(&ruta).unwrap();
+        let q = |x: &ppto_core::Presupuesto| {
+            let mut v: Vec<(String, String)> = x
+                .cantidades_partidas()
+                .unwrap()
+                .into_iter()
+                .map(|(k, q)| (k, q.round_dp(2).normalize().to_string()))
+                .collect();
+            v.sort();
+            v
+        };
+        assert_eq!(q(&c.presupuesto), q(&p));
+        // Suma de ImpPres (redondeada como la fórmula) = PEM del PDF
+        let mut l = calamine::open_workbook_auto(&ruta).unwrap();
+        let r = l.worksheet_range("Presupuesto").unwrap();
+        let num = |d: Option<&Data>| match d {
+            Some(Data::Float(x)) => *x,
+            _ => 0.0,
+        };
+        let mut total = ppto_core::Decimal::ZERO;
+        for f in r.rows() {
+            let es_partida = matches!(f.get(1), Some(Data::String(n)) if n == "Partida");
+            let es_total_partida = matches!(f.get(9), Some(Data::String(c)) if p.conceptos.get(c.trim()).is_some_and(|k| k.naturaleza == Naturaleza::Partida));
+            if (es_partida && matches!(f.get(10), Some(Data::Float(_)))) || es_total_partida {
+                let k = ppto_core::Decimal::try_from(num(f.get(10))).unwrap();
+                let pr = ppto_core::Decimal::try_from(num(f.get(11))).unwrap();
+                total += (k * pr).round_dp(2);
+            }
+        }
+        let d = ppto_pdf::datos(&p, &o, None).unwrap();
+        assert_eq!(eur(total), d["pem"].as_str().unwrap(), "venta={venta}");
+        assert!(l.sheet_names().contains(&"Resumen".to_owned()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

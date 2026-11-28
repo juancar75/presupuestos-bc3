@@ -3701,6 +3701,7 @@ dependencies = [
  "ppto-core",
  "rust_decimal",
  "rust_decimal_macros",
+ "rust_xlsxwriter",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
