@@ -437,7 +437,7 @@ impl Aplicacion {
             if ui
                 .button("Excel para Presto (oferta)…")
                 .on_hover_text(
-                    "Listado «Presupuesto y mediciones» de Presto con los mismos precios y resumen que el PDF, \
+                    "Listado «Presupuesto y mediciones» de Presto con los mismos precios que el PDF, \
                      para que el cliente lo meta en su programa",
                 )
                 .clicked()
