@@ -242,8 +242,7 @@ El BC3 exportado vale exactamente lo mismo que la obra; en Presto hay que pulsar
 **Excel para Presto con la oferta**: al generar el PDF se guarda también, al lado y con el mismo nombre, un `.xlsx` con el formato del listado «Presupuesto y mediciones» de Presto, para que el cliente lo meta en su programa (casilla «Guardar también el Excel para Presto» del perfil, marcada por defecto).
 
 - **Mismos precios que el PDF**: con GG y BI dentro de cada partida si el perfil es de instaladora, o a PEM si lleva desglose. Sin descompuestos ni costes.
-- Hoja **Presupuesto**: capítulos, partidas con su texto, líneas de medición y CanPres, PrPres e ImpPres. Los importes y totales son fórmulas, como en Presto.
-- Hoja **Resumen**: capítulos, GG y BI (si hay desglose), descuento, base imponible, IVA, total y el importe en letra sin IVA.
+- Una sola hoja, **Presupuesto**: capítulos, partidas con su texto, líneas de medición y CanPres, PrPres e ImpPres. Los importes y totales son fórmulas, como en Presto. Sin hoja de resumen: ni GG, BI, descuento ni IVA.
 - También sin PDF: Archivo → Exportar → «Excel para Presto (oferta)…». Si el cliente mandó su propio Excel ciego, «Excel ciego valorado…» devuelve su mismo fichero con los precios.
 
 ## 11. Seguimiento de obra y certificaciones

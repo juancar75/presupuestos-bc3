@@ -328,7 +328,7 @@ impl Aplicacion {
                         ui.checkbox(&mut p.excel_presto, "Guardar también el Excel para Presto")
                             .on_hover_text(
                                 "Junto al PDF, con el mismo nombre: listado «Presupuesto y mediciones» de Presto con los \
-                                 mismos precios y resumen, para que el cliente lo meta en su programa",
+                                 mismos precios, para que el cliente lo meta en su programa",
                             );
                     }
                     ui.label(RichText::new("Observaciones de este perfil (una por línea)").strong());

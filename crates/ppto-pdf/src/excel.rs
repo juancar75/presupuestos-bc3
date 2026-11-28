@@ -3,16 +3,14 @@
 //! mediciones»: Código, Nat, Ud, Resumen, Comentario, N, Longitud, Anchura,
 //! Altura, Parcial, CanPres, PrPres, ImpPres), para que el cliente lo meta en
 //! su programa. Va con los **mismos precios que el PDF**
-//! ([`crate::valoracion_cliente`]) y una hoja «Resumen» con el mismo
-//! resumen (GG y BI si hay desglose, descuento, IVA e importe en letra sin
-//! IVA). Nunca lleva descompuestos ni costes.
+//! ([`crate::valoracion_cliente`]) y en una sola hoja: sin hoja de resumen
+//! (ni GG, BI, descuento ni IVA), descompuestos ni costes.
 //!
 //! Los importes son fórmulas como las de Presto (ImpPres =
 //! REDONDEAR(CanPres × PrPres; 2); capítulos = suma de sus partidas), así
 //! que el total que calcula Excel es el del PDF.
 
-use crate::{ErrorPdf, OpcionesPdf, resumen_cliente, valoracion_cliente};
-use ppto_core::formato::{en_letra, num};
+use crate::{ErrorPdf, OpcionesPdf, valoracion_cliente};
 use ppto_core::presupuesto::LineaValorada;
 use ppto_core::{Decimal, Naturaleza, Presupuesto, TipoLinea, Valoracion};
 use rust_decimal::prelude::ToPrimitive;
@@ -37,11 +35,6 @@ const CABECERA: [&str; 13] = [
 
 fn f64_de(x: Decimal) -> f64 {
     x.to_f64().unwrap_or_default()
-}
-
-/// Columna en letra (0 → A).
-fn col(c: u16) -> char {
-    char::from(b'A' + u8::try_from(c).unwrap_or(0))
 }
 
 struct Formatos {
@@ -256,7 +249,6 @@ pub fn excel_presto(p: &Presupuesto, o: &OpcionesPdf) -> Result<Vec<u8>, ErrorPd
     }
     h.set_freeze_panes(3, 0)?;
     let mut caps = Vec::new();
-    let mut resumen_caps = Vec::new();
     for l in v.lineas.get(&p.raiz).into_iter().flatten() {
         let c = p.concepto(&l.hijo)?;
         let r = if c.naturaleza == Naturaleza::Capitulo {
@@ -265,100 +257,8 @@ pub fn excel_presto(p: &Presupuesto, o: &OpcionesPdf) -> Result<Vec<u8>, ErrorPd
             hj.partida(h, &p.raiz, l)?
         };
         caps.push(format!("M{}", r + 1));
-        resumen_caps.push((c.codigo.clone(), c.resumen.clone(), r + 1));
     }
-    let fila_total = hj.total(h, &p.raiz, &caps)? + 1;
-    let f = hj.f;
-
-    // Hoja «Resumen»: como el resumen del PDF, con fórmulas a la hoja anterior
-    let (gg, bi, r) = resumen_cliente(p, o, v.pem);
-    let s = libro.add_worksheet();
-    s.set_name("Resumen")?;
-    s.set_column_width(0, 12.0)?;
-    s.set_column_width(1, 60.0)?;
-    s.set_column_width(2, 15.0)?;
-    s.write_string_with_format(0, 0, &titulo, &f.capitulo)?;
-    s.write_string_with_format(1, 0, "Resumen de presupuesto", &f.partida)?;
-    let mut fila = 3;
-    for (codigo, resumen, rf) in &resumen_caps {
-        s.write_string_with_format(fila, 0, codigo, &f.capitulo)?;
-        s.write_string(fila, 1, resumen)?;
-        s.write_formula_with_format(fila, 2, Formula::new(format!("=Presupuesto!M{rf}")), &f.euros_neg)?;
-        fila += 1;
-    }
-    fila += 1;
-    let c2 = col(2);
-    let suma = fila;
-    let etiqueta = if o.desglose_contrata {
-        "Presupuesto de ejecución material"
-    } else {
-        "Suma"
-    };
-    s.write_string_with_format(fila, 1, etiqueta, &f.total)?;
-    s.write_formula_with_format(
-        fila,
-        2,
-        Formula::new(format!("=Presupuesto!M{fila_total}")),
-        &f.total_euros,
-    )?;
-    fila += 1;
-    let mut piezas = vec![format!("{c2}{}", suma + 1)];
-    for (pct, txt) in [(gg, "Gastos generales"), (bi, "Beneficio industrial")] {
-        if !pct.is_zero() {
-            s.write_string(fila, 1, format!("{} % {txt}", num(pct, 2)))?;
-            s.write_formula_with_format(
-                fila,
-                2,
-                Formula::new(format!("=ROUND({c2}{}*{}/100,2)", suma + 1, pct)),
-                &f.euros_neg,
-            )?;
-            piezas.push(format!("{c2}{}", fila + 1));
-            fila += 1;
-        }
-    }
-    if let Some(d) = p.seguimiento.descuento.as_ref().filter(|d| !d.es_nulo()) {
-        s.write_string(fila, 1, d.etiqueta())?;
-        s.write_number_with_format(fila, 2, f64_de(-r.descuento), &f.euros_neg)?;
-        piezas.push(format!("{c2}{}", fila + 1));
-        fila += 1;
-    }
-    let base = fila;
-    let etiqueta_base = if gg.is_zero() && bi.is_zero() {
-        "Base imponible"
-    } else {
-        "Presupuesto de ejecución por contrata"
-    };
-    s.write_string_with_format(fila, 1, etiqueta_base, &f.total)?;
-    s.write_formula_with_format(fila, 2, Formula::new(format!("={}", piezas.join("+"))), &f.total_euros)?;
-    fila += 1;
-    if !o.iva.is_zero() {
-        s.write_string(fila, 1, format!("{} % IVA", num(o.iva, 2)))?;
-        s.write_formula_with_format(
-            fila,
-            2,
-            Formula::new(format!("=ROUND({c2}{}*{}/100,2)", base + 1, o.iva)),
-            &f.euros_neg,
-        )?;
-        fila += 1;
-        s.write_string_with_format(fila, 1, "Total con IVA", &f.total)?;
-        s.write_formula_with_format(
-            fila,
-            2,
-            Formula::new(format!("={c2}{}+{c2}{}", base + 1, fila)),
-            &f.total_euros,
-        )?;
-        fila += 1;
-    }
-    fila += 1;
-    s.write_string_with_format(
-        fila,
-        0,
-        format!(
-            "Asciende el presupuesto a la expresada cantidad de {} (IVA no incluido).",
-            en_letra(r.base)
-        ),
-        &f.nota,
-    )?;
+    hj.total(h, &p.raiz, &caps)?;
     Ok(libro.save_to_buffer()?)
 }
 

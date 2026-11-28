@@ -793,7 +793,8 @@ fn excel_de_la_oferta_en_formato_presto() {
         }
         let d = ppto_pdf::datos(&p, &o, None).unwrap();
         assert_eq!(eur(total), d["pem"].as_str().unwrap(), "venta={venta}");
-        assert!(l.sheet_names().contains(&"Resumen".to_owned()));
+        // Solo el listado: el cliente no ve hoja de resumen
+        assert_eq!(l.sheet_names(), ["Presupuesto"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
