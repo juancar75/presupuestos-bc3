@@ -5,6 +5,9 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+### Añadido
+- **Excel para Presto con la oferta**: al generar el PDF se guarda al lado un `.xlsx` con el formato del listado «Presupuesto y mediciones» de Presto (capítulos, partidas, texto, mediciones, CanPres, PrPres, ImpPres con fórmulas) y una hoja «Resumen», con los mismos precios y totales que el PDF, para que el cliente lo meta en su programa. Casilla en el perfil del PDF (marcada por defecto) y Archivo → Exportar → «Excel para Presto (oferta)…».
+
 ## [0.1.0-alpha.78] - 2026-11-27
 
 ### Añadido

@@ -435,6 +435,17 @@ impl Aplicacion {
                 self.abrir_pdf();
             }
             if ui
+                .button("Excel para Presto (oferta)…")
+                .on_hover_text(
+                    "Listado «Presupuesto y mediciones» de Presto con los mismos precios y resumen que el PDF, \
+                     para que el cliente lo meta en su programa",
+                )
+                .clicked()
+            {
+                ui.close();
+                self.exportar_excel_presto();
+            }
+            if ui
                 .button("Excel ciego valorado…")
                 .on_hover_text("El mismo Excel del cliente con los precios en la columna PrPres")
                 .clicked()

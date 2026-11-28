@@ -325,6 +325,11 @@ impl Aplicacion {
                             ui.checkbox(&mut p.mostrar_textos, "Textos de las partidas");
                             ui.checkbox(&mut p.mostrar_mediciones, "Líneas de medición");
                         });
+                        ui.checkbox(&mut p.excel_presto, "Guardar también el Excel para Presto")
+                            .on_hover_text(
+                                "Junto al PDF, con el mismo nombre: listado «Presupuesto y mediciones» de Presto con los \
+                                 mismos precios y resumen, para que el cliente lo meta en su programa",
+                            );
                     }
                     ui.label(RichText::new("Observaciones de este perfil (una por línea)").strong());
                     ui.add(
@@ -437,7 +442,8 @@ impl Aplicacion {
                         o.gastos_generales = gg_obra;
                         o.beneficio_industrial = bi_obra;
                     }
-                    if self.generar_pdf(&o) {
+                    let excel = v.perfiles.activo().excel_presto;
+                    if self.generar_pdf(&o, excel) {
                         abierta = false;
                     }
                 }
@@ -537,8 +543,9 @@ impl Aplicacion {
         }
     }
 
-    /// Pide la ruta y genera el PDF. Devuelve `true` si se ha guardado.
-    fn generar_pdf(&mut self, o: &OpcionesPdf) -> bool {
+    /// Pide la ruta y genera el PDF (y, con `excel`, el Excel para Presto
+    /// al lado, con el mismo nombre). Devuelve `true` si se ha guardado.
+    fn generar_pdf(&mut self, o: &OpcionesPdf, excel: bool) -> bool {
         let base = if o.referencia.is_empty() {
             &self.p.nombre
         } else {
@@ -554,6 +561,23 @@ impl Aplicacion {
             return false;
         };
         match ppto_pdf::guardar_pdf(&self.p, o, &ruta) {
+            Ok(()) if excel => {
+                let x = ruta.with_extension("xlsx");
+                match ppto_pdf::guardar_excel_presto(&self.p, o, &x) {
+                    Ok(()) => self.info(format!(
+                        "PDF guardado en {} y Excel para Presto en {}",
+                        ruta.display(),
+                        x.file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default()
+                    )),
+                    Err(e) => self.error(format!(
+                        "PDF guardado en {}, pero no se pudo crear el Excel para Presto: {e}",
+                        ruta.display()
+                    )),
+                }
+                true
+            }
             Ok(()) => {
                 self.info(format!("PDF guardado en {}", ruta.display()));
                 true

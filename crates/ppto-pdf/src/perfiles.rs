@@ -44,6 +44,9 @@ pub struct Perfil {
     pub mostrar_mediciones: bool,
     pub mostrar_textos: bool,
     pub plantilla: Option<PathBuf>,
+    /// Al generar el PDF, guardar también el Excel con formato de Presto
+    /// (mismos precios) para que el cliente lo meta en su programa.
+    pub excel_presto: bool,
 }
 
 impl Default for Perfil {
@@ -73,6 +76,7 @@ impl Perfil {
             mostrar_mediciones: true,
             mostrar_textos: true,
             plantilla: None,
+            excel_presto: true,
         }
     }
 
