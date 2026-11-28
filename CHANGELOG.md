@@ -5,6 +5,8 @@ versionado [semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
 
+## [0.1.0-alpha.80] - 2026-11-28
+
 ### Cambiado
 - El Excel para Presto de la oferta ya no lleva la hoja «Resumen»: solo el listado de partidas, sin GG, BI, descuento ni IVA.
 
